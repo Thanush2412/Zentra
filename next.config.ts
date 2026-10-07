@@ -33,6 +33,14 @@ function getDynamicDevOrigins(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: getDynamicDevOrigins(),
+  // Legacy /cam routes were renamed to /cm; keep old stored notification
+  // links and bookmarks working.
+  async redirects() {
+    return [
+      { source: "/cam", destination: "/cm", permanent: true },
+      { source: "/cam/:path*", destination: "/cm/:path*", permanent: true }
+    ];
+  },
   // Native binaries must stay outside the webpack bundle — resvg's .node file
   // is loaded by Node directly (skill report chart rendering).
   serverExternalPackages: ["@resvg/resvg-js"],

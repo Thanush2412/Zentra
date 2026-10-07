@@ -24,10 +24,10 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
 
-    // Update status to pending_cam_acceptance
+    // Update status to pending_cm_acceptance
     await db.run(
       `UPDATE student_interviews 
-       SET status = 'pending_cam_acceptance', updated_at = ?
+       SET status = 'pending_cm_acceptance', updated_at = ?
        WHERE id = ?`,
       [now, interview_id]
     );
@@ -48,20 +48,20 @@ export async function POST(request: Request) {
       regionalColleges = [];
     }
 
-    // Insert pending CAM capacity request rows for each regional college.
-    // Batched: single IN(...) query for CAMs + single query for existing
+    // Insert pending CM capacity request rows for each regional college.
+    // Batched: single IN(...) query for CMs + single query for existing
     // responses, then multi-row INSERT (was 2 queries per college in a loop).
     let insertedCount = 0;
     if (regionalColleges.length > 0) {
       const collegeIds = regionalColleges.map(c => c.id);
       const placeholders = collegeIds.map(() => "?").join(",");
 
-      const camRows = await db.all(
+      const cmRows = await db.all(
         `SELECT college_id, id, name FROM campus_managers WHERE college_id IN (${placeholders}) ORDER BY created_at ASC`,
         ...collegeIds
       );
       const camByCollege = new Map<string, any>();
-      for (const cam of camRows) {
+      for (const cam of cmRows) {
         if (!camByCollege.has(cam.college_id)) camByCollege.set(cam.college_id, cam);
       }
 
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // Dispatch notifications to regional CAMs
+    // Dispatch notifications to regional CMs
     try {
       await dispatchExternalInterviewNotifications({
         interviewId: interview.id,
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Capacity request dispatched to ${regionalColleges.length} regional college CAMs. Status set to pending_cam_acceptance.`
+      message: `Capacity request dispatched to ${regionalColleges.length} regional college CMs. Status set to pending_cm_acceptance.`
     });
   } catch (error: any) {
     console.error("POST /api/interviews/capacity-request error:", error);

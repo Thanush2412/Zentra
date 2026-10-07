@@ -66,7 +66,7 @@ async function smeDemoWindowAllows(
  */
 export async function GET(request: Request) {
   try {
-    await requireRole(request, "admin", "L and D", "head_sme", "sme", "cam", "kam");
+    await requireRole(request, "admin", "L and D", "head_sme", "sme", "cm", "kam");
     const db = await getDb();
     const collegeId = new URL(request.url).searchParams.get("college_id");
     if (!collegeId) {

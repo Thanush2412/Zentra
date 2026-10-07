@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 
-// GET /api/cam?id=cam_1  — returns CAM profile + their college's data
+// GET /api/cm?id=cam_1  — returns CM profile + their college's data
 export async function GET(request: Request) {
   try {
     const db = await getDb();
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const camId = searchParams.get("id");
 
     if (!camId) {
-      return NextResponse.json({ success: false, message: "CAM id required" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "CM id required" }, { status: 400 });
     }
 
     const cam = await db.get(`
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      cam: { ...cam, role: "cam" },
+      cam: { ...cam, role: "cm" },
       college: {
         id: collegeId,
         name: cam.college_name,
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     await db.run(
       `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [cleanId, cleanEmail, defaultHashed, "cam", cleanId, "Active", now, now]
+      [cleanId, cleanEmail, defaultHashed, "cm", cleanId, "Active", now, now]
     );
 
     return NextResponse.json({ success: true, message: "Campus Manager created successfully" });
@@ -117,11 +117,11 @@ export async function PUT(request: Request) {
       name.trim(), cleanEmail, college_id.trim(), kam_id.trim(), id
     );
 
-    // Clean old credentials associated with this email (excluding the current CAM ID)
+    // Clean old credentials associated with this email (excluding the current CM ID)
     await db.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
 
-    // Check existing user to preserve password_hash
-    const existingUser = await db.get("SELECT password_hash FROM users WHERE role = 'cam' AND reference_id = ?", id);
+    // Check existing user to preserve password_hash (match legacy 'cam' rows too)
+    const existingUser = await db.get("SELECT password_hash FROM users WHERE role IN ('cm', 'cam') AND reference_id = ?", id);
     const passHashToKeep = existingUser?.password_hash || hashPassword("password123");
 
     const now = new Date().toISOString();
@@ -135,7 +135,7 @@ export async function PUT(request: Request) {
          reference_id = EXCLUDED.reference_id,
          status = EXCLUDED.status,
          updated_at = EXCLUDED.updated_at`,
-      [id, cleanEmail, passHashToKeep, "cam", id, "Active", now, now]
+      [id, cleanEmail, passHashToKeep, "cm", id, "Active", now, now]
     );
 
     return NextResponse.json({ success: true, message: "Campus Manager updated successfully" });
@@ -154,7 +154,7 @@ export async function DELETE(request: Request) {
     }
     
     // Delete from both users and campus_managers
-    await db.run("DELETE FROM users WHERE role = 'cam' AND reference_id = ?", id);
+    await db.run("DELETE FROM users WHERE role IN ('cm', 'cam') AND reference_id = ?", id);
     await db.run("DELETE FROM campus_managers WHERE id = ?", id);
     
     return NextResponse.json({ success: true, message: "Campus Manager deleted successfully" });

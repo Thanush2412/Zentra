@@ -131,9 +131,9 @@ export async function POST(request: Request) {
       status: newStatus
     });
   } catch (error: any) {
-    console.error("POST /api/interviews/cam-capacity-response error:", error);
+    console.error("POST /api/interviews/cm-capacity-response error:", error);
     return NextResponse.json(
-      { success: false, message: error.message || "Failed to process CAM capacity response" },
+      { success: false, message: error.message || "Failed to process CM capacity response" },
       { status: 500 }
     );
   }

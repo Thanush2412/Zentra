@@ -59,9 +59,9 @@ export async function GET(request: Request) {
       });
     }
 
-    if (role === "cam" && camId) {
+    if ((role === "cm" || role === "cam") && camId) {
       const cam = await db.get("SELECT * FROM campus_managers WHERE id = ?", camId);
-      if (!cam) return NextResponse.json({ success: false, message: "CAM not found" }, { status: 404 });
+      if (!cam) return NextResponse.json({ success: false, message: "CM not found" }, { status: 404 });
 
       const collegeId = cam.college_id;
       const students = await db.all(

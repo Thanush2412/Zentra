@@ -3,7 +3,7 @@
 import { Loader2 } from "lucide-react";
 
 /**
- * Branded redirect loader — shown on role index pages (/admin, /cam, /mentor,
+ * Branded redirect loader — shown on role index pages (/admin, /cm, /mentor,
  * /student, /fee-manager) for the brief moment before router.replace() fires.
  * Replaces the old `return null` which caused a blank white flash.
  */

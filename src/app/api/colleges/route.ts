@@ -140,7 +140,7 @@ export async function DELETE(request: Request) {
     const camIds = collegeCams.map((c: any) => c.id);
     if (camIds.length > 0) {
       const cp = camIds.map(() => "?").join(",");
-      await db.run(`DELETE FROM users WHERE role = 'cam' AND reference_id IN (${cp})`, camIds);
+      await db.run(`DELETE FROM users WHERE role IN ('cm', 'cam') AND reference_id IN (${cp})`, camIds);
     }
     await db.run("DELETE FROM campus_managers WHERE college_id = ?", id);
 

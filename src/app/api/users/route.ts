@@ -122,7 +122,7 @@ export async function POST(request: Request) {
           `INSERT INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
           [refId, displayName, cleanEmail, body.title || "Key Account Manager"]
         );
-      } else if (userRole === "cam" || userRole === "cm") {
+      } else if (userRole === "cm" || userRole === "cam") {
         await db.run(
           `INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
           [refId, displayName, cleanEmail, safeColId, safeKamId]

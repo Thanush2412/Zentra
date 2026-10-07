@@ -575,7 +575,7 @@ export async function POST(request: Request) {
                 dateStr, dateFormatted, targetStaffId, targetStaffName,
                 reason, status, timestamp, classGroup, request_type, compensates_handover_id,
                 original_subject, original_month
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'needs_cam_allocation', ?, ?, 'leave_cover', ?, ?, ?)`,
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'needs_cm_allocation', ?, ?, 'leave_cover', ?, ?, ?)`,
               [
                 handoverId, mentorId, mentor?.name || mentorId,
                 slotId, slot.course, slot.day, slot.time,

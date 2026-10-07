@@ -284,7 +284,7 @@ export async function POST(request: Request) {
                marked_by = excluded.marked_by,
                marked_by_id = excluded.marked_by_id,
                updated_at = NOW()`,
-              [id, m.id, collegeId, dateStr, currentTime, markedBy || "cam", markedById || "cam"]
+              [id, m.id, collegeId, dateStr, currentTime, markedBy || "cm", markedById || "cm"]
             );
             count++;
           }

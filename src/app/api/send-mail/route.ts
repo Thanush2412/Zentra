@@ -66,7 +66,7 @@ async function recipientIsKnownUser(db: any, email: string): Promise<boolean> {
 export async function POST(request: Request) {
   try {
     // Only authenticated admins/CAMs may send mail via this endpoint.
-    await requireRole(request, "admin", "cam");
+    await requireRole(request, "admin", "cm");
 
     const body = await request.json();
     const { to, subject, template, data } = body;

@@ -1644,7 +1644,8 @@ export function DemoAllocationDashboard() {
         const dayInfo = getEffectiveDayOrderInfo(w.dateStr, w.day, wIdx, colObj.id);
         const slot = colSlots[mIdx % colSlots.length] || "08:30 AM - 09:30 AM";
         const mGroup = getMentorGroup(m);
-        const eligibleSme = getSmesForSubjectGroup(mGroup)[0];
+        const eligibleSmes = getSmesForSubjectGroup(mGroup);
+        const eligibleSme = eligibleSmes.find(s => isSmeFree(s.id, w.dateStr, slot)) || eligibleSmes[0];
 
         const row = wsMaster.addRow([
           colObj.name,
@@ -1853,70 +1854,175 @@ export function DemoAllocationDashboard() {
     colWidths.forEach((w, i) => { wsMentors.getColumn(i + 1).width = w; });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SHEET: Assigned SMEs with Demo Time & Training Time Windows
+    // Helper: Normalize any time string to 12-hour format "hh:mm AM/PM"
+    // ─────────────────────────────────────────────────────────────────────────
+    const normalizeTimeTo12Hour = (t: string | undefined | null): string => {
+      if (!t) return "";
+      const totalMin = parseSlotTimeToMinutes(t);
+      if (totalMin === 9999) return t.trim();
+      let hr = Math.floor(totalMin / 60);
+      const min = totalMin % 60;
+      const isPm = hr >= 12;
+      let displayHr = hr % 12;
+      if (displayHr === 0) displayHr = 12;
+      return `${String(displayHr).padStart(2, "0")}:${String(min).padStart(2, "0")} ${isPm ? "PM" : "AM"}`;
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helper: Calculate an SME's day-specific free demo evaluation slot
+    // ─────────────────────────────────────────────────────────────────────────
+    const getSmeDaySlots = (smeId: string, dayName: string, dateStr?: string) => {
+      const allSmeWindows = (smeAvailability || []).filter(
+        (a: any) => a.sme_id === smeId && a.is_active !== 0
+      );
+
+      const onLeave = dateStr ? isFacultyOnLeave(smeId, dateStr) : false;
+      if (onLeave) {
+        return {
+          demoText: "On Approved Faculty Leave",
+          trainingText: "On Leave",
+          isFree: false
+        };
+      }
+
+      if (allSmeWindows.length === 0) {
+        return {
+          demoText: "09:00 AM - 05:30 PM (Full Shift Free)",
+          trainingText: "None",
+          isFree: true
+        };
+      }
+
+      const dayWindows = allSmeWindows.filter((a: any) => {
+        const aDay = (a.day_of_week || "").toLowerCase().trim();
+        const targetDay = dayName.toLowerCase().trim();
+        const mappedDay = (mapDayOrderToDayName(a.day_of_week, "") || "").toLowerCase().trim();
+        return aDay === targetDay || mappedDay === targetDay || aDay.startsWith(targetDay.slice(0, 3));
+      });
+
+      if (dayWindows.length === 0) {
+        return {
+          demoText: "09:00 AM - 05:30 PM (Default Shift)",
+          trainingText: "None",
+          isFree: true
+        };
+      }
+
+      const demoWins = dayWindows.filter((w: any) => (w.slot_type || w.slotType || "demo") !== "training");
+      const trainWins = dayWindows.filter((w: any) => (w.slot_type || w.slotType || "demo") === "training");
+
+      const demoText = demoWins.length > 0
+        ? demoWins.map((w: any) => `${normalizeTimeTo12Hour(w.start_time)} - ${normalizeTimeTo12Hour(w.end_time)}`).join(", ")
+        : "No Demo Windows (Training Only)";
+
+      const trainingText = trainWins.length > 0
+        ? trainWins.map((w: any) => `${normalizeTimeTo12Hour(w.start_time)} - ${normalizeTimeTo12Hour(w.end_time)}`).join(", ")
+        : "None (Full Availability for Demos)";
+
+      return {
+        demoText,
+        trainingText,
+        isFree: demoWins.length > 0
+      };
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helper: Calculate an SME's weekly demo evaluation slot summary
+    // ─────────────────────────────────────────────────────────────────────────
+    const getSmeWeeklyOverview = (smeId: string) => {
+      const allSmeWindows = (smeAvailability || []).filter(
+        (a: any) => a.sme_id === smeId && a.is_active !== 0
+      );
+
+      if (allSmeWindows.length === 0) {
+        return {
+          demoSummary: "Mon – Fri: 09:00 AM - 05:30 PM (Standard Full Shift)",
+          trainingSummary: "None (Full Availability for Demos: 09:00 AM - 05:30 PM)"
+        };
+      }
+
+      const dayDemoList: { day: string; text: string }[] = [];
+      const dayTrainList: { day: string; text: string }[] = [];
+
+      currentWeekDates.forEach((w) => {
+        const dayRes = getSmeDaySlots(smeId, w.day, w.dateStr);
+        dayDemoList.push({ day: w.day.slice(0, 3), text: dayRes.demoText });
+        if (dayRes.trainingText && dayRes.trainingText !== "None" && !dayRes.trainingText.includes("Full Availability")) {
+          dayTrainList.push({ day: w.day.slice(0, 3), text: dayRes.trainingText });
+        }
+      });
+
+      const firstDemo = dayDemoList[0]?.text;
+      const allSameDemo = dayDemoList.every(d => d.text === firstDemo);
+
+      const demoSummary = allSameDemo && firstDemo
+        ? `Mon – Fri: ${firstDemo}`
+        : dayDemoList.map(d => `${d.day}: ${d.text}`).join(" • ");
+
+      const trainingSummary = dayTrainList.length > 0
+        ? dayTrainList.map(t => `${t.day}: ${t.text}`).join(" • ")
+        : "None (Full Availability for Demos)";
+
+      return { demoSummary, trainingSummary };
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET: Assigned SMEs with Dedicated Demo Slot & Training Time Windows
     // ─────────────────────────────────────────────────────────────────────────
     const wsSmes = workbook.addWorksheet("Assigned_SMEs");
     const sHeadRow = wsSmes.addRow([
       "SME ID",
       "SME Name",
       "Specialization & Group",
+      "SME Standard Shift",
+      ...currentWeekDates.map(d => `${d.day} Dedicated Demo Slot`),
       "Dedicated Demo Evaluation Slots (Used for Timetable)",
       "Faculty Training / Workshop Slots (Excluded from Demos)",
       "Head SME Status"
     ]);
-    sHeadRow.height = 24;
+    sHeadRow.height = 26;
     sHeadRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
     sHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "4F46E5" } };
     sHeadRow.alignment = { vertical: "middle", horizontal: "center" };
 
+    const totalSmeCols = 6 + currentWeekDates.length;
+
     relevantSmes.forEach((s: any) => {
-      const windows = (smeAvailability || []).filter((a: any) => a.sme_id === s.id && a.is_active !== 0);
-      let demoAvailText = "";
-      let trainingAvailText = "";
+      const dayDemoCols = currentWeekDates.map((w) => {
+        const res = getSmeDaySlots(s.id, w.day, w.dateStr);
+        return res.demoText;
+      });
 
-      if (windows.length > 0) {
-        const demoByDay: Record<string, string[]> = {};
-        const trainByDay: Record<string, string[]> = {};
-
-        windows.forEach((w: any) => {
-          const d = w.day_of_week?.slice(0, 3) || "Day";
-          const sType = w.slot_type || w.slotType || "demo";
-          if (sType === "training") {
-            if (!trainByDay[d]) trainByDay[d] = [];
-            trainByDay[d].push(`${w.start_time} - ${w.end_time}`);
-          } else {
-            if (!demoByDay[d]) demoByDay[d] = [];
-            demoByDay[d].push(`${w.start_time} - ${w.end_time}`);
-          }
-        });
-
-        demoAvailText = Object.entries(demoByDay).length > 0
-          ? Object.entries(demoByDay).map(([d, times]) => `${d}: ${times.join(", ")}`).join(" • ")
-          : "None Configured";
-
-        trainingAvailText = Object.entries(trainByDay).length > 0
-          ? Object.entries(trainByDay).map(([d, times]) => `${d}: ${times.join(", ")}`).join(" • ")
-          : "None (Full Availability for Demos)";
-      } else {
-        demoAvailText = "Configured Full Shift: 08:30 AM - 04:30 PM";
-        trainingAvailText = "None";
-      }
+      const weekly = getSmeWeeklyOverview(s.id);
 
       const row = wsSmes.addRow([
         s.id,
         s.name,
         s.subject || s.head_subject_group || "General",
-        demoAvailText,
-        trainingAvailText,
+        "09:00 AM - 05:30 PM",
+        ...dayDemoCols,
+        weekly.demoSummary,
+        weekly.trainingSummary,
         s.is_head_sme ? "YES (+50 Priority Score)" : "NO"
       ]);
-      row.height = 20;
-      for (let c = 1; c <= 6; c++) {
-        row.getCell(c).font = { name: "Arial", size: 9.5 };
-        row.getCell(c).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
+      row.height = 22;
+      for (let c = 1; c <= totalSmeCols; c++) {
+        row.getCell(c).font = { name: "Arial", size: 9 };
+        row.getCell(c).border = {
+          top: { style: 'thin', color: { argb: 'E2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
+          left: { style: 'thin', color: { argb: 'E2E8F0' } },
+          right: { style: 'thin', color: { argb: 'E2E8F0' } }
+        };
+        if (c === totalSmeCols) {
+          row.getCell(c).alignment = { horizontal: "center", vertical: "middle" };
+          row.getCell(c).font = { name: "Arial", size: 9.5, bold: true };
+        }
       }
     });
-    [15, 28, 26, 46, 46, 20].forEach((w, i) => { wsSmes.getColumn(i + 1).width = w; });
+
+    const smeColWidths = [15, 28, 26, 24, ...currentWeekDates.map(() => 34), 48, 48, 20];
+    smeColWidths.forEach((w, i) => { wsSmes.getColumn(i + 1).width = w; });
 
     // ─────────────────────────────────────────────────────────────────────────
     // SHEET: Campus Day Orders across All Colleges
@@ -1977,7 +2083,7 @@ export function DemoAllocationDashboard() {
       ["Total Colleges Included", `${applicableColleges.length} colleges (${applicableColleges.map(c => c.name).join(", ")})`],
       ["Eligible Faculty Count", `${relevantMentors.length} active mentors`],
       ["Assigned SMEs Count", `${relevantSmes.length} assigned SMEs`],
-      ["Allocation Engine Rules", "Demo sessions require: (1) Mentor is free from teaching and leave, (2) SME is free and within demo evaluation window, (3) College is open (not a holiday), (4) CAM Day Order is configured."],
+      ["Allocation Engine Rules", "Demo sessions require: (1) Mentor is free from teaching and leave, (2) SME is free and within demo evaluation window (Standard shift: 09:00 AM - 05:30 PM), (3) College is open (not a holiday), (4) CAM Day Order is configured."],
       ["Sheet Usage", "Fill out 'Master_Demo_Schedule' for bulk multi-college uploads, or use individual 'Grid_[College]' tabs for visual timetable matrix entry with built-in free faculty dropdowns."]
     ];
 

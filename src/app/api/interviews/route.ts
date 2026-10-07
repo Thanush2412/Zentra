@@ -40,7 +40,7 @@ export async function GET(request: Request) {
         id IN (SELECT interview_id FROM interview_allocations WHERE mentor_id = ?)
       )`;
       params.push(mentorId, `%${mentorId}%`, mentorId, mentorId);
-    } else if ((role === "cam" || role === "cm") && collegeId) {
+    } else if ((role === "cm" || role === "cam") && collegeId) {
       // 1. Internal: STRICTLY only inside this campus (college_id / origin_college_id)
       // 2. External: Origin/Target campus OR responded campus OR all campuses under the SAME KAM who manages the origin college
       query += ` AND (

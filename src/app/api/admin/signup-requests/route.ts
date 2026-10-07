@@ -92,7 +92,7 @@ export async function PATCH(request: Request) {
               req.password_hash
             ]
           );
-        } else if (targetRole === "cam") {
+        } else if (targetRole === "cm" || targetRole === "cam") {
           if (!collegeId) {
             return NextResponse.json({ success: false, message: "A college must be assigned to create a Campus Manager profile." }, { status: 400 });
           }

@@ -123,7 +123,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["mentor", "cam", "kam", "admin", "sme"],
+      allowedRoles: ["mentor", "cm", "kam", "admin", "sme"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;

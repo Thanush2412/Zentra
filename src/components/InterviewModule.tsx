@@ -81,7 +81,7 @@ const StatusBadge = ({ status }: { status: string }) => {
   const map: Record<string, string> = {
     pending_cm: "bg-amber-50 text-amber-700 border-amber-200/80",
     pending_origin_cm: "bg-amber-50 text-amber-700 border-amber-200/80",
-    pending_cam_acceptance: "bg-purple-50 text-purple-700 border-purple-200/80",
+    pending_cm_acceptance: "bg-purple-50 text-purple-700 border-purple-200/80",
     capacity_partially_accepted: "bg-amber-50 text-amber-700 border-amber-200/80",
     priority_allocation: "bg-indigo-50 text-indigo-700 border-indigo-200/80",
     pending_final_confirmation: "bg-purple-50 text-purple-700 border-purple-200/80",
@@ -95,7 +95,7 @@ const StatusBadge = ({ status }: { status: string }) => {
   const label: Record<string, string> = {
     pending_cm: "Pending CM",
     pending_origin_cm: "Pending Origin CM",
-    pending_cam_acceptance: "Awaiting CAM Capacity",
+    pending_cm_acceptance: "Awaiting CM Capacity",
     capacity_partially_accepted: "Partial Capacity",
     priority_allocation: "Priority Allocation Ready",
     pending_final_confirmation: "Pending Final Confirm",
@@ -2107,7 +2107,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
   const handleCamCapacityResponse = async (interviewId: string, action: "accept_capacity" | "decline", capacity: number = 0) => {
     try {
-      const data = await apiFetch("/api/interviews/cam-capacity-response", {
+      const data = await apiFetch("/api/interviews/cm-capacity-response", {
         method: "POST",
         body: {
           interview_id: interviewId,
@@ -3673,7 +3673,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         const totalAccepted = Number(req.accepted_capacity || 0);
                         const remainingNeeded = Math.max(0, totalReq - totalAccepted);
                         const myResponse = (req.cam_responses || []).find((r: any) => r.college_id === currentCollegeId);
-                        const isPendingBroadcast = req.status === "pending_cam_acceptance" || req.status === "capacity_partially_accepted" || req.status === "priority_allocation";
+                        const isPendingBroadcast = req.status === "pending_cm_acceptance" || req.status === "capacity_partially_accepted" || req.status === "priority_allocation";
 
                         return (
                           <>

@@ -264,7 +264,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["mentor", "sme", "cam", "kam", "admin"],
+      allowedRoles: ["mentor", "sme", "cm", "kam", "admin"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;
@@ -378,7 +378,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["mentor", "sme", "cam", "kam", "admin"],
+      allowedRoles: ["mentor", "sme", "cm", "kam", "admin"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;
@@ -442,7 +442,7 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["mentor", "sme", "cam", "kam", "admin"],
+      allowedRoles: ["mentor", "sme", "cm", "kam", "admin"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;

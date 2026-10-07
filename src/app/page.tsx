@@ -518,7 +518,7 @@ export default function Home() {
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
               {[
                 { id: "admin", label: "Super Admin", desc: "System control & global settings", path: "/admin", icon: ShieldCheck, color: "from-[#D528A2] to-pink-600" },
-                { id: "cam", label: "CM Dashboard", desc: "Campus operations & timetables", path: "/cam", icon: Building2, color: "from-indigo-600 to-purple-600" },
+                { id: "cm", label: "CM Dashboard", desc: "Campus operations & timetables", path: "/cm", icon: Building2, color: "from-indigo-600 to-purple-600" },
                 { id: "mentor", label: "Faculty Workspace", desc: "Schedules, logs & permissions", path: "/mentor", icon: GraduationCap, color: "from-emerald-600 to-teal-600" },
                 { id: "kam", label: "KAM Portfolio", desc: "Multi-campus account oversight", path: "/kam", icon: Layers, color: "from-purple-600 to-indigo-600" },
                 { id: "student", label: "Student Portal", desc: "Class schedule & task tracker", path: "/student", icon: User, color: "from-blue-600 to-sky-600" },

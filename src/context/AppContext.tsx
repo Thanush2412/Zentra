@@ -62,7 +62,7 @@ export interface CampusManager {
   id: string;
   name: string;
   email: string;
-  role: "cam";
+  role: "cm";
   college_id: string;
   college_name: string;
   college_address?: string;
@@ -166,7 +166,7 @@ export interface Holiday {
   college_id: string;
 }
 
-export type Role = "mentor" | "hr" | "cam" | "kam" | "admin" | "student" | "fee_manager" | "sme" | "L and D";
+export type Role = "mentor" | "hr" | "cm" | "kam" | "admin" | "student" | "fee_manager" | "sme" | "L and D";
 export type ShiftType = "shift_1" | "shift_2" | "general";
 
 export interface WeeklyTask {
@@ -241,7 +241,7 @@ export interface HandoverRequest {
   targetStaffId: string;
   targetStaffName: string;
   reason: string;
-  status: "pending" | "pending_cam" | "approved" | "rejected" | "needs_cam_allocation";
+  status: "pending" | "pending_cm" | "approved" | "rejected" | "needs_cm_allocation";
   headerReason?: string;
   approvedBy?: string;
   timestamp: string;
@@ -837,7 +837,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!userId) {
         if (role === "admin") userId = currentAdmin?.id || "admin_1";
         else if (role === "kam") userId = currentKAM?.id || "";
-        else if (role === "cam") userId = currentCAM?.id || "";
+        else if (role === "cm") userId = currentCAM?.id || "";
         else if (role === "mentor") userId = currentMentor?.id || "";
         else if (role === "student") userId = currentStudent?.id || "";
         else if (role === "sme") userId = currentSME?.id || "";
@@ -954,11 +954,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
         if (slotsData?.success && Array.isArray(slotsData.slots)) setSlots(slotsData.slots);
         if (requestsData?.success && Array.isArray(requestsData.requests)) setRequests(requestsData.requests);
-      } else if (role === "cam") {
+      } else if (role === "cm") {
         const colParam = collegeId ? `&college_id=${encodeURIComponent(collegeId)}` : "";
         const [slotsData, reqsData, mentorsData] = await Promise.all([
           apiFetch(`/api/slots?${colParam.slice(1)}`).catch(() => ({})),
-          apiFetch(`/api/requests?status=pending_cam${colParam}`).catch(() => ({})),
+          apiFetch(`/api/requests?status=pending_cm${colParam}`).catch(() => ({})),
           apiFetch(`/api/mentors?${colParam.slice(1)}`).catch(() => ({}))
         ]);
         if (slotsData?.success && Array.isArray(slotsData.slots)) setSlots(slotsData.slots);
@@ -1065,7 +1065,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(storedUserEmail || storedUserId)}`
         } as any);
         setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-      } else if (parsedRole === "cam") {
+      } else if (parsedRole === "cm" || parsedRole === "cam") {
         setCurrentCAM({
           id: storedUserId,
           name: storedUserName || "Campus Manager",
@@ -1073,7 +1073,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           college_id: storedCollegeId,
           college_name: storedCollegeId,
           kam_id: "",
-          role: "cam"
+          role: "cm"
         });
         setCurrentMentor(null); setCurrentHR(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
       } else if (parsedRole === "kam") {
@@ -1177,14 +1177,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentMentor(m as any);
       }
       setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-    } else if (role === "cam") {
+    } else if (role === "cm" || role === "cam") {
       const targetCamId = userId || sessionUserId;
       if (targetCamId) {
-        const placeholderCam = { id: targetCamId, name: userName || "Campus Manager", email: userEmail, college_id: collegeId, role: "cam" as const };
+        const placeholderCam = { id: targetCamId, name: userName || "Campus Manager", email: userEmail, college_id: collegeId, role: "cm" as const };
         setCurrentCAM(placeholderCam as any);
-        fetch(`/api/cam?id=${encodeURIComponent(targetCamId)}`).then(r => r.json()).then(d => {
+        fetch(`/api/cm?id=${encodeURIComponent(targetCamId)}`).then(r => r.json()).then(d => {
           if (d.success && d.cam) {
-            setCurrentCAM({ ...d.cam, role: "cam" as const });
+            setCurrentCAM({ ...d.cam, role: "cm" as const });
           }
         }).catch(() => {});
       }
@@ -1367,7 +1367,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ── Slot actions ───────────────────────────────────────────────────────────
   const assignSlot = async (mentorId: string, day: string, time: string, course: string, location: string, classGroup?: string) => {
     const actorName = currentCAM?.name || currentKAM?.name || "System";
-    const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
+    const actorRole = currentRole === "cm" ? "Campus Manager" : "Key Account Manager";
     const cleanLocation = location.trim();
     const cleanClassGroup = classGroup ? classGroup.trim() : "General";
     const res = await fetch("/api/slots", {
@@ -1396,7 +1396,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteSlot = async (slotId: string) => {
     const actorName = currentCAM?.name || currentKAM?.name || "System";
-    const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
+    const actorRole = currentRole === "cm" ? "Campus Manager" : "Key Account Manager";
     const res = await fetch(`/api/slots?id=${slotId}&actorName=${encodeURIComponent(actorName)}&actorRole=${encodeURIComponent(actorRole)}`, {
       method: "DELETE"
     });
@@ -1418,7 +1418,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     classGroup?: string
   ): Promise<{ success: boolean; message?: string }> => {
     const actorName = currentCAM?.name || currentKAM?.name || currentMentor?.name || "System";
-    const actorRole = currentRole === "cam" ? "Campus Manager" : currentRole === "kam" ? "Key Account Manager" : "Mentor";
+    const actorRole = currentRole === "cm" ? "Campus Manager" : currentRole === "kam" ? "Key Account Manager" : "Mentor";
     const cleanLocation = location.trim();
     const res = await fetch("/api/slots", {
       method: "PUT",
@@ -1465,7 +1465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const targetMentor = mentors.find(m => m.id === targetStaffId);
       const requestorMentor = mentors.find(m => m.id === mentorId);
       const reqSlot = slots.find(s => s.id === slotId);
-      const isCamTarget = targetStaffId.toLowerCase().includes("cam") || reason.includes("Late Attendance");
+      const isCamTarget = targetStaffId.toLowerCase().includes("cam") || targetStaffId.toLowerCase().includes("cm_") || reason.includes("Late Attendance");
       const newRequest: HandoverRequest = {
         id: data.requestId || data.request?.id || `req_${Date.now()}`,
         requestorId: mentorId,
@@ -1474,13 +1474,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dateStr,
         dateFormatted,
         targetStaffId,
-        targetStaffName: data.request?.targetStaffName || targetMentor?.name || (isCamTarget ? "CAM Approval" : ""),
+        targetStaffName: data.request?.targetStaffName || targetMentor?.name || (isCamTarget ? "CM Approval" : ""),
         reason,
         course: subjectName || data.request?.course || reqSlot?.course || "",
         classGroup: classGroup || data.request?.classGroup || reqSlot?.classGroup || "",
         day: data.request?.day || reqSlot?.day || "",
         time: data.request?.time || reqSlot?.time || "",
-        status: data.request?.status || (isCamTarget ? "pending_cam" : "pending"),
+        status: data.request?.status || (isCamTarget ? "pending_cm" : "pending"),
         timestamp: data.request?.timestamp || new Date().toISOString(),
         request_type: requestType || data.request?.request_type || (isCamTarget ? "late_attendance" : undefined)
       };
@@ -1964,7 +1964,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const handleRequest = async (requestId: string, status: "approved" | "rejected", headerReason?: string, actorRole?: string, course?: string) => {
     const approverName = currentCAM?.name || currentKAM?.name || currentMentor?.name || "System User";
-    const cleanActorRole = actorRole || (currentRole === "cam" ? "Campus Manager" : currentRole === "kam" ? "Key Account Manager" : "Mentor");
+    const cleanActorRole = actorRole || (currentRole === "cm" ? "Campus Manager" : currentRole === "kam" ? "Key Account Manager" : "Mentor");
     const res = await fetch("/api/requests/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2571,7 +2571,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const actorName = currentCAM?.name || currentKAM?.name || "System";
-      const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
+      const actorRole = currentRole === "cm" ? "Campus Manager" : "Key Account Manager";
       const targetCollegeId = currentCAM?.college_id || activeCollegeId || "";
 
       // Delete existing slots for this classGroup first (strictly scoped to this college)
@@ -2607,7 +2607,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearTimetable = async (classGroup: string): Promise<{ success: boolean; message: string; count?: number }> => {
     try {
       const actorName = currentCAM?.name || currentKAM?.name || "System";
-      const actorRole = currentRole === "cam" ? "Campus Manager" : "Key Account Manager";
+      const actorRole = currentRole === "cm" ? "Campus Manager" : "Key Account Manager";
       const targetCollegeId = currentCAM?.college_id || activeCollegeId || "";
 
       const res = await fetch(`/api/slots?classGroup=${encodeURIComponent(classGroup)}&college_id=${encodeURIComponent(targetCollegeId)}&actorName=${encodeURIComponent(actorName)}&actorRole=${encodeURIComponent(actorRole)}`, {
@@ -2790,7 +2790,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const createCAM = async (camData: { id: string; name: string; email: string; college_id: string; kam_id: string }) => {
     try {
-      const res = await fetch("/api/cam", {
+      const res = await fetch("/api/cm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(camData)
@@ -2807,7 +2807,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateCAM = async (camData: { id: string; name: string; email: string; college_id: string; kam_id: string }) => {
     try {
-      const res = await fetch("/api/cam", {
+      const res = await fetch("/api/cm", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(camData)
@@ -2824,7 +2824,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteCAM = async (id: string) => {
     try {
-      const res = await fetch(`/api/cam?id=${id}`, {
+      const res = await fetch(`/api/cm?id=${id}`, {
         method: "DELETE"
       });
       const data = await res.json();

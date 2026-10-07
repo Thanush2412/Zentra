@@ -1084,11 +1084,11 @@ export async function seedDatabase() {
 
     await db.run(
       `INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
-      "cam_1", "Priya Venkatesh", "priya.cam@university.edu", "college_1", "kam_1"
+      "cm_1", "Priya Venkatesh", "priya.cm@university.edu", "college_1", "kam_1"
     );
     await db.run(
       `INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
-      "cam_2", "Arjun Sharma", "arjun.cam@university.edu", "college_2", "kam_1"
+      "cm_2", "Arjun Sharma", "arjun.cm@university.edu", "college_2", "kam_1"
     );
     await db.run(
       `INSERT OR IGNORE INTO admin_users (id, name, email) VALUES (?, ?, ?)`,
@@ -1594,12 +1594,12 @@ async function seedCentralizedUsers(db: any) {
     );
   }
 
-  // 3. CAMs
+  // 3. CMs (Campus Managers)
   const cams = await db.all("SELECT id, name, email FROM campus_managers");
   for (const cam of cams) {
     await db.run(
       "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [cam.id, cam.email, 'password123', 'cam', cam.id, new Date().toISOString(), new Date().toISOString()]
+      [cam.id, cam.email, 'password123', 'cm', cam.id, new Date().toISOString(), new Date().toISOString()]
     );
   }
 

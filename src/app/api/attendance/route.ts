@@ -100,7 +100,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["admin", "cam", "kam", "mentor", "student"],
+      allowedRoles: ["admin", "cm", "kam", "mentor", "student"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;

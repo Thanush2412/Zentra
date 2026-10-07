@@ -11352,7 +11352,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           requestId: camAssigningReq.id,
-          action: "cam_reassign",
+          action: "cm_reassign",
           targetStaffId: camSelectedCoverMentorId,
           approverName: currentCAM?.name || "Campus Manager",
           actorRole: "Campus Manager"
@@ -11363,7 +11363,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         toast("Cover faculty assigned and confirmed successfully!", "success");
         setCamAssigningReq(null);
         // Surgically mark request as approved in state
-        // The cam_reassign action ultimately closes/approves the request
+        // The cm_reassign action ultimately closes/approves the request
       } else {
         toast(data.message || "Failed to assign cover faculty.", "error");
       }

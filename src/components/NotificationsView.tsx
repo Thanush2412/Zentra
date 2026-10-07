@@ -100,10 +100,10 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
 
     if (rawLink) {
       let cleanLink = rawLink.startsWith("/") ? rawLink : `${roleBase}/${rawLink}`;
-      if (cleanLink.startsWith("/cam") && role === "student") {
-        cleanLink = cleanLink.replace(/^\/cam/, "/student");
-      } else if (cleanLink.startsWith("/cam") && role === "mentor") {
-        cleanLink = cleanLink.replace(/^\/cam/, "/mentor");
+      if (cleanLink.startsWith("/cm") && role === "student") {
+        cleanLink = cleanLink.replace(/^\/cm/, "/student");
+      } else if (cleanLink.startsWith("/cm") && role === "mentor") {
+        cleanLink = cleanLink.replace(/^\/cm/, "/mentor");
       }
       return { url: cleanLink, isExternal: false, targetDate, actionLabel: "View Details", icon: ArrowRight };
     }
@@ -111,7 +111,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
     if (fullText.includes("schedule") || fullText.includes("calendar") || fullText.includes("timetable") || fullText.includes("day order") || fullText.includes("holiday") || fullText.includes("class session") || fullText.includes("campus schedule")) {
       if (role === "student") return { url: `/student/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Class Schedule", icon: Calendar };
       if (role === "mentor") return { url: `/mentor/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Timetable", icon: Calendar };
-      if (role === "cam") return { url: `/cam/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule", icon: Calendar };
+      if (role === "cm") return { url: `/cm/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule", icon: Calendar };
       if (role === "kam") return { url: `/kam/attendance${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Attendance", icon: Calendar };
       if (role === "admin") return { url: `/admin/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule", icon: Calendar };
     }
@@ -119,7 +119,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
     if (fullText.includes("interview") || fullText.includes("mock") || fullText.includes("gmeet") || fullText.includes("evaluat") || fullText.includes("split")) {
       if (role === "student") return { url: `/student/interviews`, isExternal: false, targetDate, actionLabel: "View Mock Interview", icon: Video };
       if (role === "mentor") return { url: `/mentor/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews", icon: Video };
-      if (role === "cam") return { url: `/cam/interviews`, isExternal: false, targetDate, actionLabel: "Open Interview Hub", icon: Video };
+      if (role === "cm") return { url: `/cm/interviews`, isExternal: false, targetDate, actionLabel: "Open Interview Hub", icon: Video };
       if (role === "kam") return { url: `/kam/analytics`, isExternal: false, targetDate, actionLabel: "View Analytics", icon: Video };
       if (role === "admin") return { url: `/admin/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews", icon: Video };
     }
@@ -127,7 +127,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
     if (fullText.includes("leave") || fullText.includes("on-duty") || fullText.includes("on duty") || fullText.includes(" od ") || fullText.includes("handover") || fullText.includes("permission") || fullText.includes("approval")) {
       if (role === "student") return { url: `/student/dashboard`, isExternal: false, targetDate, actionLabel: "View Dashboard", icon: ClipboardList };
       if (role === "mentor") return { url: `/mentor/leaves`, isExternal: false, targetDate, actionLabel: "Review Leaves", icon: ClipboardList };
-      if (role === "cam") return { url: `/cam/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals", icon: ClipboardList };
+      if (role === "cm") return { url: `/cm/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals", icon: ClipboardList };
       if (role === "admin") return { url: `/admin/approvals`, isExternal: false, targetDate, actionLabel: "View Approvals", icon: ClipboardList };
       if (role === "hr") return { url: `/hr`, isExternal: false, targetDate, actionLabel: "View HR Portal", icon: ClipboardList };
     }
@@ -135,7 +135,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
     if (fullText.includes("exam") || fullText.includes("test") || fullText.includes("assessment") || fullText.includes("cia")) {
       if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Exam Marks", icon: Award };
       if (role === "mentor") return { url: `/mentor/exams`, isExternal: false, targetDate, actionLabel: "Open Exam Manager", icon: Award };
-      if (role === "cam") return { url: `/cam/exams`, isExternal: false, targetDate, actionLabel: "Open Exam Studio", icon: Award };
+      if (role === "cm") return { url: `/cm/exams`, isExternal: false, targetDate, actionLabel: "Open Exam Studio", icon: Award };
       if (role === "admin") return { url: `/admin/exams`, isExternal: false, targetDate, actionLabel: "View Exams", icon: Award };
     }
 

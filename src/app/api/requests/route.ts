@@ -82,7 +82,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["mentor", "cam", "kam", "admin", "student", "sme"],
+      allowedRoles: ["mentor", "cm", "kam", "admin", "student", "sme"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;
@@ -96,14 +96,18 @@ export async function POST(request: Request) {
     }
 
     // ─── Meta-Request Fast Path ───────────────────────────────────────────────
-    // Handles synthetic slot IDs (mentor_daily_punch_, acad_log_edit_) or CAM-directed
-    // approval requests (late attendance edit requests, targetStaffId="cam_approval" / "CAM-APPROVAL").
-    // These bypass the normal slot/coverStaff lookup and are stored directly as pending_cam requests for CAM review.
+    // Handles synthetic slot IDs (mentor_daily_punch_, acad_log_edit_) or CM-directed
+    // approval requests (late attendance edit requests, targetStaffId="cm_approval" / "CM-APPROVAL").
+    // These bypass the normal slot/coverStaff lookup and are stored directly as pending_cm requests for CM review.
     const normalizedTargetStaffId = typeof targetStaffId === "string" ? targetStaffId.trim() : "";
     const isMetaRequest =
+      normalizedTargetStaffId.toLowerCase() === "cm_approval" ||
+      normalizedTargetStaffId.toLowerCase() === "cm-approval" ||
       normalizedTargetStaffId.toLowerCase() === "cam_approval" ||
       normalizedTargetStaffId.toLowerCase() === "cam-approval" ||
-      normalizedTargetStaffId.toLowerCase().includes("cam") ||
+      normalizedTargetStaffId.toLowerCase() === "cam" ||
+      normalizedTargetStaffId.toLowerCase() === "cm"
+      || normalizedTargetStaffId.toLowerCase().includes("cam") ||
       slotId.startsWith("mentor_daily_punch_") ||
       slotId.startsWith("acad_log_edit_") ||
       (typeof reason === "string" && reason.toLowerCase().includes("late attendance"));
@@ -120,10 +124,10 @@ export async function POST(request: Request) {
       const newId = "r_" + Date.now();
       const metaCourse = course || subjectName || slot?.course || slotId;
       const metaClassGroup = classGroup || slot?.classGroup || requestor.department || "Faculty";
-      const metaTargetStaffName = targetStaffName || (normalizedTargetStaffId.toLowerCase().includes("cam") ? "CAM Approval" : "CAM Approval");
+      const metaTargetStaffName = targetStaffName || (normalizedTargetStaffId.toLowerCase().includes("cm") ? "CM Approval" : "CM Approval");
       const metaDay = slot?.day || "";
       const metaTime = slot?.time || "";
-      const storedTargetStaffId = normalizedTargetStaffId.toLowerCase() === "cam-approval" ? "cam_approval" : normalizedTargetStaffId;
+      const storedTargetStaffId = normalizedTargetStaffId.toLowerCase() === "cam-approval" ? "cm_approval" : normalizedTargetStaffId;
       // ROLE_UI_AUDIT T2: structured type marker (e.g. "late_punch") — the client
       // matches approvals on this instead of parsing the reason text.
 
@@ -132,7 +136,7 @@ export async function POST(request: Request) {
           `INSERT INTO handover_requests (
              id, requestorId, requestorName, slotId, course, day, time,
              dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup, request_type
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cm', ?, ?, ?)`,
           newId,
           mentorId,
           requestor.name,
@@ -157,7 +161,7 @@ export async function POST(request: Request) {
               `INSERT INTO handover_requests (
                  id, requestorId, requestorName, slotId, course, day, time,
                  dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?)`,
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cm', ?, ?)`,
               newId,
               mentorId,
               requestor.name,
@@ -175,12 +179,12 @@ export async function POST(request: Request) {
               requestType || "late_punch"
             );
           } catch (retryErr: any) {
-            // Fallback: use requestor's own mentorId as valid target FK reference while keeping targetStaffName as CAM Approval
+            // Fallback: use requestor's own mentorId as valid target FK reference while keeping targetStaffName as CM Approval
             await db.run(
               `INSERT INTO handover_requests (
                  id, requestorId, requestorName, slotId, course, day, time,
                  dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup, request_type
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cam', ?, ?, ?)`,
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cm', ?, ?, ?)`,
               newId,
               mentorId,
               requestor.name,
@@ -228,7 +232,7 @@ export async function POST(request: Request) {
           targetStaffId: storedTargetStaffId,
           targetStaffName: metaTargetStaffName,
           reason,
-          status: "pending_cam",
+          status: "pending_cm",
           timestamp: new Date().toISOString(),
           classGroup: metaClassGroup
         }
@@ -278,7 +282,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const initialStatus = isEmergency ? "pending_cam" : "pending";
+    const initialStatus = isEmergency ? "pending_cm" : "pending";
 
 
 

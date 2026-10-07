@@ -249,10 +249,10 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     if (rawLink) {
       let cleanLink = rawLink.startsWith("/") ? rawLink : `${roleBase}/${rawLink}`;
       // Adapt cross-role links if needed
-      if (cleanLink.startsWith("/cam") && role === "student") {
-        cleanLink = cleanLink.replace(/^\/cam/, "/student");
-      } else if (cleanLink.startsWith("/cam") && role === "mentor") {
-        cleanLink = cleanLink.replace(/^\/cam/, "/mentor");
+      if (cleanLink.startsWith("/cm") && role === "student") {
+        cleanLink = cleanLink.replace(/^\/cm/, "/student");
+      } else if (cleanLink.startsWith("/cm") && role === "mentor") {
+        cleanLink = cleanLink.replace(/^\/cm/, "/mentor");
       }
       return { url: cleanLink, isExternal: false, targetDate, actionLabel: "View Details" };
     }
@@ -261,7 +261,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     if (fullText.includes("schedule") || fullText.includes("calendar") || fullText.includes("timetable") || fullText.includes("day order") || fullText.includes("holiday") || fullText.includes("class session") || fullText.includes("campus schedule")) {
       if (role === "student") return { url: `/student/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Class Schedule" };
       if (role === "mentor") return { url: `/mentor/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Timetable" };
-      if (role === "cam") return { url: `/cam/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule" };
+      if (role === "cm") return { url: `/cm/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule" };
       if (role === "kam") return { url: `/kam/attendance${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Attendance" };
       if (role === "admin") return { url: `/admin/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule" };
     }
@@ -269,7 +269,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     if (fullText.includes("interview") || fullText.includes("mock") || fullText.includes("gmeet") || fullText.includes("evaluat") || fullText.includes("split")) {
       if (role === "student") return { url: `/student/interviews`, isExternal: false, targetDate, actionLabel: "View Interview" };
       if (role === "mentor") return { url: `/mentor/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews" };
-      if (role === "cam") return { url: `/cam/interviews`, isExternal: false, targetDate, actionLabel: "Open Interviews" };
+      if (role === "cm") return { url: `/cm/interviews`, isExternal: false, targetDate, actionLabel: "Open Interviews" };
       if (role === "kam") return { url: `/kam/analytics`, isExternal: false, targetDate, actionLabel: "View Analytics" };
       if (role === "admin") return { url: `/admin/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews" };
     }
@@ -277,7 +277,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     if (fullText.includes("leave") || fullText.includes("on-duty") || fullText.includes("on duty") || fullText.includes(" od ") || fullText.includes("handover") || fullText.includes("permission") || fullText.includes("approval")) {
       if (role === "student") return { url: `/student/dashboard`, isExternal: false, targetDate, actionLabel: "View Dashboard" };
       if (role === "mentor") return { url: `/mentor/leaves`, isExternal: false, targetDate, actionLabel: "View Leaves" };
-      if (role === "cam") return { url: `/cam/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals" };
+      if (role === "cm") return { url: `/cm/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals" };
       if (role === "admin") return { url: `/admin/approvals`, isExternal: false, targetDate, actionLabel: "View Approvals" };
       if (role === "hr") return { url: `/hr`, isExternal: false, targetDate, actionLabel: "View HR Portal" };
     }
@@ -285,7 +285,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     if (fullText.includes("exam") || fullText.includes("test") || fullText.includes("assessment")) {
       if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Test Marks" };
       if (role === "mentor") return { url: `/mentor/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
-      if (role === "cam") return { url: `/cam/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
+      if (role === "cm") return { url: `/cm/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
       if (role === "admin") return { url: `/admin/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
     }
 
@@ -672,7 +672,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
             <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block truncate">
               {currentRole === "mentor" && "Faculty Workspace"}
               {currentRole === "hr" && "HR Audit Portal"}
-              {currentRole === "cam" && "CM Dashboard"}
+              {currentRole === "cm" && "CM Dashboard"}
               {currentRole === "kam" && "Key Account Manager"}
               {currentRole === "admin" && "Super Admin Console"}
               {currentRole === "student" && "Student Portal"}
@@ -995,7 +995,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       </header>
 
       {/* Compact Separate Floating Pill Card placed to the right of the main header */}
-      {currentRole === "cam" && (
+      {currentRole === "cm" && (
         <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2.5 flex items-center">
           <div className="floating-header px-2 py-1 flex items-center justify-center transition-all rounded-xl border border-slate-200/80 shadow-sm bg-white/90 backdrop-blur-md animate-fadeIn">
             <button

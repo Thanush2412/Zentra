@@ -34,7 +34,7 @@ export default function CAMTabPage() {
     setActiveTab(newTab);
     if (typeof window !== "undefined") {
       const cleanTab = newTab.split("?")[0];
-      const targetUrl = `/cam/${cleanTab}`;
+      const targetUrl = `/cm/${cleanTab}`;
       if (window.location.pathname !== targetUrl) {
         window.history.pushState(null, "", targetUrl);
       }
@@ -42,7 +42,7 @@ export default function CAMTabPage() {
   }, []);
 
   return (
-    <DashboardLayout requiredRole="cam">
+    <DashboardLayout requiredRole="cm">
       <CAMDashboard
         activeTab={activeTab as any}
         onTabChange={handleTabChange}

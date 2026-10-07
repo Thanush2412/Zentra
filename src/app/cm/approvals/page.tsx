@@ -5,7 +5,7 @@ import { CMApprovalsHub } from "@/components/CMApprovalsHub";
 
 export default function CAMApprovalsPage() {
   return (
-    <DashboardLayout requiredRole="cam">
+    <DashboardLayout requiredRole="cm">
       <CMApprovalsHub />
     </DashboardLayout>
   );

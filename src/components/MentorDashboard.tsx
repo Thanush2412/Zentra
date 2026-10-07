@@ -101,7 +101,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Late Punch CAM Request state
+  // Late Punch CM Request state
   const [latePunchExplanation, setLatePunchExplanation] = useState("");
   const [submittingLatePunchReq, setSubmittingLatePunchReq] = useState(false);
 
@@ -155,7 +155,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   // with a legacy fallback to the old reason-text sniffing for pre-existing rows.
   const isLatePunchRequest = (r: any) =>
     r.requestType === "late_punch" || r.request_type === "late_punch" ||
-    r.reason?.includes("Late Mentor Attendance Punch") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Mentor Punch");
+    r.reason?.includes("Late Mentor Attendance Punch") || r.targetStaffName?.includes("CM Approval") || r.course?.includes("Late Mentor Punch");
 
   const approvedLateCamReq = useMemo(() => {
     return requests.find(r =>
@@ -241,7 +241,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
       return;
     }
     if (isPunchLocked) {
-      toast("30-Minute Daily Punch Deadline Expired. Please submit an explanation to CAM for approval.", "warning");
+      toast("30-Minute Daily Punch Deadline Expired. Please submit an explanation to CM for approval.", "warning");
       return;
     }
     if (status === "Present") {
@@ -265,7 +265,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
               <span className="text-[10px] font-medium text-slate-400 font-mono">({todayStr})</span>
               {approvedLateCamReq && punchStatus === "Not Punched" && (
                 <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9.5px] font-extrabold">
-                  ✓ CAM Unlocked
+                  ✓ CM Unlocked
                 </span>
               )}
             </div>
@@ -350,11 +350,11 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
             <div className="flex items-center gap-2 min-w-0">
               <Clock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
               <span className="truncate font-medium">
-                Late Punch Request sent to CAM: <span className="italic">"{pendingLateCamReq.reason?.replace("[Late Mentor Attendance Punch] ", "")}"</span>
+                Late Punch Request sent to CM: <span className="italic">"{pendingLateCamReq.reason?.replace("[Late Mentor Attendance Punch] ", "")}"</span>
               </span>
             </div>
             <span className="text-[10px] font-black uppercase text-amber-700 bg-white px-2 py-0.5 rounded border border-amber-200 shrink-0">
-              Pending CAM
+              Pending CM
             </span>
           </div>
         ) : (
@@ -382,7 +382,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
                       dateStr: todayStr,
                       dateFormatted: todayStr,
                       targetStaffId: "cam_approval",
-                      targetStaffName: "CAM Approval (Late Mentor Attendance Punch)",
+                      targetStaffName: "CM Approval (Late Mentor Attendance Punch)",
                       reason: "[Late Mentor Attendance Punch] " + latePunchExplanation.trim(),
                       course: "Late Mentor Attendance Punch",
                       classGroup: mentor.mentor_group || mentor.department || "Faculty",
@@ -391,7 +391,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
                   });
                   const json = await res.json();
                   if (json.success) {
-                    toast("Late Punch request sent to CAM for approval!", "success");
+                    toast("Late Punch request sent to CM for approval!", "success");
                     // Surgical update: prepend the new request to state without a full reload
                     if (json.request) {
                       setRequests(prev => [json.request, ...prev]);
@@ -407,7 +407,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
               }}
               className="w-full sm:w-auto px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
-              {submittingLatePunchReq ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Request CAM Exemption"}
+              {submittingLatePunchReq ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Request CM Exemption"}
             </button>
           </div>
         )
@@ -822,7 +822,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
 
   return (
     <div className="space-y-6">
-      {/* Top Banner & Sub-View Switcher matching CAM Dashboard soft slate background */}
+      {/* Top Banner & Sub-View Switcher matching CM Dashboard soft slate background */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs">
         <div className="flex items-center gap-3.5">
           <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
@@ -937,7 +937,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                       </td>
                       <td className="p-3">
                         {c.status === "pending" && <span className="px-2.5 py-0.5 rounded-full bg-amber-100/80 text-amber-800 text-[10px] font-black uppercase">Pending Your Action</span>}
-                        {c.status === "pending_cam" && <span className="px-2.5 py-0.5 rounded-full bg-blue-100/80 text-blue-800 text-[10px] font-black uppercase">Pending CAM</span>}
+                        {c.status === "pending_cam" && <span className="px-2.5 py-0.5 rounded-full bg-blue-100/80 text-blue-800 text-[10px] font-black uppercase">Pending CM</span>}
                         {c.status === "approved" && <span className="px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 text-[10px] font-black uppercase">Accepted</span>}
                         {c.status === "rejected" && <span className="px-2.5 py-0.5 rounded-full bg-rose-100/80 text-rose-800 text-[10px] font-black uppercase">Declined</span>}
                       </td>
@@ -1180,7 +1180,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
         </div>
       )}
 
-      {/* Styled Popup Modal: 2-Step Wizard matching CAM Dashboard Palette */}
+      {/* Styled Popup Modal: 2-Step Wizard matching CM Dashboard Palette */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <form onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp space-y-0">
@@ -2503,7 +2503,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           college_id: currentMentor.college_id,
-          remind_cam_for_date: dateStr,
+          remind_cm_for_date: dateStr,
           remind_by_name: currentMentor.name,
           remind_by_email: currentMentor.email,
           title: `Day Order Not Configured — ${dateFormatted}`,
@@ -3524,7 +3524,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       return {
         open: false,
         reason: "expired",
-        message: `This period ended at ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Direct marking is closed; please request CAM approval with a reason to mark attendance.`
+        message: `This period ended at ${endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Direct marking is closed; please request CM approval with a reason to mark attendance.`
       };
     }
 
@@ -3974,7 +3974,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
 
 
-  // Helper to resolve the active day for a calendar date, accounting for CAM Day Order overrides (O(1))
+  // Helper to resolve the active day for a calendar date, accounting for CM Day Order overrides (O(1))
   const getMappedDayForDate = (dateStr: string, defaultDay: string) => {
     const dailyConfig = dailyConfigsMap.get(dateStr);
 
@@ -4292,12 +4292,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     effectiveWeekDates, currentMentor.id, dailyConfigsMap
   ]);
 
-  // Pre-computed late attendance CAM request lookup sets — avoid per-cell array scans in timetable JSX
+  // Pre-computed late attendance CM request lookup sets — avoid per-cell array scans in timetable JSX
   const lateAttendanceCamApprovedSet = useMemo(() => {
     const s = new Set<string>(); // key: "slotId|dateStr"
     requests.forEach(r => {
       if (r.status === "approved" &&
-        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))) {
+        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CM Approval") || r.course?.includes("Late Attendance"))) {
         s.add(`${r.slotId}|${r.dateStr}`);
       }
     });
@@ -4308,7 +4308,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     const s = new Set<string>(); // key: "slotId|dateStr"
     requests.forEach(r => {
       if ((r.status === "pending" || r.status === "pending_cam") &&
-        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))) {
+        (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CM Approval") || r.course?.includes("Late Attendance"))) {
         s.add(`${r.slotId}|${r.dateStr}`);
       }
     });
@@ -4645,7 +4645,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       }
     }
 
-    // Go straight to Roster Grid (Step 2) as configured by CAM daily
+    // Go straight to Roster Grid (Step 2) as configured by CM daily
     setAttendanceStep(2);
     setIsModalOpen(true);
   };
@@ -5447,20 +5447,20 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     r.slotId === item.slot.id &&
                                     r.dateStr === dateStr &&
                                     r.status === "approved" &&
-                                    (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
+                                    (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CM Approval") || r.course?.includes("Late Attendance"))
                                   );
                                   const pendingLateCamReq = requests.find(r =>
                                     r.slotId === item.slot.id &&
                                     r.dateStr === dateStr &&
                                     (r.status === "pending" || r.status === "pending_cam") &&
-                                    (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CAM Approval") || r.course?.includes("Late Attendance"))
+                                    (r.reason?.includes("Late Attendance") || r.targetStaffName?.includes("CM Approval") || r.course?.includes("Late Attendance"))
                                   );
                                   const isDeadlineExpired = !windowCheck.open && windowCheck.reason === "expired" && !approvedLateCamReq;
 
                                   if (pendingLateCamReq) {
                                     return (
                                       <span className="text-[9.5px] font-black text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center justify-center gap-1 w-full sm:w-auto text-center">
-                                        <Clock className="h-3 w-3 shrink-0" /> Pending CAM
+                                        <Clock className="h-3 w-3 shrink-0" /> Pending CM
                                       </span>
                                     );
                                   }
@@ -5487,7 +5487,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         }}
                                         className="w-full sm:w-auto text-center px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-black text-[9.5px] uppercase tracking-wider rounded-lg shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1"
                                       >
-                                        <Clock className="h-3 w-3 shrink-0" /> Request CAM
+                                        <Clock className="h-3 w-3 shrink-0" /> Request CM
                                       </button>
                                     );
                                   }
@@ -6094,7 +6094,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   );
                                 }
                                 return (
-                                  <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 shrink-0 text-center leading-tight" title="Day order not configured by CAM">
+                                  <span className="mt-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase bg-amber-100 text-amber-700 border border-amber-200 shrink-0 text-center leading-tight" title="Day order not configured by CM">
                                     No Order
                                   </span>
                                 );
@@ -6321,14 +6321,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       if (pendingLateCamReq) {
                                         return (
                                           <span className="text-[8.5px] font-black text-amber-700 flex items-center gap-0.5 uppercase tracking-wider">
-                                            ⏰ CAM Pending
+                                            ⏰ CM Pending
                                           </span>
                                         );
                                       }
                                       if (isDeadlineExpired) {
                                         return (
                                           <span className="text-[8.5px] font-black text-rose-700 flex items-center gap-0.5 uppercase tracking-wider">
-                                            ⏰ Request CAM
+                                            ⏰ Request CM
                                           </span>
                                         );
                                       }
@@ -7136,7 +7136,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     </>
                                   )}
                                 </div>
-                                {/* View + Edit button: Click to view, Edit for CAM request if expired */}
+                                {/* View + Edit button: Click to view, Edit for CM request if expired */}
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -7148,12 +7148,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     const windowCheck = checkAttendanceWindow(dateStr, session.slot!.time);
                                     const isExpired = !windowCheck.open && windowCheck.reason === "expired";
                                     
-                                    // Check if already has CAM approval
+                                    // Check if already has CM approval
                                     const camKey = `${session.slot!.id}|${dateStr}`;
                                     const hasApproval = lateAttendanceCamApprovedSet.has(camKey);
                                     
                                     if (isExpired && !hasApproval) {
-                                      // Show CAM request modal
+                                      // Show CM request modal
                                       setSelectedCell({
                                         day: weekday,
                                         dateStr,
@@ -7166,7 +7166,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       setCamRequestReason("");
                                       setFormError("");
                                     } else {
-                                      // Open attendance studio for editing (window open or has CAM approval)
+                                      // Open attendance studio for editing (window open or has CM approval)
                                       handleCellClick(weekday, dateStr, dateFormatted, session.slot!.time);
                                     }
                                   }}
@@ -7206,10 +7206,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           const windowCheck = checkAttendanceWindow(selectedCell.dateStr, selectedCell.time);
           const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
-          const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
+          const hasCMApproval = lateAttendanceCamApprovedSet.has(camKey);
           const pendingLateCamReq = lateAttendanceCamPendingSet.has(camKey);
           const isFuture = !windowCheck.open && windowCheck.reason === "future";
-          const isLocked = attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval;
+          const isLocked = attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCMApproval;
           const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
 
           return (
@@ -7275,7 +7275,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
                     {pendingLateCamReq ? (
                       <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 font-bold text-xs">
-                        <Clock className="w-4 h-4 animate-pulse" /> Request Pending CAM Approval
+                        <Clock className="w-4 h-4 animate-pulse" /> Request Pending CM Approval
                       </div>
                     ) : (
                       <button
@@ -7288,7 +7288,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         }}
                         className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        <Send className="w-3.5 h-3.5" /> Request CAM Approval to Mark Attendance
+                        <Send className="w-3.5 h-3.5" /> Request CM Approval to Mark Attendance
                       </button>
                     )}
                   </div>
@@ -7481,12 +7481,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const isFuture = !windowCheck.open && windowCheck.reason === "future";
           const isLocked = attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired";
           
-          // Check if CAM has approved late attendance edit for this session
+          // Check if CM has approved late attendance edit for this session
           const camKey = `${selectedCell.slot.id}|${selectedCell.dateStr}`;
-          const hasCAMApproval = lateAttendanceCamApprovedSet.has(camKey);
+          const hasCMApproval = lateAttendanceCamApprovedSet.has(camKey);
           
-          // Allow editing if: lock is disabled OR window is open OR has CAM approval for late edit. Block future periods unconditionally.
-          const isPastDay = isFuture || (attendanceLockEnabled && ((selectedCell.dateStr < todayStr || isLocked) && !hasCAMApproval));
+          // Allow editing if: lock is disabled OR window is open OR has CM approval for late edit. Block future periods unconditionally.
+          const isPastDay = isFuture || (attendanceLockEnabled && ((selectedCell.dateStr < todayStr || isLocked) && !hasCMApproval));
 
           const presentCount = classStudents.filter(s => (localAttendance[s.id] || "present") === "present").length;
           const absentCount = classStudents.filter(s => localAttendance[s.id] === "absent").length;
@@ -7526,7 +7526,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const handleSaveAttendance = async () => {
             // ── Day config pre-flight guard ──────────────────────────────
             if (!isDayConfigSet) {
-              setFormError("Day order/type has not been configured for this date. The CAM must set the day schedule before you can mark attendance.");
+              setFormError("Day order/type has not been configured for this date. The CM must set the day schedule before you can mark attendance.");
               return;
             }
             // ── End day config guard ──────────────────────────────────────
@@ -7536,7 +7536,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               setFormError("Class has not started yet. You cannot mark attendance for a future period or date.");
               return;
             }
-            if (attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCAMApproval) {
+            if (attendanceLockEnabled && !windowCheck.open && windowCheck.reason === "expired" && !hasCMApproval) {
               setFormError(windowCheck.message || "Attendance window is closed.");
               return;
             }
@@ -7656,9 +7656,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             View Only
                           </span>
                         )}
-                        {!isPastDay && hasCAMApproval && (
+                        {!isPastDay && hasCMApproval && (
                           <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
-                            CAM Approved
+                            CM Approved
                           </span>
                         )}
                         {!attendanceLockEnabled && (
@@ -7709,7 +7709,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-amber-800">Day Order Not Configured</p>
                         <p className="text-[11px] text-amber-700 font-medium mt-0.5">
-                          The CAM has not set a day order or day type for <span className="font-bold">{selectedCell.dateFormatted}</span>. Attendance cannot be saved until the CAM configures this date in the Daily Schedule.
+                          The CM has not set a day order or day type for <span className="font-bold">{selectedCell.dateFormatted}</span>. Attendance cannot be saved until the CM configures this date in the Daily Schedule.
                         </p>
                       </div>
                       <button
@@ -7739,7 +7739,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-rose-800">Holiday — Attendance Blocked</p>
                       <p className="text-[11px] text-rose-700 font-medium mt-0.5">
-                        This date is marked as a <span className="font-bold">Holiday</span> by the CAM. Attendance cannot be recorded.
+                        This date is marked as a <span className="font-bold">Holiday</span> by the CM. Attendance cannot be recorded.
                         {dayConfigDetails.notes ? <span> Note: {dayConfigDetails.notes}</span> : null}
                       </p>
                     </div>
@@ -8018,7 +8018,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       onClick={handleSaveAttendance}
                       disabled={isSubmittingAttendance || isPastDay || !isDayConfigSet || (isDayConfigSet && dayConfigDetails?.day_type === "holiday")}
                       className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-                      title={!isDayConfigSet ? "CAM must configure day order for this date first" : (dayConfigDetails?.day_type === "holiday" ? "Attendance cannot be marked on a holiday" : undefined)}
+                      title={!isDayConfigSet ? "CM must configure day order for this date first" : (dayConfigDetails?.day_type === "holiday" ? "Attendance cannot be marked on a holiday" : undefined)}
                     >
                       {isSubmittingAttendance ? (
                         <>
@@ -8040,7 +8040,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         })()}
 
         {/* ══════════════════════════════════════════════════════════════════════ */}
-        {/* POPUP 3: REQUEST CAM EDIT PERMISSION FOR LATE ATTENDANCE              */}
+        {/* POPUP 3: REQUEST CM EDIT PERMISSION FOR LATE ATTENDANCE              */}
         {/* ══════════════════════════════════════════════════════════════════════ */}
         {isCamEditRequestModalOpen && selectedCell && selectedCell.slot && (() => {
           const { name: deptShort, sem } = getShortClassGroup(selectedCell.slot.classGroup);
@@ -8056,7 +8056,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             setFormError("");
 
             try {
-              // Submit as a handover request with special markers for CAM late attendance approval
+              // Submit as a handover request with special markers for CM late attendance approval
               await requestHandover(
                 currentMentor.id,
                 selectedCell.slot!.id,
@@ -8066,13 +8066,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 `Late Attendance Edit Request: ${camRequestReason.trim()}`,
                 selectedCell.slot?.course,
                 selectedCell.slot?.classGroup,
-                "CAM Approval (Late Attendance Edit)",
+                "CM Approval (Late Attendance Edit)",
                 "late_attendance"
               );
 
               setIsCamEditRequestModalOpen(false);
               setCamRequestReason("");
-              toast("CAM edit permission request submitted successfully!", "success");
+              toast("CM edit permission request submitted successfully!", "success");
             } catch (err: any) {
               setFormError(err.message || "Something went wrong.");
             } finally {
@@ -8091,7 +8091,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       Request Edit Permission
                     </h3>
                     <p className="text-xs text-slate-500 font-medium mt-1">
-                      This attendance record is locked. Request CAM approval to edit.
+                      This attendance record is locked. Request CM approval to edit.
                     </p>
                   </div>
                   <button
@@ -8142,7 +8142,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <div className="text-xs text-amber-900">
                     <p className="font-bold mb-1">Attendance window has expired</p>
                     <p className="text-amber-700">
-                      This session is past the standard edit window. Your request will be sent to the Campus Academic Manager (CAM) for approval.
+                      This session is past the standard edit window. Your request will be sent to the Campus Academic Manager (CM) for approval.
                     </p>
                   </div>
                 </div>
@@ -8199,7 +8199,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       ) : (
                         <>
                           <Send className="w-4 h-4" />
-                          <span>Submit Request to CAM</span>
+                          <span>Submit Request to CM</span>
                         </>
                       )}
                     </button>
@@ -9347,7 +9347,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               return { dateSlots: [], dayOrder, dayType, mappedDay, dayName, isConfigured: false, isHoliday: false };
             }
 
-            // 1. Regular assigned slots for this CAM day order / weekday
+            // 1. Regular assigned slots for this CM day order / weekday
             const ownSlots = mySlots.filter(s => s.day === mappedDay && (!s.college_id || !currentMentor.college_id || s.college_id === currentMentor.college_id));
             const activeOwnSlots = ownSlots.filter(s => !approvedHandovers.some(h => h.slotId === s.id && h.dateStr === dateStr));
 
@@ -9369,7 +9369,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             if (isHoliday) {
               toast("Today is declared a Holiday by Campus Manager. Period logging is disabled.", "warning");
             } else if (!isConfigured) {
-              toast("The Campus Manager has not set the Day Order for today yet. Period logging requires CAM Day Order setting.", "warning");
+              toast("The Campus Manager has not set the Day Order for today yet. Period logging requires CM Day Order setting.", "warning");
             }
 
             // Prefer slots that have already started
@@ -9397,7 +9397,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           };
 
           const openEditLogModal = (entry: any) => {
-            // Direct editing of created logs is locked for audit integrity — request edit from CAM
+            // Direct editing of created logs is locked for audit integrity — request edit from CM
             setTargetAcadEditLog(entry);
             setAcadEditProposedTopic(entry.topic || "");
             setAcadEditProposedComments(entry.comments || "");
@@ -9424,7 +9424,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   dateStr: targetAcadEditLog.date,
                   dateFormatted: targetAcadEditLog.date,
                   targetStaffId: "cam_approval",
-                  targetStaffName: "CAM Approval (Academic Period Log Edit Request)",
+                  targetStaffName: "CM Approval (Academic Period Log Edit Request)",
                   reason: `[Academic Log Edit Request] Log ID: ${targetAcadEditLog.id} | Date: ${targetAcadEditLog.date} (${targetAcadEditLog.period_slot}) | Subject: ${targetAcadEditLog.subject} | Class: ${targetAcadEditLog.class_group} | Proposed Topic: ${acadEditProposedTopic.trim()} | Proposed Remarks: ${acadEditProposedComments.trim()} | Reason: ${acadEditReason.trim()}`,
                   course: targetAcadEditLog.subject,
                   classGroup: targetAcadEditLog.class_group
@@ -9436,7 +9436,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 setShowAcadEditRequestModal(false);
                 setTargetAcadEditLog(null);
               } else {
-                toast(json.message || "Failed to submit request to CAM.", "error");
+                toast(json.message || "Failed to submit request to CM.", "error");
               }
             } catch (err: any) {
               toast("Error: " + err.message, "error");
@@ -9480,11 +9480,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               return;
             }
             if (!isConfigured || !dayOrder || dayOrder === "None") {
-              toast("Campus Manager has not configured the Day Order for today. Period logging requires CAM Day Order setting.", "warning");
+              toast("Campus Manager has not configured the Day Order for today. Period logging requires CM Day Order setting.", "warning");
               return;
             }
             if (!acadFormPeriodSlot) {
-              toast("Please select a valid scheduled period slot for today's CAM " + dayOrder + " schedule.", "warning");
+              toast("Please select a valid scheduled period slot for today's CM " + dayOrder + " schedule.", "warning");
               return;
             }
 
@@ -11269,9 +11269,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2.5 text-xs">
                           <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                           <div className="space-y-0.5">
-                            <span className="font-extrabold text-amber-800">CAM Day Order Not Set</span>
+                            <span className="font-extrabold text-amber-800">CM Day Order Not Set</span>
                             <p className="text-[11px] text-amber-700 font-medium">
-                              The Campus Manager (CAM) has not configured the Day Order for today. Period logging works strictly as per CAM setting Day Order.
+                              The Campus Manager (CM) has not configured the Day Order for today. Period logging works strictly as per CM setting Day Order.
                             </p>
                           </div>
                         </div>
@@ -11286,14 +11286,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             </div>
                             <span className="text-[10.5px] text-slate-500 font-medium block">
                               {dateSlots.length > 0
-                                ? `${dateSlots.length} scheduled period${dateSlots.length !== 1 ? 's' : ''} assigned to you under CAM ${dayOrder}`
-                                : `No scheduled periods assigned to you for today's CAM ${dayOrder} (${mappedDay}) schedule`}
+                                ? `${dateSlots.length} scheduled period${dateSlots.length !== 1 ? 's' : ''} assigned to you under CM ${dayOrder}`
+                                : `No scheduled periods assigned to you for today's CM ${dayOrder} (${mappedDay}) schedule`}
                             </span>
                           </div>
 
                           {dateSlots.length > 0 && (
                             <span className="px-2 py-1 bg-emerald-50 text-emerald-700 font-black text-[9.5px] rounded-lg border border-emerald-200 uppercase shrink-0">
-                              CAM Day Order Active
+                              CM Day Order Active
                             </span>
                           )}
                         </div>
@@ -11352,8 +11352,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   {isHoliday
                                     ? "No periods available (Holiday)"
                                     : !isConfigured
-                                    ? "CAM Day Order not configured"
-                                    : `No scheduled periods under CAM ${dayOrder} (${mappedDay})`}
+                                    ? "CM Day Order not configured"
+                                    : `No scheduled periods under CM ${dayOrder} (${mappedDay})`}
                                 </option>
                               )}
                             </select>
@@ -11480,7 +11480,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               isHoliday
                                 ? "Disabled: Today is declared a holiday"
                                 : !isConfigured
-                                ? "Disabled: CAM Day Order must be configured first"
+                                ? "Disabled: CM Day Order must be configured first"
                                 : dateSlots.length === 0
                                 ? "Disabled: No scheduled periods assigned to you today"
                                 : isSelectedPeriodUpcoming
@@ -11498,7 +11498,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 );
               })()}
 
-              {/* Modal: Request Log Correction from Campus Manager (CAM) */}
+              {/* Modal: Request Log Correction from Campus Manager (CM) */}
               {showAcadEditRequestModal && targetAcadEditLog && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
                   <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-scaleUp">
@@ -11559,7 +11559,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </div>
 
                       <div className="space-y-1">
-                        <label className="text-[10px] text-slate-700 font-extrabold uppercase tracking-wider block">Reason for Correction / Justification for CAM *</label>
+                        <label className="text-[10px] text-slate-700 font-extrabold uppercase tracking-wider block">Reason for Correction / Justification for CM *</label>
                         <textarea
                           rows={3}
                           required
@@ -11584,7 +11584,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           className="px-5 py-2 rounded-xl text-xs font-extrabold text-white bg-amber-600 hover:bg-amber-700 transition-all cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50"
                         >
                           {isSubmittingAcadEditReq && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                          <span>Submit Request to CAM</span>
+                          <span>Submit Request to CM</span>
                         </button>
                       </div>
                     </form>

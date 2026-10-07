@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     }
 
     const duplicateCheck = await db.get(
-      `SELECT id FROM handover_requests WHERE requestorId = ? AND slotId = ? AND dateStr = ? AND targetStaffId = ? AND request_type = 'swap_compensate' AND status IN ('pending', 'pending_cam')`,
+      `SELECT id FROM handover_requests WHERE requestorId = ? AND slotId = ? AND dateStr = ? AND targetStaffId = ? AND request_type = 'swap_compensate' AND status IN ('pending', 'pending_cm', 'pending_cam')`,
       requestorId, offerSlotId, offerDateStr, targetStaffId
     );
     if (duplicateCheck) {

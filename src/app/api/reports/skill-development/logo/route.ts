@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    await requireRole(request, "admin", "cam");
+    await requireRole(request, "admin", "cm");
     const formData = await request.formData();
     const rawCollegeId = String(formData.get("collegeId") || "");
     const collegeId = safeCollegeId(rawCollegeId);
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    await requireRole(request, "admin", "cam");
+    await requireRole(request, "admin", "cm");
     const { searchParams } = new URL(request.url);
     const collegeId = safeCollegeId(searchParams.get("collegeId") || "");
     if (!collegeId) {

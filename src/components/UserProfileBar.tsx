@@ -74,6 +74,7 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
         roleLabel = "HR Manager";
         shortRole = "HR";
         break;
+      case "cm":
       case "cam":
         name = currentCAM?.name || name || "Campus Manager";
         email = currentCAM?.email || email;
@@ -110,9 +111,9 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
         shortRole = "FM";
         break;
       case "L and D":
-        name = name || "L&D Head";
-        roleLabel = "Learning & Development (L&D)";
-        shortRole = "L&D";
+        name = name || "L and D Head";
+        roleLabel = "Learning and Development (L and D)";
+        shortRole = "L and D";
         break;
       default:
         name = name || "User";

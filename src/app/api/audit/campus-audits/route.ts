@@ -269,7 +269,7 @@ export async function POST(request: Request) {
         subject,
         audit_date || now.toISOString().slice(0, 10),
         auditor_name || "Campus Manager",
-        auditor_role || "cam",
+        auditor_role || "cm",
 
         typeof skill_criteria === "object" ? JSON.stringify(skill_criteria) : skill_criteria || null,
         skill_score,
@@ -304,7 +304,7 @@ export async function POST(request: Request) {
         "E-AUDIT_RECORDED",
         `Campus audit recorded for mentor ${mentor_name} (${subject}) at ${campus}. Routed to ${reviewerCampus} for peer review.`,
         auditor_name || "Campus Manager",
-        auditor_role || "cam",
+        auditor_role || "cm",
         now.toISOString()
       ]
     ).catch(() => {});
@@ -334,7 +334,7 @@ export async function PATCH(request: Request) {
     const db = await getDb();
 
     const body = await request.json();
-    const { id, signoff_notes, signed_by, user_role = "cam" } = body;
+    const { id, signoff_notes, signed_by, user_role = "cm" } = body;
 
     if (!id || !signoff_notes) {
       return NextResponse.json(

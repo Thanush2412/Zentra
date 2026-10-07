@@ -29,7 +29,7 @@ export function CMApprovalsHub() {
   const activeCollegeId = currentCAM?.college_id;
   const activeCollege = colleges.find(c => c.id === activeCollegeId);
 
-  // Filter requests for this CAM's campus
+  // Filter requests for this CM's campus
   const campusRequests = useMemo(() => {
     if (!activeCollegeId) return [];
     return (requests || []).filter((req: any) => {
@@ -39,7 +39,7 @@ export function CMApprovalsHub() {
   }, [requests, mentors, activeCollegeId]);
 
   const pendingRequests = useMemo(() => {
-    return campusRequests.filter((r: any) => r.status === "pending" || r.status === "pending_cam")
+    return campusRequests.filter((r: any) => r.status === "pending" || r.status === "pending_cm" || r.status === "pending_cam")
       .filter((r: any) => categoryFilter === "all" || r.reasonCategory === categoryFilter)
       .filter((r: any) => {
         if (!searchQuery) return true;

@@ -8,11 +8,11 @@ export default function AuditRedirectPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const storedRole = localStorage.getItem("fp_current_role") || "cam";
+      const storedRole = localStorage.getItem("fp_current_role") || "cm";
       if (storedRole === "kam") {
         router.replace("/kam/audit");
       } else {
-        router.replace("/cam/audit");
+        router.replace("/cm/audit");
       }
     }
   }, [router]);

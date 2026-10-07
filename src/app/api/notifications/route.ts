@@ -22,12 +22,12 @@ export async function POST(request: Request) {
       link,
       type,
       college_id,
-      remind_cam_for_date,
+      remind_cm_for_date,
       remind_by_name,
       remind_by_email,
     } = body;
 
-    if (college_id && remind_cam_for_date) {
+    if (college_id && remind_cm_for_date) {
       const cams = await db.all(
         "SELECT * FROM campus_managers WHERE college_id = ?",
         [college_id]
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const dateStr = remind_cam_for_date;
+      const dateStr = remind_cm_for_date;
       const dateObj = new Date(dateStr + "T00:00:00");
       const dateFormatted = dateObj.toLocaleDateString("en-US", {
         weekday: "short",
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
           `${remind_by_name || "A Mentor"} (${
             remind_by_email || ""
           }) is requesting you to configure the Day Order / Day Type for ${dateFormatted} so that attendance can be saved.`;
-        const notifLink = link || `/cam/daily-configs?date=${dateStr}`;
+        const notifLink = link || `/cm/daily-configs?date=${dateStr}`;
         const notifType = type || "reminder";
 
         await db.run(
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
               ctaText: "Open Daily Schedule",
               ctaUrl:
                 (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000") +
-                `/cam/daily-configs?date=${dateStr}`,
+                `/cm/daily-configs?date=${dateStr}`,
             });
             await sendMail({
               to: cam.email,
@@ -97,13 +97,13 @@ export async function POST(request: Request) {
             emailCount++;
           }
         } catch (emailErr: any) {
-          console.warn("Failed to send reminder email to CAM", cam.email, emailErr?.message);
+          console.warn("Failed to send reminder email to CM", cam.email, emailErr?.message);
         }
       }
 
       return NextResponse.json({
         success: true,
-        message: `Reminder sent to ${notifCount} CAM(s) (${emailCount} email${
+        message: `Reminder sent to ${notifCount} CM(s) (${emailCount} email${
           emailCount === 1 ? "" : "s"
         }).`,
         notifications_created: notifCount,

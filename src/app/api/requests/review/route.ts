@@ -26,10 +26,10 @@ export async function POST(request: Request) {
     }
 
     const cleanApproverName = approverName || "System User";
-    const cleanActorRole = actorRole || (action === "cam_reassign" ? "Campus Manager" : "Mentor");
+    const cleanActorRole = actorRole || (action === "cm_reassign" ? "Campus Manager" : "Mentor");
 
-    // 1. CAM Direct Reassignment / Allocation of a Free Mentor
-    if (action === "cam_reassign" && newTargetStaffId) {
+    // 1. CM Direct Reassignment / Allocation of a Free Mentor
+    if ((action === "cm_reassign" || action === "cam_reassign") && newTargetStaffId) {
       const newCoverStaff = await db.get("SELECT * FROM mentors WHERE id = ?", newTargetStaffId);
       if (!newCoverStaff) {
         return NextResponse.json({ success: false, message: "Selected cover faculty not found" }, { status: 404 });
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         `UPDATE handover_requests 
          SET targetStaffId = ?, targetStaffName = ?, status = 'approved', approvedBy = ?, headerReason = ?
          WHERE id = ?`,
-        [newCoverStaff.id, newCoverStaff.name, cleanApproverName, `Assigned by CAM ${cleanApproverName}`, requestId]
+        [newCoverStaff.id, newCoverStaff.name, cleanApproverName, `Assigned by CM ${cleanApproverName}`, requestId]
       );
 
       // Create Approved Handover mapping directly
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
         logId,
         "handover_approval",
-        `CAM Assigned Cover: ${cleanApproverName} mapped "${handoverRequest.course}" on ${handoverRequest.dateFormatted} to ${newCoverStaff.name}`,
+        `CM Assigned Cover: ${cleanApproverName} mapped "${handoverRequest.course}" on ${handoverRequest.dateFormatted} to ${newCoverStaff.name}`,
         cleanApproverName,
         cleanActorRole,
         new Date().toISOString()
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
         try {
           await sendMail({
             to: newCoverStaff.email,
-            subject: `[Assigned by CAM] Class Cover: ${handoverRequest.course} on ${handoverRequest.dateFormatted}`,
+            subject: `[Assigned by CM] Class Cover: ${handoverRequest.course} on ${handoverRequest.dateFormatted}`,
             htmlBody: renderHandoverApprovalEmail({
               requestorName: handoverRequest.requestorName,
               coverStaffName: newCoverStaff.name,
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: `Class successfully assigned to ${newCoverStaff.name}!`, handover: createdHandover || null });
     }
 
-    if (handoverRequest.status !== "pending" && handoverRequest.status !== "pending_cam" && handoverRequest.status !== "needs_cam_allocation") {
+    if (handoverRequest.status !== "pending" && handoverRequest.status !== "pending_cm" && handoverRequest.status !== "pending_cam" && handoverRequest.status !== "needs_cm_allocation" && handoverRequest.status !== "needs_cam_allocation") {
       return NextResponse.json({ success: false, message: "Request has already been processed" });
     }
 
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
             `UPDATE student_exam_marks 
              SET marks_obtained = ?, is_absent = 0, grade = ?, updated_at = CURRENT_TIMESTAMP, remarks = ?
              WHERE exam_id = ? AND student_id = ?`,
-            [proposedMark, grade, `CAM Approved (${cleanApproverName}): ${headerReason || 'Mark Updated'}`, handoverRequest.slotId, handoverRequest.targetStaffId]
+            [proposedMark, grade, `CM Approved (${cleanApproverName}): ${headerReason || 'Mark Updated'}`, handoverRequest.slotId, handoverRequest.targetStaffId]
           );
         }
       }
@@ -142,18 +142,20 @@ export async function POST(request: Request) {
     }
 
     const isMetaOrCamRequest =
+      handoverRequest.targetStaffId === "cm_approval" ||
+      handoverRequest.targetStaffId === "CM-APPROVAL" ||
       handoverRequest.targetStaffId === "cam_approval" ||
       handoverRequest.targetStaffId === "CAM-APPROVAL" ||
-      (typeof handoverRequest.targetStaffId === "string" && handoverRequest.targetStaffId.toLowerCase().includes("cam")) ||
-      (handoverRequest.targetStaffName && handoverRequest.targetStaffName.includes("CAM Approval")) ||
+      (typeof handoverRequest.targetStaffId === "string" && (handoverRequest.targetStaffId.toLowerCase().includes("cm") || handoverRequest.targetStaffId.toLowerCase().includes("cam"))) ||
+      (handoverRequest.targetStaffName && (handoverRequest.targetStaffName.includes("CM Approval") || handoverRequest.targetStaffName.includes("CAM Approval"))) ||
       (handoverRequest.reason && handoverRequest.reason.includes("Late Attendance")) ||
       (handoverRequest.slotId && handoverRequest.slotId.startsWith("mentor_daily_punch_")) ||
       (handoverRequest.slotId && handoverRequest.slotId.startsWith("acad_log_edit_"));
 
     let targetStatus = status; // e.g. "approved" or "rejected"
-    if (handoverRequest.status === "pending_cam") {
+    if (handoverRequest.status === "pending_cm" || handoverRequest.status === "pending_cam") {
       if (isMetaOrCamRequest) {
-        // Direct CAM requests (late attendance edit, punch request, acad log edit) are directly approved or rejected by CAM
+        // Direct CM requests (late attendance edit, punch request, acad log edit) are directly approved or rejected by CM
         targetStatus = status === "approved" ? "approved" : "rejected";
       } else if (status === "approved") {
         targetStatus = "pending"; // Escalate normal emergency peer handover to receiver

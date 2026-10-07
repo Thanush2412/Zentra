@@ -632,6 +632,17 @@ const migrations: Migration[] = [
       await db.exec("ALTER TABLE student_attendance DROP CONSTRAINT IF EXISTS student_attendance_slotid_fkey;").catch(() => {});
       await db.exec("ALTER TABLE student_attendance ADD CONSTRAINT student_attendance_slotid_fkey FOREIGN KEY (slotid) REFERENCES slots(id) ON DELETE SET NULL;").catch(() => {});
     }
+  },
+  {
+    // ROLE_RENAME cam→cm: migrate legacy data tokens once. Runtime code still
+    // accepts the legacy spellings as a fallback, so old clients keep working.
+    name: "cm_role_rename_tokens",
+    run: async (db) => {
+      await db.exec("UPDATE users SET role = 'cm' WHERE role = 'cam'").catch(() => {});
+      await db.exec("UPDATE handover_requests SET status = 'pending_cm' WHERE status = 'pending_cam'").catch(() => {});
+      await db.exec("UPDATE handover_requests SET status = 'needs_cm_allocation' WHERE status = 'needs_cam_allocation'").catch(() => {});
+      await db.exec("UPDATE student_interviews SET status = 'pending_cm_acceptance' WHERE status = 'pending_cam_acceptance'").catch(() => {});
+    }
   }
 ];
 

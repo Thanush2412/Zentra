@@ -83,7 +83,7 @@ function formatToCanonicalTime12(timeStr?: string): string {
 export async function POST(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["admin", "cam", "kam"],
+      allowedRoles: ["admin", "cm", "kam"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;
@@ -185,7 +185,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["admin", "cam", "kam"],
+      allowedRoles: ["admin", "cm", "kam"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;
