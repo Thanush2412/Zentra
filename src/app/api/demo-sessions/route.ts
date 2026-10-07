@@ -571,7 +571,7 @@ export async function POST(request: Request) {
         ]
       );
 
-      // Ping the Demo Allocator (campus_managers = allocator view users) + audit log
+      // Notify allocator-view users (campus_managers) and write an audit log
       try {
         const allocators: any[] = await db.all("SELECT id FROM campus_managers").catch(() => []);
         for (const alloc of allocators) {

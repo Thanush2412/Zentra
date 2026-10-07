@@ -41,7 +41,7 @@ A modern, serverless Next.js 16 web application powered by **Turso Cloud Databas
 - Track term-wise student tuition fees, FPC dues, and payment transactions.
 - Generate digital receipts and payment links.
 
-### 7. 🧪 SME & Demo Allocator Portals (`/sme`, `/allocator`)
+### 7. 🧪 SME & Allocator Portals (`/sme`, `/allocator`)
 - Subject Matter Expert (SME) demo evaluation sessions and demo swap management.
 - Dynamic scheduler for demo slot allocations.
 
