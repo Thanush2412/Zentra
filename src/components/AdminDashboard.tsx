@@ -10231,7 +10231,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="sme">SME (Subject Matter Expert)</option>
                     <option value="student">Student (Learner)</option>
                     <option value="fee_manager">Fee Manager (Fee Operations)</option>
-                    <option value="allocator">L&amp;D (Learning and Development)</option>
+                    <option value="allocator">L&D (Learning and Development)</option>
                     <option value="hr">HR (Human Resources)</option>
                   </select>
                 </div>
