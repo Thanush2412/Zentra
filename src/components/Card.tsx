@@ -26,7 +26,7 @@ export const Card: React.FC<CardProps> = ({
         className={`p-3.5 sm:p-4 rounded-xl border border-white/80 dark:border-slate-800/80 
           backdrop-blur-md relative flex flex-col justify-between shadow-xs min-h-[95px] sm:min-h-[110px] group 
           transition-all duration-300 [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] 
-          hover:shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5 cursor-pointer ${className}`}
+          hover:shadow-lg hover:shadow-[#D528A2]/10 hover:-translate-y-0.5 cursor-pointer ${className}`}
       >
         {/* Floating Icon Badge Intersecting Top-Right Corner */}
         {icon && (

@@ -100,9 +100,8 @@ export function renderEmailShell({
             </div>
    
             <!-- Details Card Table -->
-            ${
-              details.length > 0
-                ? `
+            ${details.length > 0
+      ? `
             <div style="border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; background-color: #ffffff; margin-bottom: 28px; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
               <table style="width: 100%; border-collapse: collapse; text-align: left;">
                 <tbody>
@@ -111,8 +110,8 @@ export function renderEmailShell({
               </table>
             </div>
             `
-                : ""
-            }
+      : ""
+    }
    
             <!-- Reusable Brand CTA Button -->
             <div style="text-align: center; margin-top: 28px; margin-bottom: 8px;">

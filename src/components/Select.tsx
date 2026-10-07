@@ -11,7 +11,6 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   error?: string;
 }
 
-// Matches the project select style: bg-gray-55 border border-gray-200 rounded-lg focus:ring-1 focus:ring-indigo-600
 export const Select: React.FC<SelectProps> = ({
   label,
   options,
@@ -30,7 +29,7 @@ export const Select: React.FC<SelectProps> = ({
       {label && (
         <label
           htmlFor={selectId}
-          className="text-[10px] font-black text-gray-450 uppercase tracking-wider block"
+          className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block"
         >
           {label}
         </label>
@@ -38,14 +37,14 @@ export const Select: React.FC<SelectProps> = ({
       <select
         id={selectId}
         {...rest}
-        className={`w-full bg-gray-55 border border-gray-200 rounded-lg px-3 py-2 text-sm
-          font-bold text-gray-800 cursor-pointer
-          focus:outline-none focus:ring-2 focus:ring-[#D528A2]/15 focus:border-[#D528A2] focus:scale-[1.01] focus:shadow-md
+        className={`w-full bg-white/80 dark:bg-[#181820]/80 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm
+          font-bold text-slate-800 dark:text-slate-100 cursor-pointer
+          focus:outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2] focus:scale-[1.01] focus:shadow-md
           transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:focus:scale-100
           ${error ? "border-rose-400 focus:ring-rose-200" : ""} ${className}`}
       >
         {normalizedOptions.map((opt) => (
-          <option key={opt.value} value={opt.value}>
+          <option key={opt.value} value={opt.value} className="bg-white dark:bg-[#181820] text-slate-800 dark:text-slate-100">
             {opt.label}
           </option>
         ))}

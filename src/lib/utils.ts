@@ -5,19 +5,44 @@ export function isTimeSlotMatch(t1?: string, t2?: string): boolean {
   if (!t1 || !t2) return false;
   if (t1 === t2) return true;
 
-  const norm = (s: string) => {
+  const cleanSlot = (s: string) => {
     return s
       .toLowerCase()
+      .replace(/period\s*\d+\s*[\(:]?/gi, "")
+      .replace(/[\(\)]/g, "")
       .replace(/p\.m/g, "pm")
       .replace(/a\.m/g, "am")
       .replace(/to/g, "-")
       .replace(/\./g, ":")
       .replace(/\s+/g, "")
       .replace(/(\D)0(\d)/g, "$1$2")
-      .replace(/^0(\d)/, "$1");
+      .replace(/^0(\d)/, "$1")
+      .trim();
   };
 
-  return norm(t1) === norm(t2);
+  const c1 = cleanSlot(t1);
+  const c2 = cleanSlot(t2);
+  if (c1 === c2) return true;
+  if (c1 && c2 && (c1.includes(c2) || c2.includes(c1))) return true;
+
+  // Compare parsed start and end minutes
+  const m1 = Array.from(t1.matchAll(/(\d{1,2})(?:[:.](\d{2}))?\s*(AM|PM)?/gi));
+  const m2 = Array.from(t2.matchAll(/(\d{1,2})(?:[:.](\d{2}))?\s*(AM|PM)?/gi));
+  if (m1.length >= 2 && m2.length >= 2) {
+    const parseM = (m: RegExpMatchArray) => {
+      let hr = parseInt(m[1], 10);
+      const min = m[2] ? parseInt(m[2], 10) : 0;
+      const ampm = m[3] ? m[3].toUpperCase() : null;
+      if (ampm === "PM" && hr < 12) hr += 12;
+      if (ampm === "AM" && hr === 12) hr = 0;
+      return hr * 60 + min;
+    };
+    const s1 = parseM(m1[0]), e1 = parseM(m1[1]);
+    const s2 = parseM(m2[0]), e2 = parseM(m2[1]);
+    if (Math.abs(s1 - s2) <= 3 && Math.abs(e1 - e2) <= 3) return true;
+  }
+
+  return false;
 }
 
 export function normalizeClassGroup(cg?: string): string {
@@ -1305,7 +1330,11 @@ export function getCollegePeriodTimeSlots(
     ];
   }
 
-  return Array.from(resultSlots);
+  return Array.from(resultSlots).sort((a, b) => {
+    const sA = parseTimeToMinutes((a.split("-")[0] || a).trim());
+    const sB = parseTimeToMinutes((b.split("-")[0] || b).trim());
+    return sA - sB;
+  });
 }
 
 /**
@@ -1399,10 +1428,16 @@ export function mapDayOrderToDayName(dayOrder?: string | null, defaultDay: strin
   if (!dayOrder || dayOrder === "None" || dayOrder === "none") {
     return defaultDay;
   }
-  const match = dayOrder.match(/^Day (\d+)$/i);
+  const clean = String(dayOrder).trim();
+  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  
+  // Direct weekday check
+  const directMatch = dayNames.find(d => d.toLowerCase() === clean.toLowerCase() || d.toLowerCase().startsWith(clean.toLowerCase().slice(0, 3)));
+  if (directMatch) return directMatch;
+
+  const match = clean.match(/Day[\s_-]*(\d+)/i);
   if (match) {
     const orderNum = parseInt(match[1], 10);
-    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     if (orderNum >= 1 && orderNum <= dayNames.length) {
       return dayNames[orderNum - 1];
     }

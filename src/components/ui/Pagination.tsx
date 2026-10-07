@@ -77,7 +77,7 @@ export const Pagination: React.FC<PaginationProps> = ({
                 onPageSizeChange(Number(e.target.value));
                 onPageChange(1);
               }}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] cursor-pointer"
             >
               {pageSizeOptions.map((opt) => (
                 <option key={opt} value={opt}>
@@ -124,7 +124,7 @@ export const Pagination: React.FC<PaginationProps> = ({
                 onClick={() => onPageChange(Number(p))}
                 className={`min-w-[28px] h-7 px-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
                   safePage === p
-                    ? "bg-indigo-600 text-white shadow-xs"
+                    ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-xs"
                     : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800"
                 }`}
               >

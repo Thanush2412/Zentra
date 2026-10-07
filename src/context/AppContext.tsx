@@ -1745,10 +1745,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         // Phase B: the API no longer moves the slot — it creates a pending request
-        // for the Demo Allocator. Refresh so the "reallocation required" state and
+        // for Learning and Development. Refresh so the "reallocation required" state and
         // any allocator decision flow back into every dashboard.
         await refreshData();
-        return { success: true, message: data.message || "Reschedule request sent to the Demo Allocator for approval." };
+        return { success: true, message: data.message || "Reschedule request sent to Learning and Development for approval." };
       }
       return { success: false, message: data.message || "Failed to reschedule demo." };
     } catch (e: any) {

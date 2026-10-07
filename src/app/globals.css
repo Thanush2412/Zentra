@@ -15,6 +15,21 @@ html {
 :root {
   --background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 55%, #fff8f2 100%);
   --foreground: #0f172a;
+
+  /* Flowbite Brand Color Tokens (#D528A2 & #F4A863) */
+  --brand-primary: #D528A2;
+  --brand-secondary: #F4A863;
+  --color-primary-50: #f9f6f8;
+  --color-primary-100: #f1e9ef;
+  --color-primary-200: #e8cfe0;
+  --color-primary-300: #ec9cd5;
+  --color-primary-400: #e46dc1;
+  --color-primary-500: #db3eac;
+  --color-primary-600: #c12493;
+  --color-primary-700: #9f1e79;
+  --color-primary-800: #78175b;
+  --color-primary-900: #561041;
+  --color-primary-950: #330f29;
 }
 
 body {

@@ -1,4 +1,5 @@
 import { TursoDbAdapter } from "./db";
+import { mapDayOrderToDayName, isTimeSlotMatch } from "./utils";
 
 export interface MentorAvailabilityParams {
   mentorId: string;
@@ -40,17 +41,46 @@ function normalizeTime(timeStr: string): string {
   return (timeStr || "").replace(/\./g, ":").trim().toUpperCase();
 }
 
+function parseTimeToMinutes(t: string): number {
+  if (!t) return -1;
+  const match = t.match(/(\d{1,2})(?:[:.](\d{2}))?\s*(AM|PM)?/i);
+  if (!match) return -1;
+  let hr = parseInt(match[1], 10);
+  const min = match[2] ? parseInt(match[2], 10) : 0;
+  const ampm = match[3] ? match[3].toUpperCase() : null;
+  if (ampm === "PM" && hr < 12) hr += 12;
+  if (ampm === "AM" && hr === 12) hr = 0;
+  return hr * 60 + min;
+}
+
 /**
  * Checks if a target time falls within or overlaps with a time range or slot.
  */
 function isTimeSlotOverlap(slotTime1: string, slotTime2: string): boolean {
   if (!slotTime1 || !slotTime2) return true; // If one isn't specified, assume conflict
-  const t1 = normalizeTime(slotTime1);
-  const t2 = normalizeTime(slotTime2);
-  if (t1 === t2) return true;
+  if (isTimeSlotMatch(slotTime1, slotTime2)) return true;
 
-  // Partial match check (e.g. "09:00 AM" in "09:00 AM - 10:00 AM")
-  if (t1.includes(t2) || t2.includes(t1)) return true;
+  const t1 = (slotTime1 || "").trim();
+  const t2 = (slotTime2 || "").trim();
+
+  const matches1 = Array.from(t1.matchAll(/(\d{1,2})(?:[:.](\d{2}))?\s*(AM|PM)?/gi));
+  const matches2 = Array.from(t2.matchAll(/(\d{1,2})(?:[:.](\d{2}))?\s*(AM|PM)?/gi));
+
+  if (matches1.length >= 2 && matches2.length >= 2) {
+    const s1 = parseTimeToMinutes(matches1[0][0]);
+    const e1 = parseTimeToMinutes(matches1[1][0]);
+    const s2 = parseTimeToMinutes(matches2[0][0]);
+    const e2 = parseTimeToMinutes(matches2[1][0]);
+
+    if (s1 >= 0 && e1 >= 0 && s2 >= 0 && e2 >= 0) {
+      return s1 < e2 && e1 > s2;
+    }
+  }
+
+  const clean1 = t1.toLowerCase().replace(/period\s*\d+\s*[\(:]?/gi, "").replace(/[\(\)]/g, "").replace(/\./g, ":").replace(/\s+/g, "");
+  const clean2 = t2.toLowerCase().replace(/period\s*\d+\s*[\(:]?/gi, "").replace(/[\(\)]/g, "").replace(/\./g, ":").replace(/\s+/g, "");
+  if (clean1 === clean2 || clean1.includes(clean2) || clean2.includes(clean1)) return true;
+
   return false;
 }
 
@@ -109,16 +139,19 @@ export async function checkMentorAvailability(
   // 2. Check Regular Timetable Slots
   // ---------------------------------------------------------------------------
   if (timeSlot) {
-    let slotQuery = `SELECT id, course, classGroup, day, time, shift FROM slots WHERE mentorId = ? AND LOWER(day) = LOWER(?)`;
-    const slotParams: any[] = [mentorId, dayOfWeek];
-
-    if (shift) {
-      slotQuery += ` AND (shift = ? OR shift = 'general')`;
-      slotParams.push(shift);
-    }
-
-    const mentorSlots = await db.all(slotQuery, slotParams);
+    const mentorSlots = await db.all(
+      `SELECT id, course, classGroup, day, time, shift FROM slots WHERE mentorId = ?`,
+      [mentorId]
+    );
     for (const slot of mentorSlots) {
+      const sDay = (slot.day || "").toLowerCase().trim();
+      const targetDay = dayOfWeek.toLowerCase().trim();
+      const mappedDay = (mapDayOrderToDayName(slot.day, "") || "").toLowerCase().trim();
+      const dayMatches = sDay === targetDay || mappedDay === targetDay || sDay.startsWith(targetDay.slice(0, 3));
+      if (!dayMatches) continue;
+
+      if (shift && slot.shift && slot.shift !== "general" && slot.shift !== shift) continue;
+
       if (isTimeSlotOverlap(slot.time, timeSlot)) {
         // Check if this slot was handed over to someone else on this specific date
         const isHandedOver = await db.get(

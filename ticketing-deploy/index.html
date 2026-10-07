@@ -1231,7 +1231,7 @@ async function sendTicketNotificationEmail(ticket) {
     let cmEmail = null, kamEmail = null;
     if (college) {
       try {
-        const { data } = await sb.from('college_contacts').select('campus_manager_email, senior_manager_email').eq('college', college).maybeSingle();
+        const { data } = await sb.from('college_contacts').select('campus_manager_email, senior_manager_email').ilike('college', college.trim()).maybeSingle();
         if (data) {
           cmEmail = data.campus_manager_email;
           kamEmail = data.senior_manager_email;
@@ -1245,7 +1245,7 @@ async function sendTicketNotificationEmail(ticket) {
     if (kamEmail && kamEmail.includes('@') && !toEmails.includes(kamEmail.trim())) toEmails.push(kamEmail.trim());
     if (!toEmails.length) toEmails.push('thanush@faceprep.in');
 
-    const ccEmails = ['arun.senthil@faceprep.in', 'thanush@faceprep.in', 'escalations@faceprepcampus.in'].filter(e => e && !toEmails.includes(e));
+    const ccEmails = ['arun.senthil@faceprep.in', 'thanush@faceprep.in'].filter(e => e && !toEmails.includes(e));
 
     const htmlContent = `
       <div style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.06);">
@@ -1268,7 +1268,7 @@ async function sendTicketNotificationEmail(ticket) {
           </div>
           ${image_url ? `<p style="margin:16px 0;"><a href="${image_url}" style="display:inline-block;background:#4F46E5;color:#ffffff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600;font-size:13px;">View Attached Screenshot / Image</a></p>` : ''}
           <div style="margin-top:28px;padding-top:16px;border-top:1px solid #E2E8F0;font-size:12px;color:#64748B;">
-            <p style="margin:0;">Dispatched automatically via <strong>FACE Prep E-Campus Student Help Desk</strong></p>
+            <p style="margin:0;">Dispatched automatically via <strong>FACE Prep Campus Help Desk</strong></p>
             <p style="margin:4px 0 0;">Timestamp: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>
           </div>
         </div>
@@ -1284,7 +1284,7 @@ async function sendTicketNotificationEmail(ticket) {
         'api-key': brevoApiKey
       },
       body: JSON.stringify({
-        sender: { name: 'FACE Prep E-Campus Help Desk', email: 'thanush@faceprep.in' },
+        sender: { name: 'FACE Prep Campus Help Desk', email: 'thanush@faceprep.in' },
         to: toEmails.map(email => ({ email })),
         ...(ccEmails.length ? { cc: ccEmails.map(email => ({ email })) } : {}),
         subject: `[New Ticket #${id}] ${category}: ${subject} — ${student_name} (${college})`,
@@ -1345,8 +1345,8 @@ if(!subj || !desc) {
     const { error } = await sb.from('tickets').insert(ticket);
     if(error) throw error;
 
-    // Trigger Brevo email notification to Campus Manager / KAM
-    sendTicketNotificationEmail(ticket).catch(e => console.warn('Ticket notification notice:', e));
+    // Note: Ticket creation emails are disabled per SLA rules. 
+    // Unsolved ticket escalations are automatically evaluated and dispatched via SLA cron job.
 
     document.getElementById('f-subject').value = '';
     document.getElementById('f-desc').value = '';

@@ -10980,7 +10980,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   }, [configCollegeId, activeCollegeId, colleges]);
 
-  const [collegeHours, setCollegeHours] = useState({ start: "08:30 AM", end: "04:30 PM" });
+  const [collegeHours, setCollegeHours] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const [isSavingCollegeHours, setIsSavingCollegeHours] = useState(false);
 
   const handleSaveCollegeHoursAndDays = async () => {

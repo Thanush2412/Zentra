@@ -1,4 +1,4 @@
-﻿import * as React from "react";
+import * as React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 
@@ -12,12 +12,12 @@ const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs font-sans animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm font-sans animate-in fade-in duration-150">
       <div
         className="fixed inset-0 cursor-pointer"
         onClick={() => onOpenChange(false)}
       />
-      <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-[#131317] rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-5 text-slate-800 dark:text-slate-200">
+      <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-[#131317] rounded-xl border border-slate-200/80 dark:border-slate-800/80 shadow-2xl p-6 space-y-5 text-slate-800 dark:text-slate-200">
         {children}
       </div>
     </div>

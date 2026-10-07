@@ -41,7 +41,7 @@ import {
   SlidersHorizontal,
   FileText
 } from "lucide-react";
-import { formatTimeLabel, getWeekDates } from "../lib/utils";
+import { formatTimeLabel, getWeekDates, isTimeSlotMatch, mapDayOrderToDayName } from "../lib/utils";
 import { Card } from "./Card";
 import { Panel } from "./Panel";
 
@@ -108,7 +108,7 @@ export function DemoAllocationDashboard() {
           action: "resolve",
           requestId,
           decision,
-          decidedBy: "Demo Allocator",
+          decidedBy: "Learning and Development",
           decisionNotes: notes || undefined
         })
       });
@@ -162,6 +162,11 @@ export function DemoAllocationDashboard() {
   // Dynamic Week Number Selection
   const [selectedWeek, setSelectedWeek] = useState<number>(() => calculateWeekNumber(new Date().toISOString().slice(0, 10)));
 
+  // Derived: List of 5 consecutive dates of the week containing selectedDateStr
+  const currentWeekDates = useMemo(() => {
+    return getWeekDates(0, selectedDateStr);
+  }, [selectedDateStr]);
+
   // Scheduling generation states
   const [targetDemosCount, setTargetDemosCount] = useState<number>(1);
   const [previewSessions, setPreviewSessions] = useState<any[]>([]);
@@ -178,6 +183,7 @@ export function DemoAllocationDashboard() {
   const [showExcelDropdown, setShowExcelDropdown] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateMentorGroup, setTemplateMentorGroup] = useState<string>("");
+  const [templateCollegeId, setTemplateCollegeId] = useState<string>("");
 
   // Left Sidebar & Tab Navigation States
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -205,6 +211,139 @@ export function DemoAllocationDashboard() {
 
   // Dept rules input state — local editable values before saving
   const [deptRuleInputs, setDeptRuleInputs] = useState<Record<string, number>>({});
+
+  // Daily Configs Map (Day Orders, Holidays, Events configured by CAM)
+  const [dailyConfigsMap, setDailyConfigsMap] = useState<Map<string, any>>(new Map());
+
+  const fetchDailyConfigs = useCallback(async () => {
+    try {
+      const cIds = colleges.map(c => c.id).filter(Boolean);
+
+      if (cIds.length === 0) return;
+
+      const map = new Map<string, any>();
+      await Promise.all(
+        cIds.map(async (cId) => {
+          try {
+            const res = await fetch(`/api/daily-configs?college_id=${encodeURIComponent(cId)}&limit=500`);
+            const json = await res.json();
+            if (json.success && Array.isArray(json.configs)) {
+              json.configs.forEach((c: any) => {
+                const dStr = c.dateStr || c.datestr;
+                if (dStr) {
+                  const item = {
+                    ...c,
+                    college_id: cId,
+                    dateStr: dStr,
+                    day_order: c.day_order || c.dayorder || "None",
+                    day_type: c.day_type || c.daytype || "working"
+                  };
+                  map.set(`${cId}_${dStr}`, item);
+                  if (selectedCollegeId === cId || !map.has(dStr) || item.day_order !== "None") {
+                    map.set(dStr, item);
+                  }
+                }
+              });
+            }
+          } catch (_) {}
+        })
+      );
+      setDailyConfigsMap(map);
+    } catch (_) {}
+  }, [selectedCollegeId, colleges]);
+
+  React.useEffect(() => {
+    fetchDailyConfigs();
+  }, [fetchDailyConfigs]);
+
+  // Helper to resolve detailed Day Order info for a given dateStr, weekday & college
+  const getEffectiveDayOrderInfo = useCallback((dateStr: string, weekdayName: string, dayIndex: number, collegeId?: string) => {
+    const collegeCfg = collegeId ? dailyConfigsMap.get(`${collegeId}_${dateStr}`) : null;
+    const cfg = collegeCfg || dailyConfigsMap.get(dateStr);
+    
+    // Check if genuinely configured in CAM
+    const isConfiguredInCam = Boolean(
+      (collegeCfg && collegeCfg.day_order && collegeCfg.day_order !== "None" && collegeCfg.day_order !== "none") ||
+      (!collegeId && cfg && cfg.day_order && cfg.day_order !== "None" && cfg.day_order !== "none")
+    );
+
+    const isHoliday = Boolean(
+      (collegeCfg && (collegeCfg.day_type === "holiday" || collegeCfg.day_type === "event")) ||
+      (!collegeId && cfg && (cfg.day_type === "holiday" || cfg.day_type === "event")) ||
+      holidays.some(h => h.date === dateStr && (!h.college_id || !collegeId || h.college_id === collegeId))
+    );
+
+    let dayOrder = collegeCfg?.day_order || cfg?.day_order || cfg?.dayorder;
+    const dayType = collegeCfg?.day_type || cfg?.day_type || (isHoliday ? "holiday" : "working");
+
+    if (isHoliday) {
+      dayOrder = "Holiday";
+    } else if (!dayOrder || dayOrder === "None" || dayOrder === "none") {
+      dayOrder = isConfiguredInCam ? dayOrder : `Day ${dayIndex + 1}`;
+    }
+
+    const effectiveTimetableDay = isHoliday ? "Holiday" : mapDayOrderToDayName(dayOrder, weekdayName);
+
+    return {
+      dayOrder,
+      effectiveTimetableDay,
+      weekdayName,
+      dateStr,
+      isHoliday,
+      isConfiguredInCam,
+      dayType,
+      rowLabel: `${dayOrder} - ${weekdayName} (${dateStr})`,
+      key: `${dayOrder}_${dateStr}`
+    };
+  }, [dailyConfigsMap, holidays]);
+
+  // Helper to check Day Order configuration status for a specific college across active week dates
+  const getCollegeDayOrderConfigStatus = useCallback((collegeId: string) => {
+    const dates = currentWeekDates;
+    const missingDates: { dateStr: string; day: string; formatted: string }[] = [];
+    let configuredCount = 0;
+
+    dates.forEach((w, idx) => {
+      const info = getEffectiveDayOrderInfo(w.dateStr, w.day, idx, collegeId);
+      if (info.isHoliday || info.isConfiguredInCam) {
+        configuredCount++;
+      } else {
+        missingDates.push({ dateStr: w.dateStr, day: w.day, formatted: w.formatted || w.day });
+      }
+    });
+
+    const isFullyConfigured = missingDates.length === 0;
+    return {
+      isFullyConfigured,
+      configuredCount,
+      totalDates: dates.length,
+      missingDates
+    };
+  }, [currentWeekDates, getEffectiveDayOrderInfo]);
+
+  // Derived: Global check if ALL applicable colleges have Day Orders configured by CM for the active week
+  const allCollegesDayOrderStatus = useMemo(() => {
+    const applicableColleges = colleges.filter(c => c && c.id);
+    const unconfiguredColleges: { college: any; missingDates: string[] }[] = [];
+
+    applicableColleges.forEach(c => {
+      const status = getCollegeDayOrderConfigStatus(c.id);
+      if (!status.isFullyConfigured) {
+        unconfiguredColleges.push({
+          college: c,
+          missingDates: status.missingDates.map(d => `${d.day.slice(0, 3)} (${d.formatted || d.dateStr})`)
+        });
+      }
+    });
+
+    const isAllConfigured = applicableColleges.length > 0 && unconfiguredColleges.length === 0;
+
+    return {
+      isAllConfigured,
+      applicableColleges,
+      unconfiguredColleges
+    };
+  }, [colleges, getCollegeDayOrderConfigStatus]);
 
   // Manual Override States
   const [editSession, setEditSession] = useState<any | null>(null);
@@ -372,11 +511,6 @@ export function DemoAllocationDashboard() {
     return Array.from(groups).sort((a, b) => (a || "").localeCompare(b || ""));
   }, [mentors, smes, subjectGroups, demoRules]);
 
-  // Derived: List of 5 consecutive dates of the week containing selectedDateStr
-  const currentWeekDates = useMemo(() => {
-    return getWeekDates(0, selectedDateStr);
-  }, [selectedDateStr]);
-
   // Derived: Filtered list of mentors (used by scheduler and grid)
   const filteredMentors = useMemo(() => {
     if (mentors.length === 0) return [];
@@ -495,7 +629,7 @@ export function DemoAllocationDashboard() {
   }, [selectedCollegeId, colleges]);
 
   // Helper: check if a faculty member (mentor/SME) is on approved faculty leave on a date
-  const isFacultyOnLeave = (facultyId: string, dateStr: string) => {
+  const isFacultyOnLeave = useCallback((facultyId: string, dateStr: string) => {
     return facultyLeaves?.some(
       (fl: any) =>
         (fl.mentor_id === facultyId || fl.mentorId === facultyId) &&
@@ -503,60 +637,24 @@ export function DemoAllocationDashboard() {
         dateStr >= fl.start_date &&
         dateStr <= fl.end_date
     );
-  };
-
-  // Helper: check if a mentor has a class, demo, or is blocked on a specific day/date/time
-  const getMentorStatusAtSlot = (mentorId: string, dateStr: string, dbTimeSlot: string, currentPreviews: any[] = []) => {
-    // 1. Check if they have a demo session in database
-    const dbDemo = demoSessions.find(ds => ds.mentorId === mentorId && ds.dateStr === dateStr && ds.timeSlot === dbTimeSlot);
-    if (dbDemo) {
-      return {
-        status: "demo",
-        label: `Demo: ${dbDemo.subject}`,
-        details: `SME: ${dbDemo.smeName}`,
-        session: dbDemo
-      };
-    }
-
-    // 2. Check if they have a preview demo session
-    const previewDemo = currentPreviews.find(p => p.mentorId === mentorId && p.dateStr === dateStr && p.timeSlot === dbTimeSlot);
-    if (previewDemo) {
-      return {
-        status: "preview",
-        label: `Preview: ${previewDemo.subject}`,
-        details: `SME: ${previewDemo.smeName}`,
-        session: previewDemo
-      };
-    }
-
-    // 3. Check if mentor is on approved faculty leave
-    const isFacultyLeave = isFacultyOnLeave(mentorId, dateStr);
-    if (isFacultyLeave) {
-      return { status: "blocked", label: "On Leave", details: "Faculty Leave Approved" };
-    }
-
-    // 4. Check if they are teaching a regular class
-    const dayName = currentWeekDates.find(w => w.dateStr === dateStr)?.day || "";
-    const teachSlot = slots.find(s => s.mentorId === mentorId && s.day === dayName && s.time === dbTimeSlot);
-    if (teachSlot) {
-      return {
-        status: "occupied",
-        label: teachSlot.course,
-        group: teachSlot.classGroup,
-        details: `Class in ${teachSlot.location}`
-      };
-    }
-
-    return { status: "free", label: "Available", details: "" };
-  };
+  }, [facultyLeaves]);
 
   // Helper: check if an SME is free on a given date/time (checks DB collisions + dynamic configured availability windows)
-  const isSmeFree = (smeId: string, dateStr: string, time: string, newlyScheduled: any[] = []) => {
+  const isSmeFree = useCallback((smeId: string, dateStr: string, time: string, newlyScheduled: any[] = []) => {
     const dayName = currentWeekDates.find(w => w.dateStr === dateStr)?.day || "";
 
-    // 1. Check if SME has configured custom availability windows for this weekday
+    // 1. Check if SME is on faculty leave
+    if (isFacultyOnLeave(smeId, dateStr)) return false;
+
+    // 2. Check if SME has configured custom availability windows for this weekday
     const smeWindows = (smeAvailability || []).filter(
-      (a: any) => a.sme_id === smeId && a.day_of_week?.toLowerCase().trim() === dayName.toLowerCase().trim() && a.is_active !== 0
+      (a: any) => {
+        if (a.sme_id !== smeId || a.is_active === 0) return false;
+        const aDay = (a.day_of_week || "").toLowerCase().trim();
+        const targetDay = dayName.toLowerCase().trim();
+        const mappedDay = (mapDayOrderToDayName(a.day_of_week, "") || "").toLowerCase().trim();
+        return aDay === targetDay || mappedDay === targetDay || aDay.startsWith(targetDay.slice(0, 3));
+      }
     );
 
     const { startMin: slotStartMin, endMin: slotEndMin } = extractSlotStartAndEnd(time);
@@ -577,14 +675,177 @@ export function DemoAllocationDashboard() {
       if (slotStartMin < 540 || slotEndMin > 1050) return false;
     }
 
-    // 2. Check collision with existing confirmed demo sessions
-    const databaseBusy = demoSessions.some(ds => ds.smeId === smeId && ds.dateStr === dateStr && ds.timeSlot === time);
+    // 3. Check collision with existing confirmed demo sessions
+    const databaseBusy = demoSessions.some(ds => {
+      if (ds.smeId !== smeId || ds.dateStr !== dateStr) return false;
+      if (ds.status === "cancelled" || ds.status === "not_conducted") return false;
+      return isTimeSlotMatch(ds.timeSlot, time);
+    });
     if (databaseBusy) return false;
 
-    // 3. Check collision with preview newly scheduled sessions
-    const previewBusy = newlyScheduled.some(p => p.smeId === smeId && p.dateStr === dateStr && p.timeSlot === time);
+    // 4. Check collision with preview newly scheduled sessions
+    const previewBusy = newlyScheduled.some(p => {
+      if (p.smeId !== smeId || p.dateStr !== dateStr) return false;
+      return isTimeSlotMatch(p.timeSlot, time);
+    });
     return !previewBusy;
-  };
+  }, [currentWeekDates, isFacultyOnLeave, smeAvailability, demoSessions]);
+
+  // ── Unified Participant Availability & Allocation Engine ──
+  // Evaluates real availability across College Timetable, CAM Day Order, Mentor Free Time, Leave, SME Windows, and Bookings.
+  const evaluateMentorSlotAvailability = useCallback((
+    mentorId: string,
+    dateStr: string,
+    timeSlot: string,
+    customCollegeId?: string,
+    currentPreviews: any[] = []
+  ) => {
+    const mentor = mentors.find(m => m.id === mentorId);
+    if (!mentor) {
+      return {
+        status: "unavailable",
+        isAllocatable: false,
+        label: "Mentor Not Found",
+        details: "",
+        availableSmes: []
+      };
+    }
+
+    const collegeId = customCollegeId || mentor.college_id;
+    const colObj = colleges.find(c => c.id === collegeId);
+
+    // 1. Day Order & Holiday resolution from CAM dailyConfigsMap
+    const dayObj = currentWeekDates.find(w => w.dateStr === dateStr);
+    const weekdayName = dayObj?.day || "";
+    const dayIndex = Math.max(0, currentWeekDates.findIndex(w => w.dateStr === dateStr));
+    const dayInfo = getEffectiveDayOrderInfo(dateStr, weekdayName, dayIndex, collegeId);
+
+    if (dayInfo.isHoliday) {
+      return {
+        status: "blocked",
+        isAllocatable: false,
+        label: "Campus Holiday",
+        details: `${colObj?.name || "Campus"} Holiday (Closed)`,
+        availableSmes: []
+      };
+    }
+
+    if (!dayInfo.isConfiguredInCam) {
+      return {
+        status: "blocked",
+        isAllocatable: false,
+        label: "Day Order Unset",
+        details: "Day Order not configured by CM in daily configs",
+        availableSmes: []
+      };
+    }
+
+    // 2. Mentor Faculty Leave check
+    if (isFacultyOnLeave(mentorId, dateStr)) {
+      return {
+        status: "blocked",
+        isAllocatable: false,
+        label: "On Leave",
+        details: "Faculty Leave Approved",
+        availableSmes: []
+      };
+    }
+
+    // 3. Existing Demo Session in database check
+    const existingDemo = demoSessions.find(ds => {
+      if (ds.mentorId !== mentorId || ds.dateStr !== dateStr) return false;
+      if (ds.status === "cancelled" || ds.status === "not_conducted") return false;
+      return isTimeSlotMatch(ds.timeSlot, timeSlot);
+    });
+    if (existingDemo) {
+      return {
+        status: "demo",
+        isAllocatable: false,
+        label: `Demo: ${existingDemo.subject}`,
+        details: `SME: ${existingDemo.smeName}`,
+        session: existingDemo,
+        availableSmes: []
+      };
+    }
+
+    // 4. Preview draft session check
+    const previewDemo = currentPreviews.find(p => {
+      if (p.mentorId !== mentorId || p.dateStr !== dateStr) return false;
+      return isTimeSlotMatch(p.timeSlot, timeSlot);
+    });
+    if (previewDemo) {
+      return {
+        status: "preview",
+        isAllocatable: false,
+        label: `Preview: ${previewDemo.subject}`,
+        details: `SME: ${previewDemo.smeName}`,
+        session: previewDemo,
+        availableSmes: []
+      };
+    }
+
+    // 5. College Timetable Teaching Class check
+    const effectiveDay = dayInfo.effectiveTimetableDay.toLowerCase().trim();
+    const dayOrderStr = (dayInfo.dayOrder || "").toLowerCase().trim();
+
+    const teachSlot = slots.find(s => {
+      if (s.mentorId !== mentorId) return false;
+      const sDay = (s.day || "").toLowerCase().trim();
+      const mappedSlotDay = (mapDayOrderToDayName(s.day, "") || "").toLowerCase().trim();
+
+      const dayMatches =
+        (dayOrderStr && sDay === dayOrderStr) ||
+        (effectiveDay && sDay === effectiveDay) ||
+        (mappedSlotDay && effectiveDay && mappedSlotDay === effectiveDay) ||
+        (effectiveDay && sDay.startsWith(effectiveDay.slice(0, 3)));
+
+      if (!dayMatches) return false;
+      return isTimeSlotMatch(s.time, timeSlot);
+    });
+
+    if (teachSlot) {
+      return {
+        status: "occupied",
+        isAllocatable: false,
+        label: teachSlot.course,
+        group: teachSlot.classGroup,
+        details: `Class in ${teachSlot.location || "Room"}`,
+        availableSmes: []
+      };
+    }
+
+    // 6. Mentor is timetable-free. Now check qualified SME availability for mentor's subject group
+    const mentorGroup = getMentorGroup(mentor);
+    const eligibleSmes = getSmesForSubjectGroup(mentorGroup);
+    const availableSmes = eligibleSmes.filter(sme => isSmeFree(sme.id, dateStr, timeSlot, currentPreviews));
+
+    if (availableSmes.length === 0) {
+      return {
+        status: "sme_unavailable",
+        isAllocatable: false,
+        label: "No SME Available",
+        details: eligibleSmes.length === 0
+          ? `No SME registered for ${mentorGroup}`
+          : `All ${eligibleSmes.length} SME(s) busy/outside availability window`,
+        availableSmes: [],
+        mentorGroup
+      };
+    }
+
+    return {
+      status: "free",
+      isAllocatable: true,
+      label: "Available",
+      details: `${availableSmes.length} SME(s) free`,
+      availableSmes,
+      mentorGroup
+    };
+  }, [mentors, colleges, currentWeekDates, getEffectiveDayOrderInfo, isFacultyOnLeave, demoSessions, slots, getMentorGroup, getSmesForSubjectGroup, isSmeFree]);
+
+  // Backwards-compatible alias for existing callers
+  const getMentorStatusAtSlot = useCallback((mentorId: string, dateStr: string, dbTimeSlot: string, currentPreviews: any[] = []) => {
+    return evaluateMentorSlotAvailability(mentorId, dateStr, dbTimeSlot, undefined, currentPreviews);
+  }, [evaluateMentorSlotAvailability]);
 
   // Helper: check if a class group (stream) is free on a given date/time
   const isGroupFree = (groupName: string, dateStr: string, time: string) => {
@@ -773,7 +1034,7 @@ export function DemoAllocationDashboard() {
         return;
       }
 
-      // 2. Check if mentor is on approved leave
+      // 2. Check if mentor is on approved leave or teaching a class
       if (isFacultyOnLeave(mentorId, dateStr)) {
         exceptions.push({
           id: "exc_mleave_" + idx + "_" + Date.now(),
@@ -783,6 +1044,20 @@ export function DemoAllocationDashboard() {
           stream,
           reason: "Mentor Leave Conflict",
           recommendation: `Mentor ${mentorName} is on approved faculty leave on ${dateStr}.`
+        });
+        return;
+      }
+
+      const mentorStatus = getMentorStatusAtSlot(mentorId, dateStr, timeSlot, [...generated, ...previousAllocations]);
+      if (mentorStatus.status !== "free" && mentorStatus.status !== "preview") {
+        exceptions.push({
+          id: "exc_mbusy_" + idx + "_" + Date.now(),
+          mentorId,
+          mentorName,
+          subject: subjectGroup,
+          stream,
+          reason: "Mentor Timetable Conflict",
+          recommendation: `Mentor ${mentorName} is occupied: ${mentorStatus.label || mentorStatus.details} at ${timeSlot} on ${dateStr}.`
         });
         return;
       }
@@ -1046,76 +1321,49 @@ export function DemoAllocationDashboard() {
      EXCEL TEMPLATE DOWNLOAD, IMPORT & EXPORT HANDLERS (SUBJECT-GROUP BASED)
      ========================================================================== */
 
+  const handleOpenTemplateModal = () => {
+    fetchDailyConfigs();
+    setShowTemplateModal(true);
+  };
+
   const handleDownloadDemoTemplate = async (targetGroupInput?: string) => {
-    const targetGroup = targetGroupInput || (selectedGroupId && selectedGroupId !== "All" ? selectedGroupId : (mentorGroups[0] || "Computer Science"));
+    // 1. Strict Day Order Configuration Gate for All Applicable Colleges
+    if (!allCollegesDayOrderStatus.isAllConfigured) {
+      const unconfiguredNames = allCollegesDayOrderStatus.unconfiguredColleges
+        .map(u => `${u.college.name} (missing: ${u.missingDates.join(", ")})`)
+        .join("; ");
+      toast(`Template download blocked: Day Order has not been configured by Campus Managers for: ${unconfiguredNames}. Please configure Day Orders first in CAM Console.`, "error");
+      return;
+    }
 
-    // Filter mentors strictly relevant to this mentor group
-    const directMentors = mentors.filter(m => {
-      const gStr = getMentorGroup(m).toLowerCase().trim();
-      const target = targetGroup.toLowerCase().trim();
-      return gStr === target;
-    });
+    const targetGroup = targetGroupInput || (selectedGroupId && selectedGroupId !== "All" ? selectedGroupId : "All");
 
-    const relevantMentors = directMentors.length > 0 ? directMentors : mentors;
+    const applicableColleges = colleges.filter(c => c && c.id);
+    if (applicableColleges.length === 0) {
+      toast("No colleges configured in database.", "warning");
+      return;
+    }
 
-    // Filter SMEs relevant to this mentor group
-    const directSmes = getSmesForSubjectGroup(targetGroup);
-    const relevantSmes = directSmes.length > 0 ? directSmes : smes;
+    // Filter mentors: if specific group selected, filter by that group, otherwise include all mentors across all colleges
+    const relevantMentors = targetGroup !== "All"
+      ? mentors.filter(m => getMentorGroup(m).toLowerCase().trim() === targetGroup.toLowerCase().trim())
+      : mentors;
 
-    const timeSlots = collegeTimeSlots.length > 0
-      ? collegeTimeSlots.slice(0, 6)
-      : ["08:30 AM - 09:30 AM", "09:30 AM - 10:30 AM", "10:30 AM - 11:30 AM", "11:30 AM - 12:30 PM", "01:30 PM - 02:30 PM"];
-
-    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+    // Filter SMEs: if specific group selected, filter by that group, otherwise include all SMEs
+    const relevantSmes = targetGroup !== "All"
+      ? getSmesForSubjectGroup(targetGroup)
+      : smes;
 
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Zentra Timetable Engine";
-
-    const safeGroupName = targetGroup.replace(/[^a-zA-Z0-9]/g, "_");
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // SHEET 1: Timetable Grid Matrix
-    // ─────────────────────────────────────────────────────────────────────────
-    const wsGrid = workbook.addWorksheet("Timetable_Grid");
-
-    const gridHeaders = ["Day / Period", ...timeSlots.map((ts, i) => `Period ${i + 1} (${ts})`)];
-    const gridHeaderRow = wsGrid.addRow(gridHeaders);
-    gridHeaderRow.height = 28;
-    gridHeaderRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
-    gridHeaderRow.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "D528A2" } // Signature Magenta Header
-    };
-    gridHeaderRow.alignment = { vertical: "middle", horizontal: "center" };
-
-    // Set Column Widths for Timetable Grid
-    wsGrid.getColumn(1).width = 16;
-    for (let c = 2; c <= timeSlots.length + 1; c++) {
-      wsGrid.getColumn(c).width = 28;
-    }
-
-    // Helper to parse slot time string into minutes from midnight
-    const parseSlotTimeToMinutes = (t: string) => {
-      const match = t.match(/^(\d+)(?:\.(\d+)|:(\d+))?\s*(AM|PM)/i);
-      if (!match) return 9999;
-      let hr = parseInt(match[1]);
-      const min = match[2] ? parseInt(match[2]) : (match[3] ? parseInt(match[3]) : 0);
-      const isPm = match[4].toUpperCase() === "PM";
-      if (isPm && hr < 12) hr += 12;
-      if (!isPm && hr === 12) hr = 0;
-      return hr * 60 + min;
-    };
+    workbook.creator = "Zentra Timetable Engine - Learning and Development";
 
     // Helper to get actual college working hours, start time, end time, and campus name
     const getCollegeTimingInfo = (collegeId?: string) => {
       const col = colleges.find(c => c.id === collegeId);
       const collegeName = col?.name || "Campus";
-
       const campusSlotsList = new Set<string>();
 
-      // 1. Gather all actual slots configured for this college
       slots.filter(s => s.college_id === collegeId && s.time).forEach(s => {
         const clean = s.time.trim();
         if (clean && !clean.toLowerCase().includes("lunch") && !clean.toLowerCase().includes("break")) {
@@ -1123,7 +1371,6 @@ export function DemoAllocationDashboard() {
         }
       });
 
-      // 2. Gather from college shift_configs if present
       if (col?.shift_configs) {
         try {
           const parsed = JSON.parse(col.shift_configs);
@@ -1146,22 +1393,12 @@ export function DemoAllocationDashboard() {
         const latestSlot = sortedSlots[sortedSlots.length - 1];
         const startTime = earliestSlot.split("-")[0]?.trim() || earliestSlot;
         const endTime = latestSlot.split("-")[1]?.trim() || latestSlot;
-        return {
-          collegeName,
-          startTime,
-          endTime,
-          workingHours: `${startTime} - ${endTime}`
-        };
+        return { collegeName, startTime, endTime, workingHours: `${startTime} - ${endTime}` };
       }
 
       const startTime = col?.start_time || "08:30 AM";
       const endTime = "04:30 PM";
-      return {
-        collegeName,
-        startTime,
-        endTime,
-        workingHours: `${startTime} - ${endTime}`
-      };
+      return { collegeName, startTime, endTime, workingHours: `${startTime} - ${endTime}` };
     };
 
     // Helper to get exact time slots for a specific college
@@ -1169,7 +1406,6 @@ export function DemoAllocationDashboard() {
       const col = colleges.find(c => c.id === collegeId);
       const campusSlotsList = new Set<string>();
 
-      // 1. Gather actual slots recorded in slots table for this specific college
       if (collegeId) {
         slots.filter(s => s.college_id === collegeId && s.time).forEach(s => {
           const clean = s.time.trim();
@@ -1179,7 +1415,6 @@ export function DemoAllocationDashboard() {
         });
       }
 
-      // 2. Gather from college shift_configs if present
       if (col?.shift_configs) {
         try {
           const parsed = JSON.parse(col.shift_configs);
@@ -1196,12 +1431,8 @@ export function DemoAllocationDashboard() {
       }
 
       const sortedSlots = Array.from(campusSlotsList).sort((a, b) => parseSlotTimeToMinutes(a) - parseSlotTimeToMinutes(b));
+      if (sortedSlots.length > 0) return sortedSlots;
 
-      if (sortedSlots.length > 0) {
-        return sortedSlots;
-      }
-
-      // Fallback: Use standard shift timings if unconfigured
       return [
         "08:30 AM - 09:30 AM",
         "09:30 AM - 10:30 AM",
@@ -1212,21 +1443,38 @@ export function DemoAllocationDashboard() {
       ];
     };
 
-    // Helper to calculate free periods for a mentor on a specific day based solely on their own college's schedule
-    const getMentorDayFreePeriods = (mentorId: string, dayName: string, collegeId?: string) => {
+    // Helper to calculate free periods for a mentor on a specific Day Order & date based solely on their timetable & college Day Order
+    const getMentorDayFreePeriods = (mentorId: string, collegeId?: string, targetDateStr?: string, weekdayName?: string, dayIndex?: number) => {
+      const mDayInfo = getEffectiveDayOrderInfo(targetDateStr || "", weekdayName || "", dayIndex || 0, collegeId);
+      if (mDayInfo.isHoliday) {
+        return "Campus Holiday (Closed)";
+      }
       const mentorSlots = getCollegeSpecificSlots(collegeId);
       const freeList: string[] = [];
-      const targetDate = currentWeekDates.find(w => w.day.toLowerCase().trim() === dayName.toLowerCase().trim())?.dateStr;
+      const targetDate = targetDateStr;
 
       mentorSlots.forEach((slot, sIdx) => {
         const isLunchOrBreak = slot.toLowerCase().includes("lunch") || slot.toLowerCase().includes("break");
         if (isLunchOrBreak) return;
 
-        const hasClass = slots.some(s =>
-          s.mentorId === mentorId &&
-          s.day?.toLowerCase().trim() === dayName.toLowerCase().trim() &&
-          s.time?.trim().toLowerCase() === slot.trim().toLowerCase()
-        );
+        const hasClass = slots.some(s => {
+          if (s.mentorId !== mentorId) return false;
+          const sDay = (s.day || "").toLowerCase().trim();
+          const targetEffDay = mDayInfo.effectiveTimetableDay.toLowerCase().trim();
+          const targetDayOrder = (mDayInfo.dayOrder || "").toLowerCase().trim();
+          const mappedSlotDay = (mapDayOrderToDayName(s.day, "") || "").toLowerCase().trim();
+          const mappedTargetDayOrder = (mapDayOrderToDayName(mDayInfo.dayOrder, "") || "").toLowerCase().trim();
+
+          const dayMatches = 
+            (targetDayOrder && sDay === targetDayOrder) ||
+            (targetEffDay && sDay === targetEffDay) ||
+            (mappedSlotDay && targetEffDay && mappedSlotDay === targetEffDay) ||
+            (mappedTargetDayOrder && sDay === mappedTargetDayOrder) ||
+            (targetEffDay && sDay.startsWith(targetEffDay.slice(0, 3)));
+
+          if (!dayMatches) return false;
+          return isTimeSlotMatch(s.time, slot);
+        });
         const isBlocked = targetDate ? isFacultyOnLeave(mentorId, targetDate) : facultyLeaves?.some((fl: any) => (fl.mentor_id === mentorId || fl.mentorId === mentorId) && fl.status === "approved");
 
         if (!hasClass && !isBlocked) {
@@ -1237,26 +1485,43 @@ export function DemoAllocationDashboard() {
       return freeList.length > 0 ? freeList.join(", ") : "No Free Periods (Fully Booked)";
     };
 
-    // Helper to calculate weekly free overview across all 5 weekdays based solely on their own college's schedule
+    // Helper to calculate weekly free overview across all week days based on each mentor's college Day Orders
     const getMentorWeeklyFreeSummary = (mentorId: string, collegeId?: string) => {
       const mentorSlots = getCollegeSpecificSlots(collegeId);
       const parts: string[] = [];
       let totalFreeCount = 0;
 
-      days.forEach(day => {
-        const dayShort = day.slice(0, 3);
+      currentWeekDates.forEach((w, idx) => {
+        const mDayInfo = getEffectiveDayOrderInfo(w.dateStr, w.day, idx, collegeId);
+        if (mDayInfo.isHoliday) {
+          parts.push(`${w.day.slice(0, 3)}: Holiday`);
+          return;
+        }
         const freePeriodNums: number[] = [];
-        const targetDate = currentWeekDates.find(w => w.day.toLowerCase().trim() === day.toLowerCase().trim())?.dateStr;
+        const targetDate = mDayInfo.dateStr;
 
         mentorSlots.forEach((slot, sIdx) => {
           const isLunchOrBreak = slot.toLowerCase().includes("lunch") || slot.toLowerCase().includes("break");
           if (isLunchOrBreak) return;
 
-          const hasClass = slots.some(s =>
-            s.mentorId === mentorId &&
-            s.day?.toLowerCase().trim() === day.toLowerCase().trim() &&
-            s.time?.trim().toLowerCase() === slot.trim().toLowerCase()
-          );
+          const hasClass = slots.some(s => {
+            if (s.mentorId !== mentorId) return false;
+            const sDay = (s.day || "").toLowerCase().trim();
+            const targetEffDay = mDayInfo.effectiveTimetableDay.toLowerCase().trim();
+            const targetDayOrder = mDayInfo.dayOrder.toLowerCase().trim();
+            const mappedSlotDay = (mapDayOrderToDayName(s.day, "") || "").toLowerCase().trim();
+            const mappedTargetDayOrder = (mapDayOrderToDayName(mDayInfo.dayOrder, "") || "").toLowerCase().trim();
+
+            const dayMatches = 
+              (targetDayOrder && sDay === targetDayOrder) ||
+              (targetEffDay && sDay === targetEffDay) ||
+              (mappedSlotDay && targetEffDay && mappedSlotDay === targetEffDay) ||
+              (mappedTargetDayOrder && sDay === mappedTargetDayOrder) ||
+              (targetEffDay && sDay.startsWith(targetEffDay.slice(0, 3)));
+
+            if (!dayMatches) return false;
+            return isTimeSlotMatch(s.time, slot);
+          });
           const isBlocked = targetDate ? isFacultyOnLeave(mentorId, targetDate) : facultyLeaves?.some((fl: any) => (fl.mentor_id === mentorId || fl.mentorId === mentorId) && fl.status === "approved");
 
           if (!hasClass && !isBlocked) {
@@ -1266,14 +1531,16 @@ export function DemoAllocationDashboard() {
         });
 
         if (freePeriodNums.length > 0) {
-          parts.push(`${dayShort}: P${freePeriodNums.join(",")}`);
+          parts.push(`${mDayInfo.dayOrder} (${mDayInfo.weekdayName.slice(0, 3)}): P${freePeriodNums.join(",")}`);
+        } else {
+          parts.push(`${mDayInfo.dayOrder} (${mDayInfo.weekdayName.slice(0, 3)}): Busy`);
         }
       });
 
       return parts.length > 0 ? `${parts.join(" • ")} (${totalFreeCount} free periods/wk)` : "Fully Occupied";
     };
 
-    // Helper function to convert 1-based column index to Excel column letters (A, B, C... Z, AA, AB...)
+    // Helper function to convert 1-based column index to Excel column letters
     const getColLetter = (colIdx: number) => {
       let temp, letter = '';
       let num = colIdx;
@@ -1286,155 +1553,243 @@ export function DemoAllocationDashboard() {
     };
 
     // ─────────────────────────────────────────────────────────────────────────
-    // HIDDEN REFERENCE SHEET: Free Mentors per Period Slot (Across ALL Colleges)
+    // HIDDEN REFERENCE SHEET: Free Mentors per College, Day Order & Period Slot
     // ─────────────────────────────────────────────────────────────────────────
     const wsRef = workbook.addWorksheet("Free_Periods_Ref");
-    wsRef.state = "hidden"; // Keep reference sheet hidden for clean user presentation
+    wsRef.state = "hidden";
 
     let refColCounter = 1;
     const cellValidationRanges: Record<string, string> = {};
 
-    days.forEach((day) => {
-      const targetDate = currentWeekDates.find(w => w.day.toLowerCase().trim() === day.toLowerCase().trim())?.dateStr;
-      timeSlots.forEach((slot) => {
-        // Filter mentors across ALL colleges in this Mentor Group who are FREE during this specific period
-        const freeMentorsForSlot = relevantMentors.filter(m => {
-          const hasClass = slots.some(s => s.mentorId === m.id && s.day === day && s.time === slot);
-          const isBlocked = targetDate ? isFacultyOnLeave(m.id, targetDate) : facultyLeaves?.some((fl: any) => (fl.mentor_id === m.id || fl.mentorId === m.id) && fl.status === "approved");
-          return !hasClass && !isBlocked;
+    applicableColleges.forEach(colObj => {
+      const collegeMentors = relevantMentors.filter(m => m.college_id === colObj.id);
+      const collegeSlots = getCollegeSpecificSlots(colObj.id);
+
+      currentWeekDates.forEach((w, dayIdx) => {
+        const dayInfo = getEffectiveDayOrderInfo(w.dateStr, w.day, dayIdx, colObj.id);
+        const targetDate = dayInfo.dateStr;
+
+        collegeSlots.forEach((slot) => {
+          const freeMentorsForSlot = collegeMentors.filter(m => {
+            if (dayInfo.isHoliday) return false;
+            const hasClass = slots.some(s => {
+              if (s.mentorId !== m.id) return false;
+              const sDay = (s.day || "").toLowerCase().trim();
+              const targetEffDay = dayInfo.effectiveTimetableDay.toLowerCase().trim();
+              const targetDayOrder = dayInfo.dayOrder.toLowerCase().trim();
+              const mappedSlotDay = (mapDayOrderToDayName(s.day, "") || "").toLowerCase().trim();
+              const mappedTargetDayOrder = (mapDayOrderToDayName(dayInfo.dayOrder, "") || "").toLowerCase().trim();
+
+              const dayMatches = 
+                (targetDayOrder && sDay === targetDayOrder) ||
+                (targetEffDay && sDay === targetEffDay) ||
+                (mappedSlotDay && targetEffDay && mappedSlotDay === targetEffDay) ||
+                (mappedTargetDayOrder && sDay === mappedTargetDayOrder) ||
+                (targetEffDay && sDay.startsWith(targetEffDay.slice(0, 3)));
+
+              if (!dayMatches) return false;
+              return isTimeSlotMatch(s.time, slot);
+            });
+            const isBlocked = targetDate ? isFacultyOnLeave(m.id, targetDate) : facultyLeaves?.some((fl: any) => (fl.mentor_id === m.id || fl.mentorId === m.id) && fl.status === "approved");
+            return !hasClass && !isBlocked;
+          });
+
+          const colLetter = getColLetter(refColCounter);
+          const valKey = `${colObj.id}_${dayInfo.key}_${slot}`;
+          wsRef.getCell(`${colLetter}1`).value = valKey;
+
+          if (freeMentorsForSlot.length > 0) {
+            freeMentorsForSlot.forEach((m, idx) => {
+              wsRef.getCell(`${colLetter}${idx + 2}`).value = `${m.name} (${m.mentor_group || "General"})`;
+            });
+            const endRow = freeMentorsForSlot.length + 1;
+            cellValidationRanges[valKey] = `'Free_Periods_Ref'!$${colLetter}$2:$${colLetter}$${endRow}`;
+          } else {
+            wsRef.getCell(`${colLetter}2`).value = "(No Mentors Free at this slot)";
+            cellValidationRanges[valKey] = `'Free_Periods_Ref'!$${colLetter}$2:$${colLetter}$2`;
+          }
+
+          refColCounter++;
         });
-
-        const listMentors = freeMentorsForSlot.length > 0 ? freeMentorsForSlot : relevantMentors;
-
-        const colLetter = getColLetter(refColCounter);
-        wsRef.getCell(`${colLetter}1`).value = `${day}_${slot}`;
-
-        listMentors.forEach((m, idx) => {
-          const colObj = colleges.find(c => c.id === m.college_id);
-          const collegeTag = colObj ? colObj.name : (m.department || "Faculty");
-          wsRef.getCell(`${colLetter}${idx + 2}`).value = `${m.name} (${collegeTag})`;
-        });
-
-        const endRow = Math.max(2, listMentors.length + 1);
-        cellValidationRanges[`${day}_${slot}`] = `'Free_Periods_Ref'!$${colLetter}$2:$${colLetter}$${endRow}`;
-
-        refColCounter++;
       });
     });
 
-    // Build conflict-free grid matrix: Each mentor appears as many times as customTarget set in UI!
-    const gridMatrix: Record<string, Record<number, string>> = {};
-    days.forEach(d => { gridMatrix[d] = {}; });
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET 1: Master Demo Schedule (Bulk Multi-College Entry Table)
+    // ─────────────────────────────────────────────────────────────────────────
+    const wsMaster = workbook.addWorksheet("Master_Demo_Schedule");
+    const masterHeaders = [
+      "College / Campus",
+      "Faculty / Mentor",
+      "Department / Subject Group",
+      "Day / Date",
+      "Time Slot / Period",
+      "Assigned SME (Optional)",
+      "Class Cohort / Stream",
+      "Week Number"
+    ];
+    const masterHeadRow = wsMaster.addRow(masterHeaders);
+    masterHeadRow.height = 28;
+    masterHeadRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    masterHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "D528A2" } }; // Signature Magenta
+    masterHeadRow.alignment = { vertical: "middle", horizontal: "center" };
 
-    relevantMentors.forEach((m, mIdx) => {
-      const customTarget = mentorTargets[m.id] !== undefined
-        ? mentorTargets[m.id]
-        : (demoRules?.find(r => r.subject?.toLowerCase().trim() === targetGroup.toLowerCase().trim())?.target || 1);
+    // Pre-populate sample rows across all applicable colleges
+    applicableColleges.forEach(colObj => {
+      const colMentors = relevantMentors.filter(m => m.college_id === colObj.id);
+      const colSlots = getCollegeSpecificSlots(colObj.id);
+      const sampleMentors = colMentors.slice(0, 2);
 
-      for (let tCount = 0; tCount < customTarget; tCount++) {
-        const assignedDay = days[(mIdx + tCount) % days.length];
-        const assignedSlotIdx = (mIdx + tCount) % timeSlots.length;
-        const sItem = relevantSmes[(mIdx + tCount) % Math.max(1, relevantSmes.length)];
-        const smeText = sItem ? ` [SME: ${sItem.name}]` : "";
+      sampleMentors.forEach((m, mIdx) => {
+        const wIdx = mIdx % currentWeekDates.length;
+        const w = currentWeekDates[wIdx];
+        const dayInfo = getEffectiveDayOrderInfo(w.dateStr, w.day, wIdx, colObj.id);
+        const slot = colSlots[mIdx % colSlots.length] || "08:30 AM - 09:30 AM";
+        const mGroup = getMentorGroup(m);
+        const eligibleSme = getSmesForSubjectGroup(mGroup)[0];
 
-        if (!gridMatrix[assignedDay][assignedSlotIdx]) {
-          gridMatrix[assignedDay][assignedSlotIdx] = `${m.name}${smeText}`;
+        const row = wsMaster.addRow([
+          colObj.name,
+          m.name,
+          mGroup,
+          `${dayInfo.dayOrder} - ${w.day} (${w.dateStr})`,
+          slot,
+          eligibleSme ? eligibleSme.name : "",
+          "General Stream",
+          selectedWeek || 1
+        ]);
+        row.height = 22;
+        for (let c = 1; c <= 8; c++) {
+          row.getCell(c).font = { name: "Arial", size: 9.5 };
+          row.getCell(c).border = {
+            top: { style: 'thin', color: { argb: 'E2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
+            left: { style: 'thin', color: { argb: 'E2E8F0' } },
+            right: { style: 'thin', color: { argb: 'E2E8F0' } }
+          };
+        }
+      });
+    });
+
+    [30, 26, 24, 30, 24, 24, 20, 14].forEach((w, i) => { wsMaster.getColumn(i + 1).width = w; });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PER-COLLEGE GRID SHEETS: Dynamic Timetable Matrix for each College
+    // ─────────────────────────────────────────────────────────────────────────
+    applicableColleges.forEach(colObj => {
+      const colMentors = relevantMentors.filter(m => m.college_id === colObj.id);
+      const colSlots = getCollegeSpecificSlots(colObj.id);
+      const colDaysWithOrder = currentWeekDates.map((w, idx) => getEffectiveDayOrderInfo(w.dateStr, w.day, idx, colObj.id));
+
+      const safeSheetName = `Grid_${colObj.name.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 25)}`;
+      const wsGrid = workbook.addWorksheet(safeSheetName);
+
+      const gridHeaders = ["Day Order / Period", ...colSlots.map((ts, i) => `Period ${i + 1} (${ts})`)];
+      const gridHeaderRow = wsGrid.addRow(gridHeaders);
+      gridHeaderRow.height = 28;
+      gridHeaderRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+      gridHeaderRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "4F46E5" } }; // Indigo Header
+      gridHeaderRow.alignment = { vertical: "middle", horizontal: "center" };
+
+      wsGrid.getColumn(1).width = 32;
+      for (let c = 2; c <= colSlots.length + 1; c++) {
+        wsGrid.getColumn(c).width = 28;
+      }
+
+      colDaysWithOrder.forEach((dayInfo) => {
+        const rowData: string[] = [dayInfo.rowLabel];
+        colSlots.forEach(() => {
+          rowData.push(dayInfo.isHoliday ? "Campus Holiday (Closed)" : "");
+        });
+
+        const row = wsGrid.addRow(rowData);
+        row.height = 24;
+        for (let c = 1; c <= colSlots.length + 1; c++) {
+          const cell = row.getCell(c);
+          cell.font = { name: "Arial", size: 9.5 };
+          cell.alignment = { vertical: "middle", horizontal: c === 1 ? "center" : "left" };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'E2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
+            left: { style: 'thin', color: { argb: 'E2E8F0' } },
+            right: { style: 'thin', color: { argb: 'E2E8F0' } }
+          };
+        }
+      });
+
+      const gridEndRow = colDaysWithOrder.length + 1;
+
+      // Add Data Validation dropdowns to Grid cells
+      for (let r = 2; r <= gridEndRow; r++) {
+        const dayInfo = colDaysWithOrder[r - 2];
+        if (dayInfo.isHoliday) continue;
+
+        for (let c = 2; c <= colSlots.length + 1; c++) {
+          const slotName = colSlots[c - 2];
+          const valKey = `${colObj.id}_${dayInfo.key}_${slotName}`;
+          const valRange = cellValidationRanges[valKey] || `'Eligible_Mentors'!$B$2:$B$100`;
+
+          const cell = wsGrid.getCell(r, c);
+          cell.dataValidation = {
+            type: "list",
+            allowBlank: true,
+            formulae: [valRange]
+          };
+        }
+      }
+
+      // Add Summary Table at bottom of college grid
+      const summaryStartRow = gridEndRow + 3;
+      const lastColLetter = String.fromCharCode(64 + colSlots.length + 1);
+
+      const summaryHeaderRow = wsGrid.getRow(summaryStartRow);
+      summaryHeaderRow.values = ["Faculty Mentor", "Target Demos/Wk", "Scheduled Demos", "Validation Status"];
+      summaryHeaderRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+      summaryHeaderRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "374151" } };
+      summaryHeaderRow.alignment = { vertical: "middle", horizontal: "center" };
+      summaryHeaderRow.height = 24;
+
+      const maxMentorsToSummarize = Math.max(5, colMentors.length);
+      for (let idx = 0; idx < maxMentorsToSummarize; idx++) {
+        const m = colMentors[idx];
+        const rNum = summaryStartRow + 1 + idx;
+        const row = wsGrid.getRow(rNum);
+        row.height = 20;
+
+        if (m) {
+          const customTarget = mentorTargets[m.id] !== undefined
+            ? mentorTargets[m.id]
+            : (demoRules?.find(r => r.subject?.toLowerCase().trim() === getMentorGroup(m).toLowerCase().trim())?.target || 1);
+
+          row.getCell(1).value = m.name;
+          row.getCell(1).font = { name: "Arial", size: 9.5, bold: true };
+
+          row.getCell(2).value = customTarget;
+          row.getCell(2).font = { name: "Arial", size: 9.5 };
+          row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
+
+          row.getCell(3).value = { formula: `COUNTIF($B$2:$${lastColLetter}$${gridEndRow}, "*"&A${rNum}&"*")` };
+          row.getCell(3).font = { name: "Arial", size: 9.5, bold: true };
+          row.getCell(3).alignment = { horizontal: "center", vertical: "middle" };
+
+          row.getCell(4).value = { formula: `IF(C${rNum}=B${rNum}, "Matched", IF(C${rNum}>B${rNum}, "Over-scheduled", "Remaining: " & (B${rNum}-C${rNum}) & " demos"))` };
+          row.getCell(4).font = { name: "Arial", size: 9.5, bold: true };
+          row.getCell(4).alignment = { horizontal: "center", vertical: "middle" };
+        }
+
+        for (let col = 1; col <= 4; col++) {
+          row.getCell(col).border = {
+            top: { style: 'thin', color: { argb: 'E2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
+            left: { style: 'thin', color: { argb: 'E2E8F0' } },
+            right: { style: 'thin', color: { argb: 'E2E8F0' } }
+          };
         }
       }
     });
 
-    // Add Timetable Grid Rows (Monday to Friday)
-    days.forEach((day) => {
-      const rowData: string[] = [day];
-      timeSlots.forEach((_, slotIdx) => {
-        const cellVal = gridMatrix[day]?.[slotIdx] || "";
-        rowData.push(cellVal);
-      });
-
-      const row = wsGrid.addRow(rowData);
-      row.height = 24;
-      for (let c = 1; c <= timeSlots.length + 1; c++) {
-        const cell = row.getCell(c);
-        cell.font = { name: "Arial", size: 9.5 };
-        cell.alignment = { vertical: "middle", horizontal: c === 1 ? "center" : "left" };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'E2E8F0' } },
-          bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
-          left: { style: 'thin', color: { argb: 'E2E8F0' } },
-          right: { style: 'thin', color: { argb: 'E2E8F0' } }
-        };
-      }
-    });
-
-    const gridEndRow = days.length + 1; // Row 6
-
-    // Add Slot-Specific Data Validation Dropdown Pickers (showing ONLY free mentors for that day & period!)
-    for (let r = 2; r <= gridEndRow; r++) {
-      const dayName = days[r - 2];
-      for (let c = 2; c <= timeSlots.length + 1; c++) {
-        const slotName = timeSlots[c - 2];
-        const valRange = cellValidationRanges[`${dayName}_${slotName}`] || `'Eligible_Mentors'!$B$2:$B$100`;
-
-        const cell = wsGrid.getCell(r, c);
-        cell.dataValidation = {
-          type: "list",
-          allowBlank: true,
-          formulae: [valRange]
-        };
-      }
-    }
-
     // ─────────────────────────────────────────────────────────────────────────
-    // SHEET 1 Bottom: Mentor Demo Allocation Validation Summary Table
-    // ─────────────────────────────────────────────────────────────────────────
-    const summaryStartRow = gridEndRow + 3; // Row 9
-    const lastColLetter = String.fromCharCode(64 + timeSlots.length + 1);
-
-    const summaryHeaderRow = wsGrid.getRow(summaryStartRow);
-    summaryHeaderRow.values = ["Faculty Mentor", "Target Demos/Wk", "Scheduled Demos", "Validation Status"];
-    summaryHeaderRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
-    summaryHeaderRow.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "374151" } // Dark Slate Header
-    };
-    summaryHeaderRow.alignment = { vertical: "middle", horizontal: "center" };
-    summaryHeaderRow.height = 24;
-
-    const maxMentorsToSummarize = Math.max(10, relevantMentors.length);
-    for (let idx = 0; idx < maxMentorsToSummarize; idx++) {
-      const rNum = summaryStartRow + 1 + idx;
-      const mRefRow = idx + 2;
-      const row = wsGrid.getRow(rNum);
-      row.height = 20;
-
-      row.getCell(1).value = { formula: `IF('Eligible_Mentors'!B${mRefRow}="", "", 'Eligible_Mentors'!B${mRefRow})` };
-      row.getCell(1).font = { name: "Arial", size: 9.5, bold: true };
-
-      row.getCell(2).value = { formula: `IF(A${rNum}="", "", 'Eligible_Mentors'!N${mRefRow})` };
-      row.getCell(2).font = { name: "Arial", size: 9.5 };
-      row.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
-
-      row.getCell(3).value = { formula: `IF(A${rNum}="", "", COUNTIF($B$2:$${lastColLetter}$${gridEndRow}, "*"&A${rNum}&"*"))` };
-      row.getCell(3).font = { name: "Arial", size: 9.5, bold: true };
-      row.getCell(3).alignment = { horizontal: "center", vertical: "middle" };
-
-      row.getCell(4).value = { formula: `IF(A${rNum}="", "", IF(C${rNum}=B${rNum}, "Matched", IF(C${rNum}>B${rNum}, "Over-scheduled", "Remaining: " & (B${rNum}-C${rNum}) & " demos")))` };
-      row.getCell(4).font = { name: "Arial", size: 9.5, bold: true };
-      row.getCell(4).alignment = { horizontal: "center", vertical: "middle" };
-
-      for (let col = 1; col <= 4; col++) {
-        row.getCell(col).border = {
-          top: { style: 'thin', color: { argb: 'E2E8F0' } },
-          bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
-          left: { style: 'thin', color: { argb: 'E2E8F0' } },
-          right: { style: 'thin', color: { argb: 'E2E8F0' } }
-        };
-      }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // SHEET 2: Eligible Mentors with Free Periods & Availability
+    // SHEET: Eligible Mentors across ALL applicable colleges
     // ─────────────────────────────────────────────────────────────────────────
     const wsMentors = workbook.addWorksheet("Eligible_Mentors");
     const mHeadRow = wsMentors.addRow([
@@ -1445,11 +1800,7 @@ export function DemoAllocationDashboard() {
       "College Start Time",
       "College End Time",
       "College Working Hours",
-      "Monday Free Periods (Timings)",
-      "Tuesday Free Periods (Timings)",
-      "Wednesday Free Periods (Timings)",
-      "Thursday Free Periods (Timings)",
-      "Friday Free Periods (Timings)",
+      ...currentWeekDates.map(d => `${d.day} Free Periods (Timings)`),
       "Weekly Free Availability Summary",
       "Weekly Quota Target"
     ]);
@@ -1458,37 +1809,34 @@ export function DemoAllocationDashboard() {
     mHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "4F46E5" } };
     mHeadRow.alignment = { vertical: "middle", horizontal: "center" };
 
+    const totalMentorCols = 9 + currentWeekDates.length;
+
     relevantMentors.forEach((m) => {
+      const mGroup = getMentorGroup(m);
       const customTarget = mentorTargets[m.id] !== undefined
         ? mentorTargets[m.id]
-        : (demoRules?.find(r => r.subject?.toLowerCase().trim() === targetGroup.toLowerCase().trim())?.target || 1);
+        : (demoRules?.find(r => r.subject?.toLowerCase().trim() === mGroup.toLowerCase().trim())?.target || 1);
 
       const timing = getCollegeTimingInfo(m.college_id);
-      const monFree = getMentorDayFreePeriods(m.id, "Monday", m.college_id);
-      const tueFree = getMentorDayFreePeriods(m.id, "Tuesday", m.college_id);
-      const wedFree = getMentorDayFreePeriods(m.id, "Wednesday", m.college_id);
-      const thuFree = getMentorDayFreePeriods(m.id, "Thursday", m.college_id);
-      const friFree = getMentorDayFreePeriods(m.id, "Friday", m.college_id);
+      const dayFreeCols = currentWeekDates.map((w, idx) =>
+        getMentorDayFreePeriods(m.id, m.college_id, w.dateStr, w.day, idx)
+      );
       const weeklyFree = getMentorWeeklyFreeSummary(m.id, m.college_id);
 
       const row = wsMentors.addRow([
         m.id,
         m.name,
-        m.mentor_group || targetGroup,
+        mGroup,
         timing.collegeName,
         timing.startTime,
         timing.endTime,
         timing.workingHours,
-        monFree,
-        tueFree,
-        wedFree,
-        thuFree,
-        friFree,
+        ...dayFreeCols,
         weeklyFree,
         customTarget
       ]);
       row.height = 22;
-      for (let c = 1; c <= 14; c++) {
+      for (let c = 1; c <= totalMentorCols; c++) {
         row.getCell(c).font = { name: "Arial", size: 9 };
         row.getCell(c).border = {
           top: { style: 'thin', color: { argb: 'E2E8F0' } },
@@ -1496,16 +1844,18 @@ export function DemoAllocationDashboard() {
           left: { style: 'thin', color: { argb: 'E2E8F0' } },
           right: { style: 'thin', color: { argb: 'E2E8F0' } }
         };
-        if (c === 14) {
+        if (c === totalMentorCols) {
           row.getCell(c).alignment = { horizontal: "center", vertical: "middle" };
           row.getCell(c).font = { name: "Arial", size: 9.5, bold: true };
         }
       }
     });
-    [15, 26, 24, 32, 18, 18, 24, 34, 34, 34, 34, 34, 46, 20].forEach((w, i) => { wsMentors.getColumn(i + 1).width = w; });
+
+    const colWidths = [15, 26, 24, 32, 18, 18, 24, ...currentWeekDates.map(() => 34), 46, 20];
+    colWidths.forEach((w, i) => { wsMentors.getColumn(i + 1).width = w; });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SHEET 3: Assigned SMEs with Demo Time & Training Time Windows
+    // SHEET: Assigned SMEs with Demo Time & Training Time Windows
     // ─────────────────────────────────────────────────────────────────────────
     const wsSmes = workbook.addWorksheet("Assigned_SMEs");
     const sHeadRow = wsSmes.addRow([
@@ -1550,14 +1900,14 @@ export function DemoAllocationDashboard() {
           ? Object.entries(trainByDay).map(([d, times]) => `${d}: ${times.join(", ")}`).join(" • ")
           : "None (Full Availability for Demos)";
       } else {
-        demoAvailText = `Configured Full Shift: ${timeSlots[0] || "08:30 AM"} - ${timeSlots[timeSlots.length - 1] || "04:30 PM"}`;
+        demoAvailText = "Configured Full Shift: 08:30 AM - 04:30 PM";
         trainingAvailText = "None";
       }
 
       const row = wsSmes.addRow([
         s.id,
         s.name,
-        s.subject || "General",
+        s.subject || s.head_subject_group || "General",
         demoAvailText,
         trainingAvailText,
         s.is_head_sme ? "YES (+50 Priority Score)" : "NO"
@@ -1571,7 +1921,41 @@ export function DemoAllocationDashboard() {
     [15, 28, 26, 46, 46, 20].forEach((w, i) => { wsSmes.getColumn(i + 1).width = w; });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // SHEET 4: System Reference Guide
+    // SHEET: Campus Day Orders across All Colleges
+    // ─────────────────────────────────────────────────────────────────────────
+    const wsDayOrders = workbook.addWorksheet("Campus_Day_Orders");
+    const dHeadRow = wsDayOrders.addRow([
+      "College / Campus Name",
+      ...currentWeekDates.map(w => `${w.day} (${w.formatted || w.dateStr})`),
+      "Configuration Status"
+    ]);
+    dHeadRow.height = 24;
+    dHeadRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
+    dHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "374151" } };
+    dHeadRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    applicableColleges.forEach(colObj => {
+      const cStatus = getCollegeDayOrderConfigStatus(colObj.id);
+      const dayOrderCols = currentWeekDates.map((w, idx) => {
+        const info = getEffectiveDayOrderInfo(w.dateStr, w.day, idx, colObj.id);
+        return info.isHoliday ? "Holiday" : info.dayOrder;
+      });
+
+      const row = wsDayOrders.addRow([
+        colObj.name,
+        ...dayOrderCols,
+        cStatus.isFullyConfigured ? "Fully Configured" : "Incomplete"
+      ]);
+      row.height = 20;
+      for (let c = 1; c <= 2 + currentWeekDates.length; c++) {
+        row.getCell(c).font = { name: "Arial", size: 9.5 };
+        row.getCell(c).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
+      }
+    });
+    [32, ...currentWeekDates.map(() => 22), 24].forEach((w, i) => { wsDayOrders.getColumn(i + 1).width = w; });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHEET: System Reference Guide
     // ─────────────────────────────────────────────────────────────────────────
     const wsGuide = workbook.addWorksheet("System_Reference_Guide");
     const gHeadRow = wsGuide.addRow(["Category", "Configured System Values"]);
@@ -1579,12 +1963,24 @@ export function DemoAllocationDashboard() {
     gHeadRow.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFF" } };
     gHeadRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "374151" } };
 
+    const campusDayOrderSummary = applicableColleges.map(c => {
+      const cOrders = currentWeekDates.map((w, idx) => {
+        const d = getEffectiveDayOrderInfo(w.dateStr, w.day, idx, c.id);
+        return `${w.day.slice(0, 3)}: ${d.isHoliday ? 'Holiday' : d.dayOrder}`;
+      }).join(", ");
+      return `${c.name}: [${cOrders}]`;
+    }).join(" | ");
+
     const guideRows = [
+      ["Scope", "All Applicable Colleges & Campuses"],
       ["Target Mentor Group", targetGroup],
-      ["Allowed Days of Week", days.join(", ")],
-      ["Active Shift Time Slots", timeSlots.join(", ")],
+      ["Active Week Date Range", `${currentWeekDates[0]?.dateStr || "Start"} to ${currentWeekDates[currentWeekDates.length - 1]?.dateStr || "End"}`],
+      ["CAM Configured Campus Day Orders", campusDayOrderSummary],
+      ["Total Colleges Included", `${applicableColleges.length} colleges (${applicableColleges.map(c => c.name).join(", ")})`],
       ["Eligible Faculty Count", `${relevantMentors.length} active mentors`],
-      ["Assigned SMEs Count", `${relevantSmes.length} assigned SMEs`]
+      ["Assigned SMEs Count", `${relevantSmes.length} assigned SMEs`],
+      ["Allocation Engine Rules", "Demo sessions require: (1) Mentor is free from teaching and leave, (2) SME is free and within demo evaluation window, (3) College is open (not a holiday), (4) CAM Day Order is configured."],
+      ["Sheet Usage", "Fill out 'Master_Demo_Schedule' for bulk multi-college uploads, or use individual 'Grid_[College]' tabs for visual timetable matrix entry with built-in free faculty dropdowns."]
     ];
 
     guideRows.forEach(r => {
@@ -1595,20 +1991,20 @@ export function DemoAllocationDashboard() {
       row.getCell(1).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
       row.getCell(2).border = { top: { style: 'thin', color: { argb: 'E2E8F0' } }, bottom: { style: 'thin', color: { argb: 'E2E8F0' } }, left: { style: 'thin', color: { argb: 'E2E8F0' } }, right: { style: 'thin', color: { argb: 'E2E8F0' } } };
     });
-    wsGuide.getColumn(1).width = 25;
-    wsGuide.getColumn(2).width = 65;
+    wsGuide.getColumn(1).width = 30;
+    wsGuide.getColumn(2).width = 85;
 
-    // Save File via Blob / exceljs writeBuffer
+    // Write buffer & trigger download
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const downloadUrl = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = downloadUrl;
-    a.download = `Demo_Schedule_Template_${safeGroupName}.xlsx`;
+    a.download = `Demo_Schedule_Template_All_Colleges_${selectedDateStr}.xlsx`;
     a.click();
     window.URL.revokeObjectURL(downloadUrl);
 
-    toast(`Downloaded Excel Timetable Grid template for ${targetGroup}!`, "success");
+    toast(`Downloaded Excel Demo Timetable template for all ${applicableColleges.length} colleges!`, "success");
     setShowTemplateModal(false);
   };
 
@@ -1622,73 +2018,168 @@ export function DemoAllocationDashboard() {
         const XLSX = await import("xlsx");
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary" });
-        const sheetName = wb.SheetNames[0];
-        const ws = wb.Sheets[sheetName];
-        const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-
-        if (rawRows.length === 0) {
-          toast("The uploaded spreadsheet is empty.", "warning");
-          return;
-        }
 
         const warnings: string[] = [];
         const parsedSessions: any[] = [];
         const currentTargetGroup = selectedGroupId && selectedGroupId !== "All" ? selectedGroupId : "General";
 
-        // Day of week to dateStr mapping helper
+        // Day of week / Day Order to dateStr mapping helper
         const dayToDateMap: Record<string, string> = {};
-        currentWeekDates.forEach(w => {
-          dayToDateMap[w.day.toLowerCase().trim()] = w.dateStr;
-          dayToDateMap[w.day.slice(0, 3).toLowerCase().trim()] = w.dateStr;
+        currentWeekDates.forEach((w, wIdx) => {
+          const dLower = w.day.toLowerCase().trim();
+          dayToDateMap[dLower] = w.dateStr;
+          dayToDateMap[dLower.slice(0, 3)] = w.dateStr;
+          dayToDateMap[`day ${wIdx + 1}`] = w.dateStr;
+          dayToDateMap[`day${wIdx + 1}`] = w.dateStr;
+          dayToDateMap[`day_${wIdx + 1}`] = w.dateStr;
         });
 
-        rawRows.forEach((row, idx) => {
-          const rowNum = idx + 2;
+        const normalizedRows: any[] = [];
 
-          const rawDay = String(row["Day of Week"] || row["Day"] || row["day"] || row["Date"] || row["date"] || "").trim();
-          const rawTime = String(row["Time Slot"] || row["Time"] || row["time"] || row["Period"] || "").trim();
-          const rawMentor = String(row["Faculty / Mentor"] || row["Faculty"] || row["Mentor"] || row["mentor"] || "").trim();
-          const rawSme = String(row["Assigned SME"] || row["SME"] || row["sme"] || row["Evaluator"] || "").trim();
-          const rawSubject = String(row["Subject Group"] || row["Subject"] || row["subject"] || row["Department"] || currentTargetGroup).trim();
-          const rawStream = String(row["Class Cohort"] || row["Class Group"] || row["Stream"] || row["stream"] || "").trim();
-          const rawWeek = parseInt(String(row["Week Number"] || row["Week"] || selectedWeek || "1"), 10) || selectedWeek || 1;
+        // Parse across all sheets in workbook (supporting Master_Demo_Schedule, Grid_* sheets, or standalone sheets)
+        wb.SheetNames.forEach(sheetName => {
+          if (sheetName === "Eligible_Mentors" || sheetName === "Assigned_SMEs" || sheetName === "Campus_Day_Orders" || sheetName === "System_Reference_Guide" || sheetName === "Free_Periods_Ref") {
+            return;
+          }
+
+          const ws = wb.Sheets[sheetName];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+          if (rawRows.length === 0) return;
+
+          let sheetCollegeName = "";
+          if (sheetName.startsWith("Grid_")) {
+            sheetCollegeName = sheetName.replace("Grid_", "").replace(/_/g, " ");
+          }
+
+          rawRows.forEach((row, rIdx) => {
+            const matrixDay = String(row["Day Order / Period"] || row["Day / Period"] || row["Day/Period"] || row["Day Order"] || "").trim();
+            const isMatrix = Boolean(matrixDay) && Object.keys(row).some(k => k.toLowerCase().includes("period") || k.includes("AM") || k.includes("PM") || k.includes("-"));
+
+            if (isMatrix) {
+              Object.entries(row).forEach(([colKey, cellVal]) => {
+                if (colKey === "Day Order / Period" || colKey === "Day / Period" || colKey === "Day/Period" || colKey === "Day Order" || colKey === "Day") return;
+                const valStr = String(cellVal || "").trim();
+                if (!valStr || valStr.toLowerCase().includes("holiday") || valStr.toLowerCase().includes("no mentors")) return;
+
+                let parsedMentorName = valStr;
+                let parsedSmeName = "";
+
+                const smeMatch = valStr.match(/\[(?:SME:\s*)?([^\]]+)\]/i);
+                if (smeMatch) {
+                  parsedSmeName = smeMatch[1].trim();
+                  parsedMentorName = valStr.replace(smeMatch[0], "").trim();
+                }
+
+                parsedMentorName = parsedMentorName.replace(/\s*\([^)]+\)$/, "").trim();
+
+                let cleanSlot = colKey.trim();
+                const periodTimeMatch = colKey.match(/\(([^)]+)\)/);
+                if (periodTimeMatch) {
+                  cleanSlot = periodTimeMatch[1].trim();
+                }
+
+                normalizedRows.push({
+                  rawCollege: sheetCollegeName,
+                  rawDay: matrixDay,
+                  rawTime: cleanSlot,
+                  rawMentor: parsedMentorName,
+                  rawSme: parsedSmeName,
+                  rawSubject: currentTargetGroup,
+                  rawStream: "General Stream",
+                  rawWeek: selectedWeek || 1,
+                  sheetName,
+                  rowNum: rIdx + 2
+                });
+              });
+            } else {
+              const rawCollege = String(row["College / Campus"] || row["College"] || row["college"] || row["Campus"] || sheetCollegeName || "").trim();
+              const rawDay = String(row["Day / Date"] || row["Day of Week"] || row["Day"] || row["day"] || row["Day Order"] || row["Date"] || row["date"] || "").trim();
+              const rawTime = String(row["Time Slot / Period"] || row["Time Slot"] || row["Time"] || row["time"] || row["Period"] || "").trim();
+              const rawMentor = String(row["Faculty / Mentor"] || row["Faculty"] || row["Mentor"] || row["mentor"] || "").trim();
+              const rawSme = String(row["Assigned SME (Optional)"] || row["Assigned SME"] || row["SME"] || row["sme"] || row["Evaluator"] || "").trim();
+              const rawSubject = String(row["Department / Subject Group"] || row["Department / Group"] || row["Subject Group"] || row["Subject"] || row["subject"] || row["Department"] || currentTargetGroup).trim();
+              const rawStream = String(row["Class Cohort / Stream"] || row["Class Cohort"] || row["Class Group"] || row["Stream"] || row["stream"] || "").trim();
+              const rawWeek = parseInt(String(row["Week Number"] || row["Week"] || selectedWeek || "1"), 10) || selectedWeek || 1;
+
+              if (rawDay || rawMentor || rawSme) {
+                normalizedRows.push({
+                  rawCollege,
+                  rawDay,
+                  rawTime,
+                  rawMentor,
+                  rawSme,
+                  rawSubject,
+                  rawStream,
+                  rawWeek,
+                  sheetName,
+                  rowNum: rIdx + 2
+                });
+              }
+            }
+          });
+        });
+
+        if (normalizedRows.length === 0) {
+          toast("The uploaded spreadsheet contains no valid allocation rows.", "warning");
+          return;
+        }
+
+        normalizedRows.forEach((item) => {
+          const { rawCollege, rawDay, rawTime, rawMentor, rawSme, rawSubject, rawStream, rawWeek, sheetName, rowNum } = item;
 
           if (!rawDay && !rawMentor && !rawSme) return;
 
-          // Convert Day of Week (e.g. "Monday", "Mon") to dateStr
+          // Convert Day of Week / Day Order to dateStr
           let targetDateStr = "";
-          const lowerDay = rawDay.toLowerCase().replace(/[^a-z]/g, "");
+          const dateMatch = rawDay.match(/\b(\d{4}-\d{2}-\d{2})\b/);
 
-          if (dayToDateMap[lowerDay]) {
-            targetDateStr = dayToDateMap[lowerDay];
-          } else if (rawDay.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            targetDateStr = rawDay;
+          if (dateMatch) {
+            targetDateStr = dateMatch[1];
           } else {
-            const matchedDateObj = currentWeekDates.find(w => w.day.toLowerCase().startsWith(lowerDay.slice(0, 3)));
-            if (matchedDateObj) {
-              targetDateStr = matchedDateObj.dateStr;
+            const lowerDay = rawDay.toLowerCase().trim();
+            const resolvedDay = (mapDayOrderToDayName(rawDay, "") || "").toLowerCase().trim();
+
+            if (dayToDateMap[lowerDay]) {
+              targetDateStr = dayToDateMap[lowerDay];
+            } else if (resolvedDay && dayToDateMap[resolvedDay]) {
+              targetDateStr = dayToDateMap[resolvedDay];
             } else {
-              targetDateStr = currentWeekDates[0]?.dateStr || selectedDateStr;
-              warnings.push(`Row ${rowNum}: Could not map day '${rawDay}' — defaulting to ${currentWeekDates[0]?.day || "Monday"}.`);
+              const cleanKey = resolvedDay || lowerDay;
+              const matchedDateObj = currentWeekDates.find(w => w.day.toLowerCase().startsWith(cleanKey.slice(0, 3)));
+              if (matchedDateObj) {
+                targetDateStr = matchedDateObj.dateStr;
+              } else {
+                targetDateStr = currentWeekDates[0]?.dateStr || selectedDateStr;
+                warnings.push(`[${sheetName}] Row ${rowNum}: Could not map day '${rawDay}' — defaulting to ${currentWeekDates[0]?.day || "Monday"}.`);
+              }
             }
           }
 
-          // Match Mentor
-          let matchedMentor = mentors.find(m =>
-            m.name.toLowerCase().trim() === rawMentor.toLowerCase() ||
-            m.email.toLowerCase().trim() === rawMentor.toLowerCase() ||
-            m.id.toLowerCase() === rawMentor.toLowerCase()
-          );
+          // Match Mentor (checking college match if rawCollege is present)
+          let matchedMentor = mentors.find(m => {
+            const nameMatch = m.name.toLowerCase().trim() === rawMentor.toLowerCase() ||
+              m.email.toLowerCase().trim() === rawMentor.toLowerCase() ||
+              m.id.toLowerCase() === rawMentor.toLowerCase();
+            if (!nameMatch) return false;
+            if (rawCollege) {
+              const col = colleges.find(c => c.id === m.college_id);
+              return !col || col.name.toLowerCase().includes(rawCollege.toLowerCase()) || rawCollege.toLowerCase().includes(col.name.toLowerCase());
+            }
+            return true;
+          });
 
           if (!matchedMentor && rawMentor) {
             matchedMentor = mentors.find(m => m.name.toLowerCase().includes(rawMentor.toLowerCase()));
           }
 
           if (!matchedMentor) {
-            warnings.push(`Row ${rowNum}: Mentor '${rawMentor}' not found in database.`);
+            warnings.push(`[${sheetName}] Row ${rowNum}: Mentor '${rawMentor}' not found in database.`);
           }
 
-          // Match SME (optional in Excel — if missing, Auto-Scheduler will assign as per rule)
+          const mentorCollege = matchedMentor ? colleges.find(c => c.id === matchedMentor.college_id) : null;
+          const collegeName = mentorCollege?.name || rawCollege || currentCollege?.name || "College";
+
+          // Match SME
           let matchedSme = rawSme ? smes.find(s =>
             s.name.toLowerCase().trim() === rawSme.toLowerCase() ||
             s.email.toLowerCase().trim() === rawSme.toLowerCase() ||
@@ -1704,7 +2195,7 @@ export function DemoAllocationDashboard() {
             const singleSlotRuleCheck = autoAssignSmesToSlots([{
               mentorId: matchedMentor.id,
               mentorName: matchedMentor.name,
-              collegeName: currentCollege?.name || "College",
+              collegeName,
               dateStr: targetDateStr,
               timeSlot: rawTime,
               subject: rawSubject || currentTargetGroup,
@@ -1719,40 +2210,36 @@ export function DemoAllocationDashboard() {
           }
 
           if (!matchedSme) {
-            warnings.push(`Row ${rowNum}: Could not auto-assign SME for '${rawSubject || currentTargetGroup}' at ${rawTime} on ${targetDateStr} (SMEs busy or on leave).`);
+            warnings.push(`[${sheetName}] Row ${rowNum}: Could not auto-assign SME for '${rawSubject || currentTargetGroup}' at ${rawTime} on ${targetDateStr}.`);
           }
 
-          // Conflict checks if mentor & SME matched
+          // Strict validation via evaluateMentorSlotAvailability engine
           const conflictReasons: string[] = [];
 
-          if (matchedMentor && matchedSme && targetDateStr && rawTime) {
-            // Check holiday
-            const isHol = holidays.some(h => h.date === targetDateStr);
-            if (isHol) {
-              conflictReasons.push("Selected day is a college holiday.");
+          if (matchedMentor && targetDateStr && rawTime) {
+            const slotEval = evaluateMentorSlotAvailability(
+              matchedMentor.id,
+              targetDateStr,
+              rawTime,
+              matchedMentor.college_id,
+              parsedSessions
+            );
+
+            if (slotEval.status === "blocked") {
+              conflictReasons.push(`${matchedMentor.name}: ${slotEval.label} (${slotEval.details})`);
+            } else if (slotEval.status === "occupied") {
+              conflictReasons.push(`Mentor ${matchedMentor.name} is teaching: ${slotEval.label} (${slotEval.details})`);
+            } else if (slotEval.status === "demo") {
+              conflictReasons.push(`Mentor ${matchedMentor.name} already has demo: ${slotEval.label}`);
             }
 
-            // Check mentor faculty leave
-            const isMentorLeave = isFacultyOnLeave(matchedMentor.id, targetDateStr);
-            if (isMentorLeave) {
-              conflictReasons.push(`Mentor ${matchedMentor.name} is on approved faculty leave.`);
-            }
-
-            // Check SME faculty leave
-            const isSmeLeave = isFacultyOnLeave(matchedSme.id, targetDateStr);
-            if (isSmeLeave) {
-              conflictReasons.push(`SME ${matchedSme.name} is on approved faculty leave.`);
-            }
-
-            // Check mentor timetable class / occupied slot
-            const mentorStatus = getMentorStatusAtSlot(matchedMentor.id, targetDateStr, rawTime, parsedSessions);
-            if (mentorStatus.status !== "free" && mentorStatus.status !== "preview") {
-              conflictReasons.push(`Mentor ${matchedMentor.name} is busy: ${mentorStatus.label || mentorStatus.details}`);
-            }
-
-            // Check SME double booking
-            if (!isSmeFree(matchedSme.id, targetDateStr, rawTime, parsedSessions)) {
-              conflictReasons.push(`SME ${matchedSme.name} is already booked at ${rawTime}.`);
+            if (matchedSme) {
+              if (isFacultyOnLeave(matchedSme.id, targetDateStr)) {
+                conflictReasons.push(`SME ${matchedSme.name} is on approved faculty leave.`);
+              }
+              if (!isSmeFree(matchedSme.id, targetDateStr, rawTime, parsedSessions)) {
+                conflictReasons.push(`SME ${matchedSme.name} is not available at ${rawTime}.`);
+              }
             }
           }
 
@@ -1760,7 +2247,7 @@ export function DemoAllocationDashboard() {
           const conflictReason = conflictReasons.join(" | ");
 
           if (hasConflict) {
-            warnings.push(`Row ${rowNum}: ${conflictReason}`);
+            warnings.push(`[${sheetName}] Row ${rowNum}: ${conflictReason}`);
           }
 
           parsedSessions.push({
@@ -1770,7 +2257,7 @@ export function DemoAllocationDashboard() {
             timeSlot: rawTime || "08:30 AM",
             mentorId: matchedMentor ? matchedMentor.id : "",
             mentorName: matchedMentor ? matchedMentor.name : (rawMentor || "Unknown Mentor"),
-            collegeName: currentCollege?.name || "College",
+            collegeName,
             smeId: matchedSme ? matchedSme.id : "",
             smeName: matchedSme ? matchedSme.name : "Unassigned SME",
             subject: rawSubject || currentTargetGroup,
@@ -1883,7 +2370,7 @@ export function DemoAllocationDashboard() {
   }, [filteredMentors, previewSessions, generationStep]);
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 font-sans h-full overflow-hidden">
+    <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 dark:text-slate-200 font-sans h-full overflow-hidden">
 
       {/* FLOATING COLLAPSIBLE LEFT SIDEBAR NAVIGATION */}
       <aside className={`hidden md:flex shrink-0 flex-col justify-between sticky top-6 z-30 floating-sidebar transition-all duration-300 ${isCollapsed ? "w-20 p-3" : "w-64 p-5"}`}>
@@ -1892,11 +2379,16 @@ export function DemoAllocationDashboard() {
           {/* Sidebar Header Toggle */}
           <div className="flex items-center justify-between pb-4 border-b border-slate-200/70 dark:border-slate-800">
             {!isCollapsed && (
-              <div className="flex items-center gap-2">
-                <Compass className="h-5 w-5 text-indigo-600 animate-pulse" />
-                <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
-                  Allocator Portal
-                </span>
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-[#D528A2]/10 text-[#D528A2]">
+                  <Compass className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white block leading-tight">
+                    Learning &amp; Dev
+                  </span>
+                  <span className="text-[9.5px] font-bold text-slate-400 block">Demo Allocator</span>
+                </div>
               </div>
             )}
             <button
@@ -1913,7 +2405,7 @@ export function DemoAllocationDashboard() {
             <button
               onClick={() => setAllocatorTab("matrix")}
               className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${allocatorTab === "matrix"
-                ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
+                ? "sidebar-active-item font-black border-none"
                 : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
                 }`}
             >
@@ -1924,18 +2416,18 @@ export function DemoAllocationDashboard() {
             <button
               onClick={() => setAllocatorTab("rules")}
               className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${allocatorTab === "rules"
-                ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
+                ? "sidebar-active-item font-black border-none"
                 : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
                 }`}
             >
               <Settings className="h-4 w-4 shrink-0" />
-              {!isCollapsed && <span>Auto-Scheduler & Rules</span>}
+              {!isCollapsed && <span>Excel Rules &amp; Targets</span>}
             </button>
 
             <button
               onClick={() => setAllocatorTab("queue")}
               className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${allocatorTab === "queue"
-                ? "bg-gradient-to-r from-[#D528A2] to-pink-600 text-white shadow-md shadow-[#D528A2]/25 font-black border-none"
+                ? "sidebar-active-item font-black border-none"
                 : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
                 }`}
             >
@@ -1955,87 +2447,54 @@ export function DemoAllocationDashboard() {
       <div className="flex-1 overflow-y-auto p-3 md:p-6 space-y-6 max-w-[1400px] mx-auto w-full">
 
         {/* Page Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/60 dark:border-slate-805">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 dark:border-slate-800">
           <div className="space-y-1">
-            <h1 className="text-lg font-black text-slate-905 dark:text-white tracking-tight flex items-center gap-2">
+            <h1 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-[#D528A2] animate-pulse" />
-              Demo Scheduling Console
+              Learning and Development Console
             </h1>
-            <p className="text-[11.5px] text-slate-405 font-bold leading-none dark:text-slate-400">
-              Consolidate and allocate department demo sessions for mentors and SMEs.
+            <p className="text-[11.5px] text-slate-500 dark:text-slate-400 font-bold leading-none">
+              Consolidate and allocate multi-campus department demo sessions for mentors and SMEs.
             </p>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <button
               onClick={() => { refreshData(); toast("Refreshed timetable data.", "success"); }}
-              className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
+              className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
             </button>
 
-            {/* SINGLE CLEAN EXCEL ACTIONS DROPDOWN */}
-            <div className="relative">
-              <button
-                onClick={() => setShowExcelDropdown(!showExcelDropdown)}
-                className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
-              >
-                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                <span>Excel Actions</span>
-                <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${showExcelDropdown ? "rotate-180" : ""}`} />
-              </button>
-
-              {showExcelDropdown && (
-                <div className="absolute right-0 mt-2 w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-50 py-1.5 animate-fade-in">
-                  <button
-                    onClick={() => { setShowExcelDropdown(false); setShowTemplateModal(true); }}
-                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
-                  >
-                    <Download className="h-4 w-4 text-indigo-600 shrink-0" />
-                    <div>
-                      <span>Download Template (.xlsx)</span>
-                      <span className="block text-[9.5px] font-normal text-slate-400">Day-of-Week &amp; Subject Group template</span>
-                    </div>
-                  </button>
-
-                  <label
-                    onClick={() => setShowExcelDropdown(false)}
-                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
-                  >
-                    <Upload className="h-4 w-4 text-emerald-600 shrink-0" />
-                    <div>
-                      <span>Import Excel Schedule</span>
-                      <span className="block text-[9.5px] font-normal text-slate-400">Parse &amp; validate conflict-free rows</span>
-                    </div>
-                    <input
-                      type="file"
-                      accept=".xlsx, .xls, .csv"
-                      onChange={handleDemoExcelFileSelect}
-                      className="hidden"
-                    />
-                  </label>
-
-                  <button
-                    onClick={() => { setShowExcelDropdown(false); handleExportDemoSchedule(); }}
-                    className="w-full px-4 py-2.5 text-left text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-amber-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
-                  >
-                    <FileSpreadsheet className="h-4 w-4 text-amber-600 shrink-0" />
-                    <div>
-                      <span>Export Active Schedule</span>
-                      <span className="block text-[9.5px] font-normal text-slate-400">Download current allocations (.xlsx)</span>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </div>
-
+            {/* Direct Download Excel Template Button */}
             <button
-              onClick={handleTriggerGenerate}
-              className="px-4 py-2 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-black shadow-md shadow-[#D528A2]/25 flex items-center gap-2 transition-all cursor-pointer hover:opacity-95"
+              onClick={handleOpenTemplateModal}
+              className="px-3.5 py-2 bg-[#D528A2]/10 hover:bg-[#D528A2]/15 text-[#D528A2] dark:text-[#f45fc6] border border-[#D528A2]/25 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
             >
-              <Sparkles className="h-3.5 w-3.5 text-white" />
-              Generate Schedule
+              <Download className="h-4 w-4 text-[#D528A2]" />
+              <span>Download Template (.xlsx)</span>
+            </button>
+
+            {/* Direct Import Excel Schedule Button */}
+            <label className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 cursor-pointer flex items-center gap-2 transition-all">
+              <Upload className="h-4 w-4 text-white" />
+              <span>Import Excel Schedule</span>
+              <input
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleDemoExcelFileSelect}
+                className="hidden"
+              />
+            </label>
+
+            {/* Direct Export Active Schedule Button */}
+            <button
+              onClick={handleExportDemoSchedule}
+              className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-2 transition-all"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-[#F4A863]" />
+              <span>Export Active (.xlsx)</span>
             </button>
           </div>
         </div>
@@ -2046,28 +2505,28 @@ export function DemoAllocationDashboard() {
             label="Confirmed Demos"
             value={demoSessions.filter(d => d.status === "confirmed" || d.status === "scheduled").length}
             icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />}
-            className="bg-white"
+            className="bg-white/80 dark:bg-[#131317]/80"
           />
 
           <Card
             label="Leave Impacted (Reallocation Req)"
             value={demoSessions.filter(d => d.status === "reallocation_required").length}
-            icon={<AlertTriangle className="h-5 w-5 text-amber-600" />}
-            className="bg-white"
+            icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+            className="bg-white/80 dark:bg-[#131317]/80"
           />
 
           <Card
             label="Pending Head / SME Approval"
             value={demoSwapRequests.filter((r: any) => r.status === "pending" || r.status === "pending_sme").length}
             icon={<Clock className="h-5 w-5 text-[#D528A2]" />}
-            className="bg-white"
+            className="bg-white/80 dark:bg-[#131317]/80"
           />
 
           <Card
             label="Not Conducted Sessions"
             value={demoSessions.filter(d => d.status === "not_conducted").length}
-            icon={<AlertCircle className="h-5 w-5 text-rose-600" />}
-            className="bg-white"
+            icon={<AlertCircle className="h-5 w-5 text-rose-500" />}
+            className="bg-white/80 dark:bg-[#131317]/80"
           />
         </div>
 
@@ -2078,12 +2537,12 @@ export function DemoAllocationDashboard() {
 
 
             {/* Filters Bar */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-4 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
+            <div className="bg-white/90 dark:bg-[#131317]/90 border border-slate-200/80 dark:border-slate-800/80 p-4 rounded-xl shadow-xs backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-4 w-full">
               <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
 
                 {/* College Dropdown */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">College</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">College Campus</label>
                   <div className="relative min-w-[220px]">
                     <select
                       value={selectedCollegeId}
@@ -2091,66 +2550,74 @@ export function DemoAllocationDashboard() {
                         setSelectedCollegeId(e.target.value);
                         setSelectedGroupId("All");
                       }}
-                      className="w-full pl-3 pr-8 py-2 text-xs font-bold rounded-xl border border-slate-205 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer"
+                      className="w-full pl-3 pr-8 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] appearance-none cursor-pointer"
                     >
-                      <option value="all">All Selected Colleges</option>
+                      <option value="all">All Applicable Colleges</option>
                       {colleges.map(c => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                    <ChevronDown className="absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-405 pointer-events-none" />
+                    <ChevronDown className="absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
 
                 {/* Group (Department) Dropdown */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Department Group</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Department Group</label>
                   <div className="relative min-w-[200px]">
                     <select
                       value={selectedGroupId}
                       onChange={(e) => setSelectedGroupId(e.target.value)}
-                      className="w-full pl-3 pr-8 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer"
+                      className="w-full pl-3 pr-8 py-2 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] appearance-none cursor-pointer"
                     >
                       <option value="All">All Departments</option>
                       {mentorGroups.map(g => (
                         <option key={g} value={g}>{g}</option>
                       ))}
                     </select>
-                    <ChevronDown className="absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-405 pointer-events-none" />
+                    <ChevronDown className="absolute right-3 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
-
 
               </div>
 
               {/* Quick status indicators */}
-              <div className="flex gap-4 items-center">
+              <div className="flex gap-4 items-center flex-wrap">
                 <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 bg-emerald-105 dark:bg-emerald-955/40 rounded border border-emerald-200 dark:border-emerald-900 shadow-xs" />
-                  <span className="text-[10.5px] font-bold text-slate-455 dark:text-slate-405 uppercase tracking-wide">Free Slot</span>
+                  <div className="h-3.5 w-3.5 bg-emerald-500 rounded border border-emerald-600 shadow-xs" />
+                  <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Free Slot</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 bg-slate-100 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-805" />
-                  <span className="text-[10.5px] font-bold text-slate-455 dark:text-slate-405 uppercase tracking-wide">Busy Slot</span>
+                  <div className="h-3.5 w-3.5 bg-[#D528A2] rounded border border-[#c02090] shadow-xs" />
+                  <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Demo Booked</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-3.5 w-3.5 bg-slate-300 dark:bg-slate-700 rounded border border-slate-400 dark:border-slate-600" />
+                  <span className="text-[10.5px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Busy Slot</span>
                 </div>
               </div>
             </div>
 
             {/* 🔹 DYNAMIC TIMETABLE TABLE */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-855 rounded-xl shadow-sm overflow-auto max-h-[70vh] w-full no-scrollbar relative">
+            <div className="bg-white/90 dark:bg-[#131317]/90 border border-slate-200/80 dark:border-slate-800/80 rounded-xl shadow-xs overflow-auto max-h-[70vh] w-full no-scrollbar relative backdrop-blur-md">
               <table className="w-full table-fixed border-collapse text-left min-w-[950px]">
                 <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-955 text-xs font-bold uppercase">
+                  <tr className="bg-slate-50/80 dark:bg-slate-900/80 text-xs font-bold uppercase">
                     <th className="sticky top-0 left-0 z-30 p-4 text-[10px] font-black text-slate-400 uppercase tracking-wider bg-slate-100/95 dark:bg-slate-950/95 backdrop-blur-xs border-r border-b border-slate-200/80 dark:border-slate-800 w-[15%]">Time Period</th>
-                    {currentWeekDates.map((date, idx) => (
-                      <th key={date.dateStr} className="sticky top-0 z-20 p-4 text-[10.5px] font-black text-slate-705 dark:text-slate-300 bg-slate-50/95 dark:bg-slate-955/95 backdrop-blur-xs border-b border-slate-200/80 dark:border-slate-800 uppercase w-[17%] border-l border-slate-100 dark:border-slate-800 text-center">
-                        <div className="text-indigo-650 dark:text-indigo-400 font-extrabold text-[10.5px] tracking-tight">Day {idx + 1}</div>
-                        <div className="text-[9px] text-slate-405 font-bold tracking-tight mt-0.5">{date.day.slice(0, 3)} ({date.formatted})</div>
-                      </th>
-                    ))}
+                    {currentWeekDates.map((date, idx) => {
+                      const dayInfo = getEffectiveDayOrderInfo(date.dateStr, date.day, idx, selectedCollegeId !== "all" ? selectedCollegeId : undefined);
+                      return (
+                        <th key={date.dateStr} className="sticky top-0 z-20 p-4 text-[10.5px] font-black text-slate-700 dark:text-slate-300 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-xs border-b border-slate-200/80 dark:border-slate-800 uppercase w-[17%] border-l border-slate-100 dark:border-slate-800 text-center">
+                          <div className={`font-black text-[11px] tracking-tight ${dayInfo.isHoliday ? "text-rose-600 dark:text-rose-400" : "text-[#D528A2] dark:text-[#f45fc6]"}`}>
+                            {dayInfo.isHoliday ? "Holiday" : dayInfo.dayOrder}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-bold tracking-tight mt-0.5">{date.day.slice(0, 3)} ({date.formatted})</div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-150 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                   {collegeTimeSlots.length > 0 ? (
                     collegeTimeSlots.map((time, tIdx) => {
                       const isLunch = time.toLowerCase().includes("lunch") || time.toLowerCase().includes("break");
@@ -2164,10 +2631,10 @@ export function DemoAllocationDashboard() {
                         <React.Fragment key={time}>
                           {/* BEYOND HOURS HEADER DIVIDER */}
                           {isFirstBeyond && (
-                            <tr className="bg-slate-100/60 dark:bg-slate-900 border-t border-b border-slate-200 dark:border-slate-800">
+                            <tr className="bg-slate-100/70 dark:bg-slate-900/70 border-t border-b border-slate-200 dark:border-slate-800">
                               <td colSpan={6} className="p-3.5 text-left">
-                                <div className="flex items-center gap-2 text-indigo-650 dark:text-indigo-400 font-black text-xs uppercase tracking-widest">
-                                  <Moon className="h-4.5 w-4.5 text-indigo-505 animate-pulse" />
+                                <div className="flex items-center gap-2 text-[#D528A2] dark:text-[#f45fc6] font-black text-xs uppercase tracking-widest">
+                                  <Moon className="h-4.5 w-4.5 text-[#D528A2] animate-pulse" />
                                   Beyond College Hours
                                 </div>
                               </td>
@@ -2175,27 +2642,27 @@ export function DemoAllocationDashboard() {
                           )}
 
                           {isLunch ? (
-                            <tr className="bg-indigo-50/15 dark:bg-indigo-950/10">
-                              <td className="sticky left-0 z-10 p-3 border-r border-slate-150 dark:border-slate-800 bg-indigo-50/95 dark:bg-indigo-950/95 backdrop-blur-xs align-middle">
+                            <tr className="bg-amber-50/20 dark:bg-amber-950/10">
+                              <td className="sticky left-0 z-10 p-3 border-r border-slate-100 dark:border-slate-800 bg-amber-50/95 dark:bg-slate-900/95 backdrop-blur-xs align-middle">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                                  <Coffee className="h-3.5 w-3.5 text-indigo-405" />
+                                  <Coffee className="h-3.5 w-3.5 text-[#F4A863]" />
                                   Lunch
                                 </span>
                               </td>
                               <td colSpan={5} className="p-3 align-middle text-center">
-                                <div className="flex items-center justify-center gap-2 text-indigo-650 dark:text-indigo-400 font-extrabold text-[10.5px] tracking-wide uppercase">
+                                <div className="flex items-center justify-center gap-2 text-amber-700 dark:text-amber-400 font-extrabold text-[10.5px] tracking-wide uppercase">
                                   <Coffee className="h-4 w-4" />
                                   {time} • LUNCH BREAK (Excluded from Scheduling)
                                 </div>
                               </td>
                             </tr>
                           ) : (
-                            <tr className="hover:bg-slate-50/10 transition-colors">
+                            <tr className="hover:bg-slate-50/30 dark:hover:bg-slate-800/20 transition-colors">
 
                               {/* Time Column */}
-                              <td className="sticky left-0 z-10 p-4 border-r border-slate-150 dark:border-slate-855 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-xs align-middle">
+                              <td className="sticky left-0 z-10 p-4 border-r border-slate-100 dark:border-slate-800 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-xs align-middle">
                                 <div className="leading-tight">
-                                  <span className="text-[10.5px] font-black text-slate-705 dark:text-white">Period {tIdx + 1}</span>
+                                  <span className="text-[10.5px] font-black text-slate-700 dark:text-white">Period {tIdx + 1}</span>
                                   <div className="text-[9px] text-slate-400 font-semibold mt-0.5">{time}</div>
                                 </div>
                               </td>
@@ -2205,7 +2672,7 @@ export function DemoAllocationDashboard() {
                                 return (
                                   <td
                                     key={date.dateStr}
-                                    className="p-2 border-r border-slate-150 dark:border-slate-855 last:border-r-0 align-top text-center"
+                                    className="p-2 border-r border-slate-100 dark:border-slate-800 last:border-r-0 align-top text-center"
                                   >
                                     <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-0.5">
                                       {(() => {
@@ -2256,14 +2723,14 @@ export function DemoAllocationDashboard() {
                                                     }
                                                   }}
                                                   className={`flex flex-col p-1.5 rounded-lg border text-[9.5px] font-bold cursor-pointer transition-all hover:translate-x-0.5 text-left ${isFree
-                                                    ? "bg-emerald-50/20 border-emerald-100 text-emerald-805 hover:bg-emerald-50/50"
+                                                    ? "bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
                                                     : isDemo
-                                                      ? "bg-indigo-50/30 border-indigo-205 text-indigo-850 hover:bg-indigo-50"
+                                                      ? "bg-[#D528A2]/10 dark:bg-[#D528A2]/20 border-[#D528A2]/30 text-[#D528A2] dark:text-[#f45fc6] hover:bg-[#D528A2]/15"
                                                       : isPreview
-                                                        ? "bg-amber-50/20 border-amber-200 text-amber-705 hover:bg-amber-55"
+                                                        ? "bg-amber-50/30 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50"
                                                         : isBlocked
                                                           ? "bg-amber-50/10 border-amber-100/50 text-amber-600/80 cursor-not-allowed"
-                                                          : "bg-slate-50/50 border-slate-100 text-slate-400 hover:bg-slate-105"
+                                                          : "bg-slate-50/50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800 text-slate-400 hover:bg-slate-100"
                                                     }`}
                                                   title={`${mentor.name}: ${statusObj.label}`}
                                                 >
@@ -2272,16 +2739,16 @@ export function DemoAllocationDashboard() {
                                                     <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${isFree
                                                       ? "bg-emerald-500"
                                                       : isDemo
-                                                        ? "bg-indigo-500"
+                                                        ? "bg-[#D528A2]"
                                                         : isPreview
                                                           ? "bg-amber-500"
                                                           : isBlocked
                                                             ? "bg-amber-600"
-                                                            : "bg-slate-350"
+                                                            : "bg-slate-300 dark:bg-slate-600"
                                                       }`} />
                                                   </div>
                                                   {!isFree && (
-                                                    <div className="text-[7.5px] text-slate-455 dark:text-slate-505 font-semibold truncate mt-0.5 text-left">
+                                                    <div className="text-[7.5px] text-slate-500 dark:text-slate-400 font-semibold truncate mt-0.5 text-left">
                                                       {statusObj.label}
                                                     </div>
                                                   )}
@@ -2299,7 +2766,7 @@ export function DemoAllocationDashboard() {
                                                     timeSlot: time
                                                   });
                                                 }}
-                                                className="w-full py-1 text-[8.5px] font-black text-indigo-655 hover:text-indigo-700 bg-indigo-50/30 hover:bg-indigo-55 border border-dashed border-indigo-205 rounded-lg transition-colors cursor-pointer"
+                                                className="w-full py-1 text-[8.5px] font-black text-[#D528A2] hover:text-[#c02090] bg-[#D528A2]/5 hover:bg-[#D528A2]/10 border border-dashed border-[#D528A2]/30 rounded-lg transition-colors cursor-pointer"
                                               >
                                                 + {hiddenCount} More
                                               </button>
@@ -2330,65 +2797,65 @@ export function DemoAllocationDashboard() {
             {/* 🔹 BOTTOM INFRASTRUCTURE CARDS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
               {/* Card 1: Legend */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4">
-                <h3 className="text-xs font-black uppercase text-slate-705 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Legend</h3>
-                <div className="grid grid-cols-2 gap-3 text-[10.5px] font-semibold text-slate-550 dark:text-slate-400">
+              <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4 backdrop-blur-md">
+                <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Legend</h3>
+                <div className="grid grid-cols-2 gap-3 text-[10.5px] font-semibold text-slate-500 dark:text-slate-400">
                   <div className="flex items-center gap-2">
                     <span className="h-3.5 w-3.5 rounded bg-emerald-500 shadow-xs shrink-0" />
                     <div>
-                      <span className="font-bold text-slate-805 dark:text-white block leading-none">Free Slot</span>
+                      <span className="font-bold text-slate-800 dark:text-white block leading-none">Free Slot</span>
                       <span className="text-[8.5px] text-slate-400 block mt-0.5">Available for demo</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="h-3.5 w-3.5 rounded bg-slate-350 shadow-xs shrink-0" />
+                    <span className="h-3.5 w-3.5 rounded bg-slate-300 dark:bg-slate-700 shadow-xs shrink-0" />
                     <div>
                       <span className="font-bold text-slate-800 dark:text-white block leading-none">Busy Slot</span>
-                      <span className="text-[8.5px] text-slate-405 block mt-0.5">Teaching / Evaluation</span>
+                      <span className="text-[8.5px] text-slate-400 block mt-0.5">Teaching / Evaluation</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="h-3.5 w-3.5 rounded bg-indigo-500 shadow-xs shrink-0" />
+                    <span className="h-3.5 w-3.5 rounded bg-[#D528A2] shadow-xs shrink-0" />
                     <div>
                       <span className="font-bold text-slate-800 dark:text-white block leading-none">Demo Booked</span>
                       <span className="text-[8.5px] text-slate-400 block mt-0.5">Already scheduled</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="h-3.5 w-3.5 rounded bg-amber-500 shadow-xs shrink-0" />
+                    <span className="h-3.5 w-3.5 rounded bg-[#F4A863] shadow-xs shrink-0" />
                     <div>
-                      <span className="font-bold text-slate-800 dark:text-white block leading-none">Blocked</span>
-                      <span className="text-[8.5px] text-slate-400 block mt-0.5">Not available</span>
+                      <span className="font-bold text-slate-800 dark:text-white block leading-none">Draft Preview</span>
+                      <span className="text-[8.5px] text-slate-400 block mt-0.5">Not yet confirmed</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Card 2: Info */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3">
-                <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Info</h3>
+              <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3 backdrop-blur-md">
+                <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Guidelines</h3>
                 <ul className="list-disc pl-4 text-[10.5px] text-slate-500 dark:text-slate-400 space-y-1.5 font-semibold">
-                  <li>Time slots are in 60 min duration</li>
-                  <li>Lunch break is excluded from scheduling</li>
-                  <li>Beyond college hours are shown below the divider</li>
+                  <li>Time slots are configured in 60-minute duration blocks</li>
+                  <li>Campus lunch breaks are automatically excluded from allocations</li>
+                  <li>Beyond regular college hours slots appear below the evening divider</li>
                 </ul>
               </div>
 
               {/* Card 3: Beyond College Hours */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
+              <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between backdrop-blur-md">
                 <div>
                   <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-1.5">
-                    <Moon className="h-3.5 w-3.5 text-indigo-500" />
+                    <Moon className="h-3.5 w-3.5 text-[#D528A2]" />
                     Beyond College Hours
                   </h3>
                   <div className="pt-2 text-[10.5px] font-bold text-slate-700 dark:text-slate-300 space-y-1.5">
                     <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
                       <span>Slot 1:</span>
-                      <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">04:30 PM - 05:30 PM</span>
+                      <span className="text-[#D528A2] dark:text-[#f45fc6] font-extrabold">04:30 PM - 05:30 PM</span>
                     </div>
                     <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-100 dark:border-slate-800">
                       <span>Slot 2:</span>
-                      <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">05:30 PM - 06:30 PM</span>
+                      <span className="text-[#D528A2] dark:text-[#f45fc6] font-extrabold">05:30 PM - 06:30 PM</span>
                     </div>
                   </div>
                 </div>
@@ -2402,20 +2869,20 @@ export function DemoAllocationDashboard() {
         {allocatorTab === "rules" && (
           <Panel
             title="DEPARTMENT DEMO TARGET RULES & HEAD SMES"
-            subtitle="Configure target demo quotas per week for each department group and manage Head SME priority assignments."
+            subtitle="Configure target demo quotas per week for each department group and manage Head SME priority assignments for the Excel Engine."
             headerActions={
               <button
-                onClick={handleTriggerGenerate}
-                className="px-4 py-2 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-black shadow-md shadow-[#D528A2]/25 flex items-center gap-2 cursor-pointer"
+                onClick={handleOpenTemplateModal}
+                className="btn-gradient px-4 py-2 text-white rounded-xl text-xs font-black shadow-md shadow-[#D528A2]/25 flex items-center gap-2 cursor-pointer hover:opacity-95"
               >
-                <Sparkles className="h-3.5 w-3.5" />
-                Run Auto-Scheduler Engine
+                <Download className="h-3.5 w-3.5" />
+                Download Excel Template
               </button>
             }
           >
             <div className="space-y-6">
               {/* Target Demos Config Card */}
-              <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="bg-slate-50/80 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <span className="text-xs font-black uppercase text-slate-800 dark:text-white">Default Weekly Demos Target per Mentor</span>
@@ -2428,9 +2895,9 @@ export function DemoAllocationDashboard() {
                       max={10}
                       value={targetDemosCount}
                       onChange={(e) => setTargetDemosCount(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-16 text-center py-1.5 border border-slate-200 rounded-xl text-xs font-black bg-white"
+                      className="w-16 text-center py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-black bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30"
                     />
-                    <span className="text-xs font-bold text-slate-500">demo(s) / week</span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">demo(s) / week</span>
                   </div>
                 </div>
               </div>
@@ -2446,7 +2913,7 @@ export function DemoAllocationDashboard() {
                     const isDirty = localVal !== dbVal;
 
                     return (
-                      <div key={groupName} className="flex items-center justify-between p-4 rounded-xl bg-white border border-slate-200 dark:border-slate-800 shadow-xs">
+                      <div key={groupName} className="flex items-center justify-between p-4 rounded-xl bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 shadow-xs">
                         <div>
                           <span className="text-xs font-black text-slate-800 dark:text-white block">{groupName}</span>
                           <span className="text-[10px] text-slate-400 font-semibold block">Target: {dbVal} demo/week</span>
@@ -2458,7 +2925,7 @@ export function DemoAllocationDashboard() {
                             max={14}
                             value={localVal}
                             onChange={(e) => setDeptRuleInputs(prev => ({ ...prev, [groupName]: Math.max(1, parseInt(e.target.value) || 1) }))}
-                            className="w-14 text-center p-1.5 text-xs font-bold border border-slate-200 rounded-lg bg-slate-50"
+                            className="w-14 text-center p-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30"
                           />
                           <button
                             onClick={async () => {
@@ -2466,7 +2933,7 @@ export function DemoAllocationDashboard() {
                               setDeptRuleInputs(prev => { const next = { ...prev }; delete next[groupName]; return next; });
                             }}
                             disabled={!isDirty}
-                            className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${isDirty ? "bg-[#D528A2] text-white shadow-xs cursor-pointer" : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                            className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${isDirty ? "bg-[#D528A2] hover:bg-[#c02090] text-white shadow-xs cursor-pointer" : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
                               }`}
                           >
                             Save
@@ -2479,7 +2946,7 @@ export function DemoAllocationDashboard() {
               </div>
 
               {/* 🔹 MENTOR GROUP-WISE INDIVIDUAL FACULTY DEMO QUOTA CONFIGURATOR */}
-              <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 font-sans mt-6">
+              <div className="bg-white/80 dark:bg-[#131317]/80 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4 font-sans mt-6 backdrop-blur-md">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
                   <div>
                     <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
@@ -2497,7 +2964,7 @@ export function DemoAllocationDashboard() {
                     <select
                       value={rulesSelectedGroup}
                       onChange={(e) => setRulesSelectedGroup(e.target.value)}
-                      className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-[#D528A2] cursor-pointer"
+                      className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:ring-2 focus:ring-[#D528A2]/30 cursor-pointer"
                     >
                       <option value="All">All Mentor Groups ({mentors.length} Mentors)</option>
                       {mentorGroups.map(g => (
@@ -2511,10 +2978,10 @@ export function DemoAllocationDashboard() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 font-black uppercase text-[9.5px] tracking-wider border-b border-slate-200 dark:border-slate-800">
+                      <tr className="bg-slate-50/80 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 font-black uppercase text-[9.5px] tracking-wider border-b border-slate-200 dark:border-slate-800">
                         <th className="p-3">Faculty Name</th>
                         <th className="p-3">Mentor Group</th>
-                        <th className="p-3">College & Department</th>
+                        <th className="p-3">College &amp; Department</th>
                         <th className="p-3 text-center">Weekly Quota Target</th>
                         <th className="p-3 text-right">Set Target Stepper</th>
                       </tr>
@@ -2538,7 +3005,7 @@ export function DemoAllocationDashboard() {
                                 {m.name}
                               </td>
                               <td className="p-3">
-                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-900">
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#D528A2]/10 text-[#D528A2] dark:text-[#f45fc6] border border-[#D528A2]/20">
                                   {groupName}
                                 </span>
                               </td>
@@ -2546,7 +3013,7 @@ export function DemoAllocationDashboard() {
                                 {colName}
                               </td>
                               <td className="p-3 text-center">
-                                <span className="px-2.5 py-1 rounded-lg bg-[#D528A2]/10 text-[#D528A2] font-black text-xs">
+                                <span className="px-2.5 py-1 rounded-lg bg-[#D528A2]/10 text-[#D528A2] dark:text-[#f45fc6] font-black text-xs">
                                   {customTarget} Demo{customTarget !== 1 ? "s" : ""}/Wk
                                 </span>
                               </td>
@@ -2555,7 +3022,7 @@ export function DemoAllocationDashboard() {
                                   <button
                                     type="button"
                                     onClick={() => handleSetMentorTarget(m.id, customTarget - 1)}
-                                    className="w-6 h-6 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+                                    className="w-6 h-6 rounded-lg bg-white dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-black flex items-center justify-center cursor-pointer shadow-xs transition-colors"
                                   >
                                     -
                                   </button>
@@ -2565,12 +3032,12 @@ export function DemoAllocationDashboard() {
                                     max={10}
                                     value={customTarget}
                                     onChange={(e) => handleSetMentorTarget(m.id, parseInt(e.target.value) || 0)}
-                                    className="w-10 text-center text-xs font-black bg-transparent border-none focus:outline-none"
+                                    className="w-10 text-center text-xs font-black bg-transparent border-none focus:outline-none text-slate-800 dark:text-white"
                                   />
                                   <button
                                     type="button"
                                     onClick={() => handleSetMentorTarget(m.id, customTarget + 1)}
-                                    className="w-6 h-6 rounded-lg bg-[#D528A2] hover:opacity-90 text-white font-black flex items-center justify-center cursor-pointer shadow-xs transition-colors"
+                                    className="w-6 h-6 rounded-lg bg-[#D528A2] hover:bg-[#c02090] text-white font-black flex items-center justify-center cursor-pointer shadow-xs transition-colors"
                                   >
                                     +
                                   </button>
@@ -2596,16 +3063,16 @@ export function DemoAllocationDashboard() {
             <div className="space-y-6">
               {/* ── Leave-Driven Demo Reallocation Requests (Allocator Approval) ── */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">Leave Demo Reallocations</h3>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9.5px] font-black uppercase border border-amber-200">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">Leave Demo Reallocations</h3>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-[9.5px] font-black uppercase border border-amber-200 dark:border-amber-800">
                       {demoReallocations.filter(r => r.status === "pending").length} Pending Approval
                     </span>
                   </div>
                   <button
                     onClick={fetchDemoReallocations}
-                    className="p-1.5 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 transition-all cursor-pointer"
+                    className="p-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:text-[#D528A2] hover:border-[#D528A2]/40 transition-all cursor-pointer"
                     title="Refresh"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${loadingReallocations ? "animate-spin" : ""}`} />
@@ -2613,33 +3080,33 @@ export function DemoAllocationDashboard() {
                 </div>
 
                 {demoReallocations.filter(r => r.status === "pending").length === 0 ? (
-                  <div className="text-center py-6 text-slate-400 font-bold text-xs border border-dashed border-slate-200 rounded-xl">
+                  <div className="text-center py-6 text-slate-400 font-bold text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
                     No pending demo reallocation requests. All clear!
                   </div>
                 ) : (
                   demoReallocations.filter(r => r.status === "pending").map(req => (
-                    <div key={req.id} className="p-4 rounded-xl bg-white border border-slate-200 space-y-3">
+                    <div key={req.id} className="p-4 rounded-xl bg-white/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
                       <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-slate-900">{req.subject}</span>
-                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[9px] font-black uppercase">
+                            <span className="text-xs font-black text-slate-900 dark:text-white">{req.subject}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-[#D528A2]/10 border border-[#D528A2]/20 text-[#D528A2] dark:text-[#f45fc6] text-[9px] font-black uppercase">
                               Week {req.week ?? "—"}
                             </span>
                             <span className={`px-1.5 py-0.5 rounded border text-[9px] font-black uppercase ${req.request_kind === "reschedule"
-                              ? "bg-indigo-50 border-indigo-200 text-indigo-700"
-                              : "bg-amber-100 border border-amber-200 text-amber-800"
+                              ? "bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 text-indigo-700 dark:text-indigo-300"
+                              : "bg-amber-100 dark:bg-amber-950/40 border border-amber-200 text-amber-800 dark:text-amber-300"
                               }`}>
                               {req.request_kind === "reschedule" ? "Mentor Reschedule Request" : req.request_kind === "sme_swap" ? "SME Reallocation" : "Mentor Leave Reallocation"}
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-medium text-slate-600">
-                            <div>Applying Mentor: <span className="font-bold text-slate-800">{req.mentor_name}</span></div>
-                            <div>SME Evaluator: <span className="font-bold text-slate-800">{req.sme_name}</span></div>
-                            <div className="text-rose-700">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                            <div>Applying Mentor: <span className="font-bold text-slate-800 dark:text-white">{req.mentor_name}</span></div>
+                            <div>SME Evaluator: <span className="font-bold text-slate-800 dark:text-white">{req.sme_name}</span></div>
+                            <div className="text-rose-600 dark:text-rose-400">
                               Original slot: <span className="font-bold">{req.original_date_str} • {req.original_time_slot}</span>
                             </div>
-                            <div className="text-emerald-700">
+                            <div className="text-emerald-600 dark:text-emerald-400">
                               Proposed slot: <span className="font-bold">{req.proposed_date_str} • {req.proposed_time_slot}</span>
                             </div>
                           </div>
@@ -2657,14 +3124,14 @@ export function DemoAllocationDashboard() {
                             placeholder="Decision notes (optional)"
                             value={reallocNotesMap[req.id] || ""}
                             onChange={e => setReallocNotesMap(prev => ({ ...prev, [req.id]: e.target.value }))}
-                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-medium text-slate-800 focus:outline-none focus:border-indigo-400"
+                            className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-medium text-slate-800 dark:text-white focus:outline-none focus:border-[#D528A2]"
                           />
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
                               disabled={decidingReallocId === req.id}
                               onClick={() => decideDemoReallocation(req.id, "rejected")}
-                              className="flex-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                              className="flex-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
                             >
                               Reject
                             </button>
@@ -2672,7 +3139,7 @@ export function DemoAllocationDashboard() {
                               type="button"
                               disabled={decidingReallocId === req.id}
                               onClick={() => decideDemoReallocation(req.id, "approved")}
-                              className="flex-1 px-3.5 py-1.5 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-extrabold shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                              className="btn-gradient flex-1 px-3.5 py-1.5 text-white rounded-xl text-xs font-extrabold shadow-xs transition-all cursor-pointer disabled:opacity-50"
                             >
                               {decidingReallocId === req.id ? "Working…" : "Approve Move"}
                             </button>
@@ -2685,16 +3152,16 @@ export function DemoAllocationDashboard() {
 
                 {/* Resolved log */}
                 {demoReallocations.filter(r => r.status !== "pending").length > 0 && (
-                  <details className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                    <summary className="text-[11px] font-black uppercase tracking-wider text-slate-500 cursor-pointer">
+                  <details className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3">
+                    <summary className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 cursor-pointer">
                       Resolution Log ({demoReallocations.filter(r => r.status !== "pending").length})
                     </summary>
-                    <div className="mt-2 divide-y divide-slate-100">
+                    <div className="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
                       {demoReallocations.filter(r => r.status !== "pending").slice(0, 20).map(req => (
                         <div key={req.id} className="py-2 flex items-center justify-between gap-3 text-[11px]">
-                          <span className="font-bold text-slate-700">{req.subject} — {req.mentor_name}</span>
-                          <span className="text-slate-500">{req.original_date_str} → {req.proposed_date_str} • {req.proposed_time_slot}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${req.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                          <span className="font-bold text-slate-700 dark:text-slate-200">{req.subject} — {req.mentor_name}</span>
+                          <span className="text-slate-500 dark:text-slate-400">{req.original_date_str} → {req.proposed_date_str} • {req.proposed_time_slot}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${req.status === "approved" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"}`}>
                             {req.status}
                           </span>
                         </div>
@@ -2706,11 +3173,11 @@ export function DemoAllocationDashboard() {
 
               {/* Swap Requests Table */}
               <div className="space-y-3">
-                <div className="flex border-b border-slate-200">
+                <div className="flex border-b border-slate-200 dark:border-slate-800">
                   <button
                     type="button"
                     onClick={() => setSwapRequestsTab("pending")}
-                    className={`pb-2 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${swapRequestsTab === "pending" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"
+                    className={`pb-2 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${swapRequestsTab === "pending" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"
                       }`}
                   >
                     Pending Review ({demoSwapRequests.filter((r: any) => r.status === "pending").length})
@@ -2718,7 +3185,7 @@ export function DemoAllocationDashboard() {
                   <button
                     type="button"
                     onClick={() => setSwapRequestsTab("resolved")}
-                    className={`pb-2 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${swapRequestsTab === "resolved" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"
+                    className={`pb-2 px-4 text-xs font-black uppercase tracking-wider border-b-2 transition-all cursor-pointer ${swapRequestsTab === "resolved" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"
                       }`}
                   >
                     Resolution Logs ({demoSwapRequests.filter((r: any) => r.status !== "pending").length})
@@ -2729,15 +3196,15 @@ export function DemoAllocationDashboard() {
                   {swapRequestsTab === "pending" ? (
                     demoSwapRequests.filter((r: any) => r.status === "pending").length > 0 ? (
                       demoSwapRequests.filter((r: any) => r.status === "pending").map((req: any) => (
-                        <div key={req.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div key={req.id} className="p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-black text-slate-900">{req.smeName}</span>
+                              <span className="text-xs font-black text-slate-900 dark:text-white">{req.smeName}</span>
                               <span className="px-2 py-0.5 bg-[#D528A2]/10 text-[#D528A2] rounded-md text-[9px] font-extrabold uppercase">
                                 {(req.swapType === "mentor" || req.swapType === "internal") ? "Mentor Swap" : "Time Slot Swap"}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-600 font-semibold mt-1">
+                            <p className="text-xs text-slate-600 dark:text-slate-300 font-semibold mt-1">
                               Original: {req.mentorName} ({req.dateStr} • {req.timeSlot})
                             </p>
                             <p className="text-xs font-bold text-[#D528A2] mt-0.5">
@@ -2750,7 +3217,7 @@ export function DemoAllocationDashboard() {
                                 const res = await resolveDemoSwap(req.id, "rejected");
                                 if (res.success) toast("Swap request rejected.", "info");
                               }}
-                              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
                             >
                               Reject
                             </button>
@@ -2759,7 +3226,7 @@ export function DemoAllocationDashboard() {
                                 const res = await resolveDemoSwap(req.id, "approved");
                                 if (res.success) toast("Swap approved and schedule updated!", "success");
                               }}
-                              className="px-4 py-1.5 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white rounded-xl text-xs font-extrabold shadow-sm transition-all cursor-pointer"
+                              className="btn-gradient px-4 py-1.5 text-white rounded-xl text-xs font-extrabold shadow-xs transition-all cursor-pointer"
                             >
                               Approve Swap
                             </button>
@@ -2784,26 +3251,28 @@ export function DemoAllocationDashboard() {
 
         {/* 🔹 AUTOMATED GENERATION PREVIEW MODAL */}
         {showPreviewModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
 
               <button
                 onClick={() => { if (!isGenerating) setShowPreviewModal(false); }}
                 disabled={isGenerating}
-                className="absolute right-4 top-4 p-1.5 hover:bg-slate-105 dark:hover:bg-slate-805 rounded-xl text-slate-400 hover:text-slate-805 transition-colors cursor-pointer disabled:opacity-40"
+                className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-40"
               >
                 <X className="h-5 w-5" />
               </button>
 
               {/* Modal Title */}
               <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
-                <Sparkles className="h-5 w-5 text-indigo-605 animate-pulse" />
+                <div className="p-2 rounded-xl bg-[#D528A2]/10 text-[#D528A2]">
+                  <Sparkles className="h-5 w-5 animate-pulse" />
+                </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase text-slate-850 dark:text-white tracking-wider">
+                  <h3 className="text-sm font-black uppercase text-slate-900 dark:text-white tracking-wider">
                     AI Schedule Generation Deck
                   </h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
-                    Target: {selectedCollegeId === "all" ? "All Colleges" : currentCollege?.name} • {selectedGroupId === "All" ? "All Subject Groups" : selectedGroupId}
+                    Target: {selectedCollegeId === "all" ? "All Applicable Colleges" : currentCollege?.name} • {selectedGroupId === "All" ? "All Subject Groups" : selectedGroupId}
                   </p>
                 </div>
               </div>
@@ -2815,23 +3284,23 @@ export function DemoAllocationDashboard() {
                   /* LOADING GENERATION STATE */
                   <div className="py-12 flex flex-col items-center justify-center text-center space-y-4">
                     <div className="relative h-14 w-14">
-                      <Loader2 className="h-14 w-14 text-indigo-600 animate-spin" />
+                      <Loader2 className="h-14 w-14 text-[#D528A2] animate-spin" />
                     </div>
                     <div className="space-y-1">
-                      <h4 className="text-xs font-black text-slate-850">Computing Allocation Metrics...</h4>
+                      <h4 className="text-xs font-black text-slate-900 dark:text-white">Computing Allocation Metrics...</h4>
                       <p className="text-[10px] text-slate-400 font-bold uppercase">Analyzing slots, specialized SMEs, and leaves</p>
                     </div>
 
                     {/* Visual checklist indicators */}
-                    <div className="w-full max-w-xs bg-slate-50 dark:bg-slate-855 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-505 dark:text-slate-405 space-y-2 text-left">
+                    <div className="w-full max-w-xs bg-slate-50 dark:bg-slate-800/60 p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400 space-y-2 text-left">
                       <div className="flex items-center gap-2 text-emerald-600">
                         <CheckCircle className="h-3.5 w-3.5" /> Checked college shift timings
                       </div>
-                      <div className="flex items-center gap-2 text-emerald-600 animate-pulse">
+                      <div className="flex items-center gap-2 text-[#D528A2] animate-pulse">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Matching mentors with subject expert SMEs
                       </div>
-                      <div className="flex items-center gap-2 text-slate-350">
-                        <div className="h-3.5 w-3.5 rounded-full border-2 border-slate-200" /> Allocating clash-free dates
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <div className="h-3.5 w-3.5 rounded-full border-2 border-slate-200 dark:border-slate-700" /> Allocating clash-free dates
                       </div>
                     </div>
                   </div>
@@ -2839,41 +3308,41 @@ export function DemoAllocationDashboard() {
                   /* RESULTS COMPLETED STATE */
                   <div className="space-y-4">
                     {/* Scanned Metrics Grid */}
-                    <div className="grid grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-850/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
+                    <div className="grid grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 text-center">
                       <div className="p-1">
                         <span className="text-[8.5px] font-black uppercase text-slate-400 tracking-wider block">Available Mentors</span>
-                        <span className="text-base font-black text-slate-850 block">{filteredMentors.length}</span>
+                        <span className="text-base font-black text-slate-800 dark:text-white block">{filteredMentors.length}</span>
                       </div>
-                      <div className="p-1 border-x border-slate-150">
+                      <div className="p-1 border-x border-slate-200 dark:border-slate-700">
                         <span className="text-[8.5px] font-black uppercase text-slate-400 tracking-wider block">Total Free Slots</span>
-                        <span className="text-base font-black text-emerald-605 block">{totalFreeSlotsCount}</span>
+                        <span className="text-base font-black text-emerald-600 block">{totalFreeSlotsCount}</span>
                       </div>
                       <div className="p-1">
                         <span className="text-[8.5px] font-black uppercase text-slate-400 tracking-wider block">Generated Demos</span>
-                        <span className="text-base font-black text-indigo-605 block">{previewSessions.length}</span>
+                        <span className="text-base font-black text-[#D528A2] block">{previewSessions.length}</span>
                       </div>
                     </div>
 
                     {/* Allocation summary alert cards */}
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2.5 p-3 bg-emerald-50/50 border border-emerald-100 rounded-xl text-[10.5px] font-bold text-emerald-805">
-                        <CheckCircle className="h-4.5 w-4.5 text-emerald-650" />
+                      <div className="flex items-center gap-2.5 p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 rounded-xl text-[10.5px] font-bold text-emerald-800 dark:text-emerald-300">
+                        <CheckCircle className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
                         <span>Successfully planned {previewSessions.length} demo sessions with zero cohort-clashes.</span>
                       </div>
 
                       {unassignedMentors.length > 0 && (
-                        <div className="flex items-start gap-2.5 p-3 bg-amber-50/50 border border-amber-205 rounded-xl text-[10.5px] font-bold text-amber-805">
+                        <div className="flex items-start gap-2.5 p-3 bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-xl text-[10.5px] font-bold text-amber-800 dark:text-amber-300">
                           <AlertTriangle className="h-4.5 w-4.5 text-amber-600 shrink-0 mt-0.5" />
                           <div>
                             <span>Unassigned Mentors ({unassignedMentors.length}):</span>
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {unassignedMentors.map(m => (
-                                <span key={m.id} className="px-1.5 py-0.5 rounded bg-white border border-amber-200 text-[8.5px] font-black text-amber-705">
+                                <span key={m.id} className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-amber-200 dark:border-amber-800 text-[8.5px] font-black text-amber-700 dark:text-amber-300">
                                   {m.name}
                                 </span>
                               ))}
                             </div>
-                            <span className="text-[8.5px] text-slate-405 font-bold block mt-1.5">These mentors either have no eligible matching SMEs or are fully occupied during free periods.</span>
+                            <span className="text-[8.5px] text-slate-400 font-bold block mt-1.5">These mentors either have no eligible matching SMEs or are fully occupied during free periods.</span>
                           </div>
                         </div>
                       )}
@@ -2887,15 +3356,15 @@ export function DemoAllocationDashboard() {
                         </h4>
                         <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                           {exceptions.map(exc => (
-                            <div key={exc.id} className="p-3 bg-rose-50/20 dark:bg-rose-950/10 border border-rose-150/40 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                            <div key={exc.id} className="p-3 bg-rose-50/20 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                               <div className="text-[10.5px]">
                                 <p className="font-bold text-slate-800 dark:text-slate-200">
                                   {exc.mentorName} • <span className="text-slate-400 font-semibold">{exc.subject}</span>
                                 </p>
-                                <p className="text-[9.5px] text-rose-605 dark:text-rose-400 font-bold mt-0.5">
+                                <p className="text-[9.5px] text-rose-600 dark:text-rose-400 font-bold mt-0.5">
                                   Clash: {exc.reason}
                                 </p>
-                                <p className="text-[9px] text-indigo-650 dark:text-indigo-400 mt-1 italic">
+                                <p className="text-[9px] text-[#D528A2] dark:text-[#f45fc6] mt-1 italic">
                                   Suggestion: {exc.recommendation}
                                 </p>
                               </div>
@@ -2914,7 +3383,7 @@ export function DemoAllocationDashboard() {
                                   });
                                   setShowPreviewModal(false);
                                 }}
-                                className="px-2.5 py-1 bg-white hover:bg-slate-105 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[9px] font-bold rounded-lg border border-slate-200 dark:border-slate-750 transition-colors shadow-xs shrink-0 cursor-pointer"
+                                className="px-2.5 py-1 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[9px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 transition-colors shadow-xs shrink-0 cursor-pointer"
                               >
                                 Resolve Manual
                               </button>
@@ -2927,31 +3396,31 @@ export function DemoAllocationDashboard() {
                     {/* Generated sessions preview ledger list */}
                     <div className="space-y-2">
                       <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Generated Sessions Ledger Preview</h4>
-                      <div className="border border-slate-150 rounded-xl overflow-hidden max-h-[200px] overflow-y-auto">
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-[200px] overflow-y-auto">
                         <table className="w-full text-left border-collapse text-[10.5px]">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-155 text-slate-405 font-bold uppercase text-[9px]">
+                            <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase text-[9px]">
                               <th className="p-2.5">Faculty Mentor</th>
                               <th className="p-2.5">Subject</th>
                               <th className="p-2.5">Date / Time</th>
                               <th className="p-2.5">Assigned SME</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100">
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
                             {previewSessions.map((s, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50/20">
-                                <td className="p-2.5 font-bold text-slate-800">
+                              <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                                <td className="p-2.5 font-bold text-slate-800 dark:text-white">
                                   <div>{s.mentorName}</div>
-                                  <div className="text-[8.5px] text-indigo-500 font-black uppercase tracking-wider mt-0.5">
+                                  <div className="text-[8.5px] text-[#D528A2] font-black uppercase tracking-wider mt-0.5">
                                     {s.collegeName || colleges.find(c => c.id === mentors.find(m => m.id === s.mentorId)?.college_id)?.name || ""}
                                   </div>
                                 </td>
-                                <td className="p-2.5 text-slate-505">{s.subject}</td>
-                                <td className="p-2.5 text-slate-505">
+                                <td className="p-2.5 text-slate-500 dark:text-slate-400">{s.subject}</td>
+                                <td className="p-2.5 text-slate-500 dark:text-slate-400">
                                   <div>{s.dateStr}</div>
-                                  <div className="text-[8.5px] text-slate-405 mt-0.5">{s.timeSlot}</div>
+                                  <div className="text-[8.5px] text-slate-400 mt-0.5">{s.timeSlot}</div>
                                 </td>
-                                <td className="p-2.5 font-bold text-slate-750">{s.smeName}</td>
+                                <td className="p-2.5 font-bold text-slate-700 dark:text-slate-200">{s.smeName}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2968,19 +3437,19 @@ export function DemoAllocationDashboard() {
                 <div className="flex gap-3 border-t border-slate-100 dark:border-slate-800 pt-3 shrink-0">
                   <button
                     onClick={handleSavePreview}
-                    className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer transition-colors"
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer transition-colors"
                   >
                     Confirm &amp; Save
                   </button>
                   <button
                     onClick={handleTriggerGenerate}
-                    className="flex-1 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition-colors cursor-pointer border border-indigo-200"
+                    className="flex-1 py-2.5 bg-[#D528A2]/10 hover:bg-[#D528A2]/15 text-[#D528A2] font-bold rounded-xl text-xs transition-colors cursor-pointer border border-[#D528A2]/25"
                   >
                     Regenerate
                   </button>
                   <button
                     onClick={() => setShowPreviewModal(false)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-555 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
@@ -2990,24 +3459,23 @@ export function DemoAllocationDashboard() {
           </div>
         )}
 
-
-
-
         {/* MANUAL OVERRIDE / CREATE MODAL */}
         {editSession !== null && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5">
 
               <button
                 onClick={setEditSession.bind(null, null)}
-                className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-450 hover:text-slate-805 dark:hover:text-white transition-colors cursor-pointer"
+                className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
 
-              <div className="flex items-center gap-2 border-b border-slate-105 dark:border-slate-800 pb-3">
-                <Settings className="h-5 w-5 text-indigo-500" />
-                <h3 className="text-sm font-black uppercase text-slate-850 dark:text-white tracking-wider">
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="p-1.5 rounded-lg bg-[#D528A2]/10 text-[#D528A2]">
+                  <Settings className="h-4.5 w-4.5" />
+                </div>
+                <h3 className="text-sm font-black uppercase text-slate-900 dark:text-white tracking-wider">
                   {editSession.id ? "Manual Override Demo Session" : "Schedule New Demo Session"}
                 </h3>
               </div>
@@ -3030,7 +3498,6 @@ export function DemoAllocationDashboard() {
                   if (res.success) {
                     toast("Demo session scheduled successfully!", "success");
                     setEditSession(null);
-                    // bookDemoSession already surgically updates demoSessions state — no refreshData needed
                   } else {
                     toast(res.message, "error");
                   }
@@ -3041,22 +3508,22 @@ export function DemoAllocationDashboard() {
 
                 {/* Mentor Info */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Faculty Mentor</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Faculty Mentor</label>
                   <input
                     type="text"
                     value={editSession.mentorName}
                     disabled
-                    className="w-full px-3 py-2 text-xs font-bold bg-slate-50 dark:bg-slate-955 border border-slate-205 dark:border-slate-800 rounded-xl text-slate-500"
+                    className="w-full px-3 py-2 text-xs font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400"
                   />
                 </div>
 
                 {/* Cohort Stream */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Class Group / Cohort</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Class Group / Cohort</label>
                   <select
                     value={editSession.stream}
                     onChange={(e) => setEditSession({ ...editSession, stream: e.target.value })}
-                    className="w-full px-3 py-2 text-xs font-bold border border-slate-205 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 text-slate-700 focus:outline-indigo-500 cursor-pointer"
+                    className="w-full px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] cursor-pointer"
                   >
                     {classGroups.map(cg => (
                       <option key={cg} value={cg}>{cg}</option>
@@ -3067,22 +3534,22 @@ export function DemoAllocationDashboard() {
 
                 {/* Mentor Group Area */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Mentor Group</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Mentor Group</label>
                   <input
                     type="text"
                     value={editSession.subject}
                     onChange={(e) => setEditSession({ ...editSession, subject: e.target.value })}
-                    className="w-full px-3 py-2 text-xs font-bold border border-slate-205 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 text-slate-700 focus:outline-indigo-500"
+                    className="w-full px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2]"
                   />
                 </div>
 
                 {/* Assigned SME */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Subject Matter Expert (SME)</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Subject Matter Expert (SME)</label>
                   <select
                     value={editSession.smeId}
                     onChange={(e) => setEditSession({ ...editSession, smeId: e.target.value })}
-                    className="w-full px-3 py-2 text-xs font-bold border border-slate-205 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 text-slate-700 focus:outline-indigo-500 cursor-pointer"
+                    className="w-full px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] cursor-pointer"
                   >
                     {smes.map(sme => (
                       <option key={sme.id} value={sme.id}>{sme.name} ({sme.subject || "General"})</option>
@@ -3093,22 +3560,22 @@ export function DemoAllocationDashboard() {
                 <div className="grid grid-cols-2 gap-4">
                   {/* Date */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Date</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Date</label>
                     <input
                       type="date"
                       value={editSession.dateStr}
                       onChange={(e) => setEditSession({ ...editSession, dateStr: e.target.value })}
-                      className="w-full px-3 py-1.5 text-xs font-bold border border-slate-250 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 text-slate-700 focus:outline-indigo-500 cursor-pointer"
+                      className="w-full px-3 py-1.5 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] cursor-pointer"
                     />
                   </div>
 
                   {/* Timeslot */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Time Period</label>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Time Period</label>
                     <select
                       value={editSession.timeSlot}
                       onChange={(e) => setEditSession({ ...editSession, timeSlot: e.target.value })}
-                      className="w-full px-3 py-2 text-xs font-bold border border-slate-205 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 text-slate-700 focus:outline-indigo-500 cursor-pointer"
+                      className="w-full px-3 py-2 text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] cursor-pointer"
                     >
                       {collegeTimeSlots.map(t => (
                         <option key={t} value={t}>{t}</option>
@@ -3137,14 +3604,14 @@ export function DemoAllocationDashboard() {
                 <div className="flex gap-2 pt-2">
                   <button
                     type="submit"
-                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer"
+                    className="btn-gradient flex-1 py-2.5 text-white font-bold rounded-xl text-xs shadow-sm cursor-pointer"
                   >
                     {editSession.id ? "Save Changes" : "Create Schedule"}
                   </button>
                   <button
                     type="button"
                     onClick={setEditSession.bind(null, null)}
-                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-555 rounded-xl text-xs font-bold cursor-pointer"
+                    className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
@@ -3158,23 +3625,25 @@ export function DemoAllocationDashboard() {
 
         {/* 🔹 CELL DETAILS POPUP / VIEW MENTORS DRAWER */}
         {cellPopover !== null && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4">
 
               <button
                 onClick={setCellPopover.bind(null, null)}
-                className="absolute right-4 top-4 p-1.5 hover:bg-slate-105 dark:hover:bg-slate-855 rounded-xl text-slate-405 hover:text-slate-805 dark:hover:text-white transition-colors cursor-pointer"
+                className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
 
               <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-                <Calendar className="h-5 w-5 text-indigo-505" />
+                <div className="p-1.5 rounded-lg bg-[#D528A2]/10 text-[#D528A2]">
+                  <Calendar className="h-4.5 w-4.5" />
+                </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase text-slate-850 dark:text-white tracking-wider">
+                  <h3 className="text-sm font-black uppercase text-slate-900 dark:text-white tracking-wider">
                     {cellPopover.day} ({cellPopover.dateFormatted})
                   </h3>
-                  <p className="text-[10px] text-slate-405 font-bold">{cellPopover.timeSlot}</p>
+                  <p className="text-[10px] text-slate-400 font-bold">{cellPopover.timeSlot}</p>
                 </div>
               </div>
 
@@ -3231,34 +3700,34 @@ export function DemoAllocationDashboard() {
                             toast(`${mentor.name} is busy teaching: ${statusObj.label} (${statusObj.group})`, "warning");
                           }
                         }}
-                        className={`flex items-center justify-between p-3 rounded-xl border text-xs font-bold cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-805 ${isFree
-                          ? "bg-emerald-50/20 border-emerald-100 text-emerald-800"
+                        className={`flex items-center justify-between p-3 rounded-xl border text-xs font-bold cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800 ${isFree
+                          ? "bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300"
                           : isDemo
-                            ? "bg-indigo-50/30 border-indigo-200 text-indigo-855"
+                            ? "bg-[#D528A2]/10 dark:bg-[#D528A2]/20 border-[#D528A2]/30 text-[#D528A2] dark:text-[#f45fc6]"
                             : isPreview
-                              ? "bg-amber-50/20 border-amber-200 text-amber-750"
+                              ? "bg-amber-50/30 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300"
                               : isBlocked
                                 ? "bg-amber-50/10 border-amber-100/50 text-amber-600/80 cursor-not-allowed"
-                                : "bg-slate-50/50 border-slate-100 text-slate-400"
+                                : "bg-slate-50/50 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800 text-slate-400"
                           }`}
                       >
                         <div className="space-y-0.5 text-left">
-                          <span className="text-slate-850 dark:text-slate-100 block">{mentor.name}</span>
+                          <span className="text-slate-800 dark:text-slate-100 block">{mentor.name}</span>
                           {!isFree && (
-                            <span className="text-[9px] text-slate-455 dark:text-slate-505 font-semibold block">
+                            <span className="text-[9px] text-slate-400 font-semibold block">
                               {statusObj.label}
                             </span>
                           )}
                         </div>
                         <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase shrink-0 ${isFree
-                          ? "bg-emerald-105 text-emerald-700"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                           : isDemo
-                            ? "bg-indigo-100 text-indigo-700"
+                            ? "bg-[#D528A2]/20 text-[#D528A2] dark:text-[#f45fc6]"
                             : isPreview
-                              ? "bg-amber-100 text-amber-700"
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
                               : isBlocked
-                                ? "bg-amber-105/65 text-amber-600"
-                                : "bg-slate-100 text-slate-405"
+                                ? "bg-amber-100 text-amber-600"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-400"
                           }`}>
                           {isFree ? "Free" : isDemo ? "Demo" : isPreview ? "Draft" : isBlocked ? "Blocked" : "Busy"}
                         </span>
@@ -3274,8 +3743,8 @@ export function DemoAllocationDashboard() {
 
         {/* 🔹 SWAP REQUESTS RESOLUTION MODAL */}
         {showSwapRequestsModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5 flex flex-col max-h-[85vh]">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-5 flex flex-col max-h-[85vh]">
 
               <button
                 onClick={() => setShowSwapRequestsModal(false)}
@@ -3284,10 +3753,12 @@ export function DemoAllocationDashboard() {
                 <X className="h-5 w-5" />
               </button>
 
-              <div className="flex items-center gap-2 border-b border-slate-105 dark:border-slate-850 pb-3 shrink-0">
-                <RefreshCw className="h-5 w-5 text-indigo-500 animate-spin-slow" />
+              <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+                <div className="p-1.5 rounded-lg bg-[#D528A2]/10 text-[#D528A2]">
+                  <RefreshCw className="h-4.5 w-4.5 animate-spin-slow" />
+                </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase text-slate-855 dark:text-white tracking-wider">
+                  <h3 className="text-sm font-black uppercase text-slate-900 dark:text-white tracking-wider">
                     SME Swap Requests Queue
                   </h3>
                   <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
@@ -3301,14 +3772,14 @@ export function DemoAllocationDashboard() {
                 <button
                   type="button"
                   onClick={() => setSwapRequestsTab("pending")}
-                  className={`flex-1 pb-2.5 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all ${swapRequestsTab === "pending" ? "border-indigo-500 text-indigo-650" : "border-transparent text-slate-400"}`}
+                  className={`flex-1 pb-2.5 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all cursor-pointer ${swapRequestsTab === "pending" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"}`}
                 >
                   Pending Review ({demoSwapRequests.filter((r: any) => r.status === "pending").length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setSwapRequestsTab("resolved")}
-                  className={`flex-1 pb-2.5 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all ${swapRequestsTab === "resolved" ? "border-indigo-500 text-indigo-655" : "border-transparent text-slate-400"}`}
+                  className={`flex-1 pb-2.5 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all cursor-pointer ${swapRequestsTab === "resolved" ? "border-[#D528A2] text-[#D528A2]" : "border-transparent text-slate-400"}`}
                 >
                   Resolution Logs ({demoSwapRequests.filter((r: any) => r.status !== "pending").length})
                 </button>
@@ -3323,7 +3794,7 @@ export function DemoAllocationDashboard() {
                       return (
                         <div
                           key={req.id}
-                          className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-800 space-y-3.5"
+                          className="p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3.5"
                         >
                           <div className="flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-2">
                             <div>
@@ -3332,7 +3803,7 @@ export function DemoAllocationDashboard() {
                             </div>
                             <div className="text-right">
                               <span className="text-[9px] font-black uppercase text-slate-400 block">Proposed Action</span>
-                              <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-700 dark:text-pink-450 rounded-lg text-[9px] font-black uppercase">
+                              <span className="px-2 py-0.5 bg-[#D528A2]/10 text-[#D528A2] dark:text-[#f45fc6] rounded-lg text-[9px] font-black uppercase">
                                 {(req.swapType === "mentor" || req.swapType === "internal") ? "Change Mentor" : "Change Slot"}
                               </span>
                             </div>
@@ -3340,36 +3811,36 @@ export function DemoAllocationDashboard() {
 
                           {/* Details Grid */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl space-y-1">
+                            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
                               <span className="text-[8.5px] font-black uppercase text-slate-400 block mb-1">Original Session</span>
                               <p className="font-bold text-slate-700 dark:text-slate-200">{req.mentorName}</p>
                               <p className="text-[10px] text-slate-500">{req.dateStr} • {req.timeSlot}</p>
                               <p className="text-[9px] text-slate-400">{req.subject} • {req.stream}</p>
                             </div>
 
-                            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-xl space-y-1">
-                              <span className="text-[8.5px] font-black uppercase text-indigo-500 block mb-1">Proposed Match</span>
+                            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+                              <span className="text-[8.5px] font-black uppercase text-[#D528A2] block mb-1">Proposed Match</span>
                               {(req.swapType === "mentor" || req.swapType === "internal") ? (
                                 <>
-                                  <p className="font-bold text-indigo-650 dark:text-indigo-400">{req.proposedMentorName || req.targetMentorName}</p>
+                                  <p className="font-bold text-[#D528A2] dark:text-[#f45fc6]">{req.proposedMentorName || req.targetMentorName}</p>
                                   <p className="text-[10px] text-slate-500">{req.dateStr} • {req.timeSlot}</p>
-                                  <p className="text-[9px] text-slate-450">Replacing candidate faculty</p>
+                                  <p className="text-[9px] text-slate-400">Replacing candidate faculty</p>
                                 </>
                               ) : (
                                 <>
-                                  <p className="font-bold text-indigo-650 dark:text-indigo-400">{req.mentorName}</p>
-                                  <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold">{req.proposedDateStr} • {req.proposedTimeSlot}</p>
-                                  <p className="text-[9px] text-slate-450">Rescheduling date/time</p>
+                                  <p className="font-bold text-[#D528A2] dark:text-[#f45fc6]">{req.mentorName}</p>
+                                  <p className="text-[10px] text-[#D528A2] dark:text-[#f45fc6] font-bold">{req.proposedDateStr} • {req.proposedTimeSlot}</p>
+                                  <p className="text-[9px] text-slate-400">Rescheduling date/time</p>
                                 </>
                               )}
                             </div>
                           </div>
 
                           {/* Reason / Remarks */}
-                          <div className="bg-white dark:bg-slate-900/60 p-3 rounded-xl border border-slate-105 dark:border-slate-800 text-xs">
-                            <p className="text-[9.5px] text-slate-500"><strong>Reason:</strong> {req.reason}</p>
+                          <div className="bg-white dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                            <p className="text-[9.5px] text-slate-500 dark:text-slate-400"><strong>Reason:</strong> {req.reason}</p>
                             {req.remarks && (
-                              <p className="text-[9.5px] text-slate-450 italic mt-1 font-medium">"{req.remarks}"</p>
+                              <p className="text-[9.5px] text-slate-400 italic mt-1 font-medium">"{req.remarks}"</p>
                             )}
                           </div>
 
@@ -3382,7 +3853,7 @@ export function DemoAllocationDashboard() {
                                   Validated (No Conflicts)
                                 </span>
                               ) : (
-                                <span className="px-2.5 py-1 bg-rose-50 dark:bg-rose-955/20 text-rose-700 dark:text-rose-455 border border-rose-100 dark:border-rose-900 rounded-lg text-[10px] font-black uppercase flex items-center gap-1">
+                                <span className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 border border-rose-100 dark:border-rose-900 rounded-lg text-[10px] font-black uppercase flex items-center gap-1">
                                   Clash: {validation.message}
                                 </span>
                               )}
@@ -3398,7 +3869,7 @@ export function DemoAllocationDashboard() {
                                     toast(res.message, "error");
                                   }
                                 }}
-                                className="px-3.5 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-150 dark:hover:bg-slate-800 text-slate-655 rounded-xl text-xs font-black transition-all cursor-pointer"
+                                className="px-3.5 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-black transition-all cursor-pointer"
                               >
                                 Reject Swap
                               </button>
@@ -3411,7 +3882,7 @@ export function DemoAllocationDashboard() {
                                     toast(res.message, "error");
                                   }
                                 }}
-                                className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer"
+                                className="btn-gradient px-4 py-2 text-white rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer"
                               >
                                 Approve Swap
                               </button>
@@ -3425,24 +3896,24 @@ export function DemoAllocationDashboard() {
                     <div className="text-center py-16 text-slate-400 space-y-2">
                       <CheckCircle className="h-10 w-10 text-emerald-500 mx-auto animate-bounce" />
                       <p className="text-xs font-black uppercase tracking-wider">No pending swap requests found</p>
-                      <p className="text-[10px] text-slate-405">All submitted SME requests have been processed.</p>
+                      <p className="text-[10px] text-slate-400">All submitted SME requests have been processed.</p>
                     </div>
                   )
                 ) : (
                   demoSwapRequests.filter((r: any) => r.status !== "pending").length > 0 ? (
-                    <div className="border border-slate-150 dark:border-slate-800 rounded-xl overflow-hidden">
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
                       <table className="w-full text-left border-collapse text-[11px]">
                         <thead>
-                          <tr className="bg-slate-50 dark:bg-slate-850 text-slate-405 font-black uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
+                          <tr className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-black uppercase tracking-wider border-b border-slate-100 dark:border-slate-800">
                             <th className="p-3">SME</th>
                             <th className="p-3">Original Session</th>
                             <th className="p-3">Proposed Action</th>
                             <th className="p-3">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-305">
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
                           {demoSwapRequests.filter((r: any) => r.status !== "pending").map((req: any) => (
-                            <tr key={req.id} className="hover:bg-slate-50/55 dark:hover:bg-slate-800/10">
+                            <tr key={req.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
                               <td className="p-3 font-bold">{req.smeName}</td>
                               <td className="p-3">
                                 <div>{req.mentorName}</div>
@@ -3454,15 +3925,15 @@ export function DemoAllocationDashboard() {
                                     Mentor Swap: {req.proposedMentorName}
                                   </span>
                                 ) : (
-                                  <span className="font-medium text-indigo-605 dark:text-indigo-400">
+                                  <span className="font-medium text-[#D528A2] dark:text-[#f45fc6]">
                                     Time Swap: {req.proposedDateStr} • {req.proposedTimeSlot}
                                   </span>
                                 )}
                               </td>
                               <td className="p-3">
                                 <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase ${req.status === "approved"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-rose-100 text-rose-700"
+                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                                  : "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
                                   }`}>
                                   {req.status}
                                 </span>
@@ -3481,7 +3952,7 @@ export function DemoAllocationDashboard() {
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800 shrink-0">
                 <button
                   onClick={() => setShowSwapRequestsModal(false)}
-                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-550 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
                 >
                   Close Requests
                 </button>
@@ -3495,21 +3966,21 @@ export function DemoAllocationDashboard() {
 
         {/* 🔹 DEMO SCHEDULE EXCEL IMPORT PREVIEW MODAL */}
         {showDemoExcelImportModal && demoImportPreview && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden font-sans animate-fade-in">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 font-sans animate-fade-in">
+            <div className="bg-white dark:bg-[#131317] border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
 
               {/* Modal Header */}
-              <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950">
+              <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-slate-900/60 backdrop-blur-xs">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                  <div className="p-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20">
                     <FileSpreadsheet className="h-5 w-5" />
                   </div>
                   <div>
                     <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
                       Demo Schedule Excel Import Preview
                     </h3>
-                    <p className="text-[11px] text-slate-500 font-semibold">
-                      Target Subject Group: <strong className="text-indigo-600 dark:text-indigo-400">{demoImportPreview?.targetSubjectGroup}</strong>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                      Target Subject Group: <strong className="text-[#D528A2] dark:text-[#f45fc6]">{demoImportPreview?.targetSubjectGroup}</strong>
                     </p>
                   </div>
                 </div>
@@ -3531,12 +4002,12 @@ export function DemoAllocationDashboard() {
                     <span className="text-lg font-black text-slate-800 dark:text-white">{demoImportPreview?.parsed.length || 0}</span>
                   </div>
 
-                  <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-xl">
+                  <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/60 rounded-xl">
                     <span className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 block">Ready to Import</span>
                     <span className="text-lg font-black text-emerald-700 dark:text-emerald-300">{demoImportPreview?.validCount || 0}</span>
                   </div>
 
-                  <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-xl">
+                  <div className="p-3.5 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 rounded-xl">
                     <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 block">Warnings / Clashes</span>
                     <span className="text-lg font-black text-amber-700 dark:text-amber-300">{demoImportPreview?.warnings.length || 0}</span>
                   </div>
@@ -3544,7 +4015,7 @@ export function DemoAllocationDashboard() {
 
                 {/* Warning Alerts List */}
                 {demoImportPreview?.warnings && demoImportPreview.warnings.length > 0 && (
-                  <div className="p-3.5 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900 rounded-xl space-y-1.5">
+                  <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/25 border border-rose-200 dark:border-rose-900/60 rounded-xl space-y-1.5">
                     <span className="text-xs font-black text-rose-700 dark:text-rose-400 flex items-center gap-1.5 uppercase">
                       <AlertTriangle className="h-4 w-4" /> Validation Warnings ({demoImportPreview.warnings.length})
                     </span>
@@ -3592,7 +4063,7 @@ export function DemoAllocationDashboard() {
                               {item.dayName}
                               <span className="block text-[9.5px] font-medium text-slate-400">{item.dateStr}</span>
                             </td>
-                            <td className="p-2.5 font-semibold text-indigo-600 dark:text-indigo-400">{item.timeSlot}</td>
+                            <td className="p-2.5 font-bold text-[#D528A2] dark:text-[#f45fc6]">{item.timeSlot}</td>
                             <td className="p-2.5 font-semibold text-slate-800 dark:text-slate-200">{item.mentorName}</td>
                             <td className="p-2.5 font-semibold text-slate-800 dark:text-slate-200">{item.smeName}</td>
                             <td className="p-2.5 text-slate-600 dark:text-slate-300 font-medium">{item.subject}</td>
@@ -3622,7 +4093,7 @@ export function DemoAllocationDashboard() {
                 <button
                   type="button"
                   onClick={() => setShowDemoExcelImportModal(false)}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 cursor-pointer transition-all"
+                  className="px-4 py-2 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs border border-slate-200 dark:border-slate-700 cursor-pointer transition-all"
                 >
                   Cancel
                 </button>
@@ -3630,7 +4101,7 @@ export function DemoAllocationDashboard() {
                   type="button"
                   onClick={handleConfirmDemoExcelImport}
                   disabled={isImportingDemoExcel || !demoImportPreview || demoImportPreview.validCount === 0}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-sm flex items-center gap-2 transition-all cursor-pointer"
+                  className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer"
                 >
                   {isImportingDemoExcel ? (
                     <>
@@ -3650,11 +4121,12 @@ export function DemoAllocationDashboard() {
           </div>
         )}
 
-        {/* 🔹 SELECT MENTOR GROUP TEMPLATE CHOOSER MODAL */}
+        {/* 🔹 SELECT MENTOR GROUP TEMPLATE CHOOSER MODAL (MULTI-CAMPUS & DAY-ORDER GATED) */}
         {showTemplateModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200 font-sans">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl relative space-y-5">
+            <div className="bg-white dark:bg-[#131317] border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-xl shadow-2xl relative space-y-4 max-h-[90vh] overflow-y-auto">
 
+              {/* Close Button */}
               <button
                 onClick={() => setShowTemplateModal(false)}
                 className="absolute right-4 top-4 p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-xl transition-colors cursor-pointer"
@@ -3662,103 +4134,207 @@ export function DemoAllocationDashboard() {
                 <X className="h-5 w-5" />
               </button>
 
-              <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-                <div className="p-2.5 bg-[#D528A2]/10 text-[#D528A2] rounded-xl">
-                  <FileSpreadsheet className="h-6 w-6" />
+              {/* Header */}
+              <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+                <div className="p-2.5 bg-[#D528A2]/10 text-[#D528A2] rounded-xl shrink-0 border border-[#D528A2]/20">
+                  <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    Select Mentor Group Excel Template
+                  <h3 className="text-base font-black text-slate-900 dark:text-white">
+                    Download Multi-Campus Timetable Template
                   </h3>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Generate Mentor Group template with real faculty mentors, SMEs, and auto-calculation formulas.
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Includes all {colleges.length} applicable colleges, CAM Day Orders &amp; live mentor availability.
                   </p>
                 </div>
               </div>
 
-              {/* Mentor Group Selector Dropdown */}
-              <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Choose Mentor Group / Department:
-                </label>
-                <select
-                  value={templateMentorGroup || (mentorGroups[0] || "")}
-                  onChange={(e) => setTemplateMentorGroup(e.target.value)}
-                  className="w-full px-4 py-2.5 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:ring-2 focus:ring-[#D528A2] cursor-pointer"
-                >
-                  {mentorGroups.map(group => (
-                    <option key={group} value={group}>{group}</option>
-                  ))}
-                </select>
-              </div>
+              {/* ⚠️ DAY ORDER PREREQUISITE GATE ALERT */}
+              {!allCollegesDayOrderStatus.isAllConfigured ? (
+                <div className="p-4 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-extrabold text-xs">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>Day Order Configuration Required by Campus Managers</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium leading-relaxed">
+                    Template download is currently <strong>locked</strong>. Campus Academic Managers (CM) must configure the Day Order for all colleges for the active week ({currentWeekDates[0]?.formatted} – {currentWeekDates[currentWeekDates.length - 1]?.formatted}) before the template can be generated.
+                  </p>
+                  <div className="pt-1.5 border-t border-amber-200/60 dark:border-amber-900/60 space-y-1">
+                    <span className="text-[10px] font-black uppercase text-amber-900 dark:text-amber-300 block">
+                      Unconfigured Campuses ({allCollegesDayOrderStatus.unconfiguredColleges.length}):
+                    </span>
+                    <div className="max-h-24 overflow-y-auto space-y-1 text-[10.5px] font-semibold text-amber-800 dark:text-amber-300">
+                      {allCollegesDayOrderStatus.unconfiguredColleges.map((u, i) => (
+                        <div key={i} className="flex items-start gap-1.5">
+                          <span className="text-amber-600 font-bold">•</span>
+                          <span><strong>{u.college.name}:</strong> Missing Day Order on [{u.missingDates.join(", ")}]</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 rounded-xl flex items-center gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                    Day Orders configured for all {allCollegesDayOrderStatus.applicableColleges.length} colleges. Ready for template generation.
+                  </span>
+                </div>
+              )}
 
-              {/* Real-time Group Metrics Preview */}
+              {/* Department / Scope Selector */}
               {(() => {
-                const activeGroup = templateMentorGroup || (mentorGroups[0] || "");
-                const groupIdx = Math.max(0, mentorGroups.findIndex(g => g.toLowerCase().trim() === activeGroup.toLowerCase().trim()));
-
-                // 1. Direct count check for mentors
-                const displayMentors = mentors.filter(m => {
-                  if (!m) return false;
-                  const target = activeGroup.toLowerCase().trim();
-                  const mGroup = getMentorGroup(m).toLowerCase().trim();
-                  return mGroup === target;
-                });
-
-                // 2. Direct count check for SMEs
-                const displaySmes = getSmesForSubjectGroup(activeGroup);
-                const leadSmeNameFromGroup = subjectGroups.find(g => g.name?.toLowerCase().trim() === activeGroup.toLowerCase().trim())?.lead_sme_name;
-                const headSme = displaySmes.find((s: any) => s.is_head_sme);
+                const activeGroup = templateMentorGroup || "All";
+                const isAllGroups = activeGroup === "All";
+                const groupMentors = isAllGroups
+                  ? mentors
+                  : mentors.filter(m => m && getMentorGroup(m).toLowerCase().trim() === activeGroup.toLowerCase().trim());
+                const groupSmes = isAllGroups
+                  ? smes
+                  : getSmesForSubjectGroup(activeGroup);
 
                 return (
-                  <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-                    <span className="text-[10px] font-black uppercase text-slate-400 block tracking-wider">
-                      {activeGroup || "Mentor Group"} Database Snapshot
-                    </span>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 block mb-1.5">
+                        Department / Mentor Group Scope
+                      </label>
+                      <select
+                        value={activeGroup}
+                        onChange={(e) => setTemplateMentorGroup(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-slate-800 dark:text-white focus:ring-2 focus:ring-[#D528A2] cursor-pointer"
+                      >
+                        <option value="All">All Departments (Comprehensive Multi-College Roster)</option>
+                        {mentorGroups.map(group => (
+                          <option key={group} value={group}>{group}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 space-y-1">
-                        <span className="text-[9px] font-black uppercase text-slate-400 block">Eligible Mentors</span>
-                        <span className="text-sm font-black text-slate-800 dark:text-white">
-                          {displayMentors.length} Faculty Mentors
-                        </span>
-                        <p className="text-[9.5px] text-slate-400 font-medium truncate">
-                          {displayMentors.map(m => m.name).slice(0, 3).join(", ") || "Active Mentors"}
-                        </p>
+                    {/* Scope Micro-Pills */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-150 dark:border-slate-800/80 text-center">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block">Colleges Included</span>
+                        <span className="text-xs font-black text-[#D528A2] dark:text-[#f45fc6]">{allCollegesDayOrderStatus.applicableColleges.length} Campuses</span>
                       </div>
-
-                      <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 space-y-1">
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-150 dark:border-slate-800/80 text-center">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block">Faculty Mentors</span>
+                        <span className="text-xs font-black text-slate-800 dark:text-white">{groupMentors.length}</span>
+                      </div>
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-150 dark:border-slate-800/80 text-center">
                         <span className="text-[9px] font-black uppercase text-slate-400 block">Assigned SMEs</span>
-                        <span className="text-sm font-black text-[#D528A2]">
-                          {displaySmes.length > 0 ? `${displaySmes.length} Expert SME${displaySmes.length !== 1 ? "s" : ""}` : (leadSmeNameFromGroup ? `1 Lead SME` : `0 Expert SMEs`)}
-                        </span>
-                        <p className="text-[9.5px] text-slate-400 font-medium truncate">
-                          {displaySmes.length > 0 
-                            ? (headSme ? `Head: ${headSme.name}` : displaySmes.map((s: any) => s.name).join(", "))
-                            : (leadSmeNameFromGroup ? `Lead: ${leadSmeNameFromGroup}` : "Unassigned")}
-                        </p>
+                        <span className="text-xs font-black text-[#D528A2] dark:text-[#f45fc6]">{groupSmes.length}</span>
                       </div>
                     </div>
                   </div>
                 );
               })()}
 
-              {/* Modal Actions */}
-              <div className="flex justify-end gap-3 pt-2">
+              {/* Campus Day Order Status Overview (Live from CAM Daily Configs) */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Campus Day Orders Check
+                    </span>
+                    {colleges.length > 1 && (
+                      <select
+                        value={templateCollegeId || (selectedCollegeId !== "all" ? selectedCollegeId : (colleges[0]?.id || ""))}
+                        onChange={(e) => setTemplateCollegeId(e.target.value)}
+                        className="px-2 py-0.5 text-[10px] font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white cursor-pointer"
+                      >
+                        {colleges.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchDailyConfigs();
+                      toast("Refreshed latest Day Orders from CAM database.", "success");
+                    }}
+                    className="p-1 text-slate-400 hover:text-[#D528A2] dark:hover:text-[#f45fc6] rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[10px]"
+                    title="Refresh Day Orders from CAM Console"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span className="text-[9.5px] font-bold">Sync CAM</span>
+                  </button>
+                </div>
+
+                {/* Day Order Strip for selected preview college */}
+                {(() => {
+                  const targetCId = templateCollegeId || (selectedCollegeId !== "all" ? selectedCollegeId : (colleges[0]?.id || ""));
+                  const daysData = currentWeekDates.map((w, idx) => {
+                    const info = getEffectiveDayOrderInfo(w.dateStr, w.day, idx, targetCId);
+                    return { ...w, ...info };
+                  });
+
+                  return (
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {daysData.map((d) => (
+                        <div
+                          key={d.dateStr}
+                          className={`p-1.5 rounded-lg border text-center transition-all ${
+                            d.isHoliday
+                              ? "bg-rose-50/80 border-rose-200 text-rose-700 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-300"
+                              : d.isConfiguredInCam
+                              ? "bg-emerald-50/80 border-emerald-200 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-900 dark:text-emerald-300"
+                              : "bg-amber-50/80 border-amber-200 text-amber-800 dark:bg-amber-950/30 dark:border-amber-900 dark:text-amber-300"
+                          }`}
+                        >
+                          <span className="block text-[8.5px] font-bold text-slate-400 uppercase tracking-tight">
+                            {d.day.slice(0, 3)}
+                          </span>
+                          <span className={`block text-[10.5px] font-black mt-0.5 tracking-tight ${
+                            d.isHoliday ? "text-rose-600 dark:text-rose-400" : d.isConfiguredInCam ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"
+                          }`}>
+                            {d.dayOrder}
+                          </span>
+                          <span className={`block text-[7.5px] font-bold uppercase tracking-tight ${d.isHoliday ? "text-rose-600" : d.isConfiguredInCam ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600"}`}>
+                            {d.isHoliday ? "Holiday" : d.isConfiguredInCam ? "CAM Set" : "Unset in CAM"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Template Package Overview Card */}
+              <div className="px-3.5 py-2.5 bg-[#D528A2]/5 dark:bg-[#D528A2]/10 rounded-xl border border-[#D528A2]/20 dark:border-[#D528A2]/30 text-[10.5px] text-slate-600 dark:text-slate-300 space-y-1">
+                <div className="font-extrabold text-[#D528A2] dark:text-[#f45fc6] flex items-center gap-1.5">
+                  <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                  <span>Bulk Multi-Campus Workbook Package:</span>
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed pl-5">
+                  Generates <strong>Sheet 1 Master_Demo_Schedule</strong> (all colleges combined), individual <strong>Grid tabs for each college</strong> with drop-down menus limited to genuine free faculty, <strong>Eligible_Mentors</strong>, and <strong>Assigned_SMEs</strong>.
+                </p>
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowTemplateModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDownloadDemoTemplate(templateMentorGroup || mentorGroups[0])}
-                  className="px-5 py-2.5 bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold rounded-xl text-xs shadow-md shadow-[#D528A2]/25 flex items-center gap-2 transition-all cursor-pointer hover:opacity-95"
+                  onClick={() => handleDownloadDemoTemplate(templateMentorGroup || "All")}
+                  disabled={!allCollegesDayOrderStatus.isAllConfigured}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all shadow-md ${
+                    allCollegesDayOrderStatus.isAllConfigured
+                      ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] hover:opacity-95 text-white shadow-[#D528A2]/25 cursor-pointer"
+                      : "bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-300 dark:border-slate-700 shadow-none"
+                  }`}
+                  title={!allCollegesDayOrderStatus.isAllConfigured ? "Day Order must be configured in CAM before template can be downloaded" : "Download Multi-Campus Excel Template"}
                 >
                   <Download className="h-4 w-4" />
-                  Generate &amp; Download Template (.xlsx)
+                  {allCollegesDayOrderStatus.isAllConfigured ? "Download Multi-Campus Template (.xlsx)" : "Day Order Required to Download"}
                 </button>
               </div>
 

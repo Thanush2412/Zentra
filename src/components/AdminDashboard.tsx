@@ -6071,7 +6071,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           { id: "sme", label: "SME" },
                           { id: "student", label: "Student" },
                           { id: "fee_manager", label: "Fee Mgr" },
-                          { id: "allocator", label: "Allocator" },
+                          { id: "allocator", label: "Learning & Dev" },
                           { id: "hr", label: "HR" }
                         ].map(r => (
                           <button
@@ -10231,7 +10231,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="sme">SME (Subject Matter Expert)</option>
                     <option value="student">Student (Learner)</option>
                     <option value="fee_manager">Fee Manager (Fee Operations)</option>
-                    <option value="allocator">Allocator (Demo Scheduler)</option>
+                    <option value="allocator">Learning and Development</option>
                     <option value="hr">HR (Human Resources)</option>
                   </select>
                 </div>

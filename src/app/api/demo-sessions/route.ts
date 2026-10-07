@@ -173,7 +173,7 @@ export async function POST(request: Request) {
       const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
       await db.run(
         `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
-         VALUES (?, 'booking', ?, 'System', 'Demo Allocator', ?)`,
+         VALUES (?, 'booking', ?, 'System', 'Learning and Development', ?)`,
         [auditId, `Demo allocated for ${mentorName} with SME ${smeName} on ${dateStr} at ${timeSlot}`, new Date().toISOString()]
       );
 
@@ -597,7 +597,7 @@ export async function POST(request: Request) {
          VALUES (?, 'demo_reschedule_requested', ?, ?, 'Mentor', ?)`,
         [
           auditId,
-          `Mentor ${session.mentorName} requested rescheduling demo for ${session.subject} with SME ${session.smeName} from ${session.dateStr} (${session.timeSlot}) to ${newDateStr} (${newTimeSlot}). Awaiting Allocator approval.`,
+          `Mentor ${session.mentorName} requested rescheduling demo for ${session.subject} with SME ${session.smeName} from ${session.dateStr} (${session.timeSlot}) to ${newDateStr} (${newTimeSlot}). Awaiting Learning and Development approval.`,
           session.mentorName,
           new Date().toISOString()
         ]
@@ -605,7 +605,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: `Reschedule request sent to the Demo Allocator for approval (${newDateStr}, ${newTimeSlot}). The slot is reserved until they decide.`
+        message: `Reschedule request sent to Learning and Development for approval (${newDateStr}, ${newTimeSlot}). The slot is reserved until they decide.`
       });
     }
 
