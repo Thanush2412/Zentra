@@ -729,7 +729,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
     }
 
     // Leave cannot create an unhandled demo conflict: every impacted demo must
-    // have a proposed alternative period (reserved + queued for the Allocator).
+    // have a proposed alternative period (reserved + queued for L&D).
     if (unhandledImpactedDemos.length > 0) {
       toast(`${unhandledImpactedDemos.length} demo session(s) during this leave still need an alternative period. Please complete the Demo Reallocation panel first.`, "warning");
       return;

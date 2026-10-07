@@ -74,7 +74,7 @@ export function DemoAllocationDashboard() {
 
   const { toast } = useToast();
 
-  // ── Leave-driven Demo Reallocation queue (Allocator review) ──
+  // ── Leave-driven Demo Reallocation queue (L&D review) ──
   const [demoReallocations, setDemoReallocations] = useState<any[]>([]);
   const [loadingReallocations, setLoadingReallocations] = useState(false);
   const [decidingReallocId, setDecidingReallocId] = useState<string | null>(null);
@@ -3061,7 +3061,7 @@ export function DemoAllocationDashboard() {
             subtitle="Review pending SME & mentor swap proposals and inspect automated scheduling exceptions."
           >
             <div className="space-y-6">
-              {/* ── Leave-Driven Demo Reallocation Requests (Allocator Approval) ── */}
+              {/* ── Leave-Driven Demo Reallocation Requests (L&D Approval) ── */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
                   <div className="flex items-center gap-2">

@@ -235,7 +235,7 @@ export async function POST(request: Request) {
         if (pendingReallocs.length > 0) {
           return NextResponse.json({
             success: false,
-            message: `Cannot approve yet: ${pendingReallocs.length} demo reallocation(s) for this leave are still awaiting Allocator decision (${pendingReallocs.map((r: any) => `${r.subject}: ${r.original_date_str} → ${r.proposed_date_str}`).join("; ")}).`
+            message: `Cannot approve yet: ${pendingReallocs.length} demo reallocation(s) for this leave are still awaiting L&D decision (${pendingReallocs.map((r: any) => `${r.subject}: ${r.original_date_str} → ${r.proposed_date_str}`).join("; ")}).`
           }, { status: 409 });
         }
       }

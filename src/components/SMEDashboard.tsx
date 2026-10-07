@@ -1111,7 +1111,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     SME Working Windows & Schedule Settings
                   </h3>
                   <p className="text-xs text-slate-500 font-medium max-w-2xl">
-                    Configure your dedicated Demo Evaluation windows vs Faculty Training hours. The Timetable Allocator strictly matches mentor demos only during your Demo Time slots.
+                    Configure your dedicated Demo Evaluation windows vs Faculty Training hours. The L&amp;D Timetable System strictly matches mentor demos only during your Demo Time slots.
                   </p>
 
                   {/* Configured Days Badges Preview */}

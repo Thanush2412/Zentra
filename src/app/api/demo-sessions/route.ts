@@ -147,7 +147,7 @@ export async function POST(request: Request) {
 
       // Leave-driven reallocation reservations: a pending/approved reservation
       // blocks booking another demo into the same (SME, date, slot) — the period
-      // is temporarily held for the reallocated demo until the Allocator decides.
+      // is temporarily held for the reallocated demo until L&D decides.
       try {
         const reservationClash = await db.get(
           `SELECT id FROM demo_reallocation_requests
@@ -156,7 +156,7 @@ export async function POST(request: Request) {
           [smeId, dateStr, timeSlot, timeSlot, timeSlot]
         ).catch(() => null);
         if (reservationClash) {
-          return NextResponse.json({ success: false, message: "This period is reserved for a pending demo reallocation (awaiting Allocator approval)." });
+          return NextResponse.json({ success: false, message: "This period is reserved for a pending demo reallocation (awaiting L&D approval)." });
         }
       } catch (_) {}
 
@@ -526,12 +526,12 @@ export async function POST(request: Request) {
           [sessionId, session.smeId, newDateStr, newTimeSlot, newTimeSlot, newTimeSlot]
         ).catch(() => null);
         if (reservationClash) {
-          return NextResponse.json({ success: false, message: "Target period is reserved for a pending demo reallocation (awaiting Allocator approval)." }, { status: 400 });
+          return NextResponse.json({ success: false, message: "Target period is reserved for a pending demo reallocation (awaiting L&D approval)." }, { status: 400 });
         }
       } catch (_) {}
 
       // ── Phase B (Demo Workflow Redesign): reschedules no longer auto-confirm ──
-      // Create a PENDING reallocation request that the Demo Allocator must approve.
+      // Create a PENDING reallocation request that L&D must approve.
       // The slot is NOT changed here; /api/demo-reallocations action=resolve does it.
       try {
         await db.exec(

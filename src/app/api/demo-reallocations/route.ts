@@ -291,7 +291,7 @@ export async function POST(request: Request) {
             notifId,
             demo.smeId,
             "Demo Reallocation Proposed",
-            `${demo.mentorName} proposed moving the ${demo.subject} demo from ${demo.dateStr} (${demo.timeSlot}) to ${proposedDateStr} (${proposedTimeSlot}). Awaiting Allocator approval.`,
+            `${demo.mentorName} proposed moving the ${demo.subject} demo from ${demo.dateStr} (${demo.timeSlot}) to ${proposedDateStr} (${proposedTimeSlot}). Awaiting L&D approval.`,
             new Date().toISOString()
           ]
         ).catch(() => {});
@@ -304,7 +304,7 @@ export async function POST(request: Request) {
          VALUES (?, 'demo_reallocation_proposed', ?, ?, 'Mentor', ?)`,
         [
           auditId,
-          `Demo ${demoSessionId} (${demo.subject}) reallocation proposed: ${demo.dateStr} (${demo.timeSlot}) → ${proposedDateStr} (${proposedTimeSlot}). Slot reserved pending Allocator approval.`,
+          `Demo ${demoSessionId} (${demo.subject}) reallocation proposed: ${demo.dateStr} (${demo.timeSlot}) → ${proposedDateStr} (${proposedTimeSlot}). Slot reserved pending L&D approval.`,
           proposedBy || demo.mentorName,
           new Date().toISOString()
         ]
@@ -312,12 +312,12 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: `Alternative period reserved: ${proposedDateStr} (${proposedTimeSlot}). Sent to Allocator for approval.`,
+        message: `Alternative period reserved: ${proposedDateStr} (${proposedTimeSlot}). Sent to L&D for approval.`,
         requestId: reqId
       });
     }
 
-    // ── RESOLVE: Allocator approves or rejects ─────────────────────────
+    // ── RESOLVE: L&D approves or rejects ─────────────────────────
     if (action === "resolve") {
       const { requestId, decision, decidedBy, decisionNotes } = body;
       if (!requestId || !["approved", "rejected"].includes(decision)) {
@@ -335,17 +335,17 @@ export async function POST(request: Request) {
       if (decision === "rejected") {
         await db.run(
           "UPDATE demo_reallocation_requests SET status = 'rejected', decided_by = ?, decided_at = ?, decision_notes = ? WHERE id = ?",
-          [decidedBy || "Allocator", new Date().toISOString(), decisionNotes || null, requestId]
+          [decidedBy || "L&D", new Date().toISOString(), decisionNotes || null, requestId]
         );
 
         const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
-           VALUES (?, 'demo_reallocation_resolved', ?, ?, 'Allocator', ?)`,
+           VALUES (?, 'demo_reallocation_resolved', ?, ?, 'L&D', ?)`,
           [
             auditId,
-            `Demo reallocation ${requestId} REJECTED by ${decidedBy || "Allocator"}. Reservation released; original slot ${req.original_date_str} (${req.original_time_slot}) retained.`,
-            decidedBy || "Allocator",
+            `Demo reallocation ${requestId} REJECTED by ${decidedBy || "L&D"}. Reservation released; original slot ${req.original_date_str} (${req.original_time_slot}) retained.`,
+            decidedBy || "L&D",
             new Date().toISOString()
           ]
         ).catch(() => {});
@@ -378,7 +378,7 @@ export async function POST(request: Request) {
 
       await db.run(
         "UPDATE demo_reallocation_requests SET status = 'approved', decided_by = ?, decided_at = ?, decision_notes = ? WHERE id = ?",
-        [decidedBy || "Allocator", new Date().toISOString(), decisionNotes || null, requestId]
+        [decidedBy || "L&D", new Date().toISOString(), decisionNotes || null, requestId]
       );
 
       // Notifications: mentor + SME
@@ -398,11 +398,11 @@ export async function POST(request: Request) {
       const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
       await db.run(
         `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
-         VALUES (?, 'demo_reallocation_resolved', ?, ?, 'Allocator', ?)`,
+         VALUES (?, 'demo_reallocation_resolved', ?, ?, 'L&D', ?)`,
         [
           auditId,
-          `Demo reallocation ${requestId} APPROVED by ${decidedBy || "Allocator"}. Demo ${req.demo_session_id} (${req.subject}) moved ${req.original_date_str} (${req.original_time_slot}) → ${req.proposed_date_str} (${req.proposed_time_slot}). Original slot released.`,
-          decidedBy || "Allocator",
+          `Demo reallocation ${requestId} APPROVED by ${decidedBy || "L&D"}. Demo ${req.demo_session_id} (${req.subject}) moved ${req.original_date_str} (${req.original_time_slot}) → ${req.proposed_date_str} (${req.proposed_time_slot}). Original slot released.`,
+          decidedBy || "L&D",
           new Date().toISOString()
         ]
       ).catch(() => {});
