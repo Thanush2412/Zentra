@@ -750,6 +750,9 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
     if (newStartDate) {
       const autoEnd = computeEndDateFromStart(newStartDate, workingDaysCount);
       setEndDate(autoEnd);
+      const newWeek = calculateWeekNumber(newStartDate);
+      setSelectedWeek(newWeek);
+      isDirtyRef.current = true;
     }
     setDailyTasks(prev =>
       prev.map(t => {
@@ -1401,17 +1404,9 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                 {workingDaysCount}-Day Week
               </span>
             </div>
-            <select
-              value={selectedWeek}
-              onChange={e => handleWeekChange(parseInt(e.target.value, 10))}
-              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-            >
-              {Array.from({ length: 16 }, (_, i) => i + 1).map(w => (
-                <option key={w} value={w}>
-                  Week {w}
-                </option>
-              ))}
-            </select>
+            <div className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none flex items-center select-none cursor-default">
+              Week {selectedWeek} (Auto-calculated)
+            </div>
             {/* Start Date & Auto End Date Controls */}
             <div className="grid grid-cols-2 gap-1.5 mt-1.5 pt-1.5 border-t border-slate-100">
               <div>
