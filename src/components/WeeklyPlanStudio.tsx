@@ -230,7 +230,19 @@ export function getMappedDayFromDayOrder(dayOrder: string, defaultDay: string): 
   return defaultDay;
 }
 
-// Helper: Auto-calculate week Monday & Saturday dates for Week N
+// Helper: Get Monday date string (YYYY-MM-DD) of the current week (or base date)
+export function getMondayOfCurrentWeek(baseDateStr?: string): string {
+  const base = baseDateStr ? new Date(baseDateStr + "T00:00:00") : new Date();
+  const dow = base.getDay();
+  const monday = new Date(base);
+  monday.setDate(base.getDate() - (dow === 0 ? 6 : dow - 1));
+  const y = monday.getFullYear();
+  const m = String(monday.getMonth() + 1).padStart(2, "0");
+  const d = String(monday.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Helper: Auto-calculate week Monday & Saturday dates for Week N (standalone helper)
 export function computeWeekWindow(weekNumber: number, baseDateStr?: string, workingDays: number = 6) {
   const base = baseDateStr ? new Date(baseDateStr + "T00:00:00") : new Date();
   const dow = base.getDay();
@@ -479,7 +491,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
 
   // 1. Helper to generate default tasks for each working day in the week
   const generateDefaultTasksForWeek = useCallback((customStartDate?: string) => {
-    const mondayStr = customStartDate || startDate || computeWeekWindow(selectedWeek, undefined, workingDaysCount).start;
+    const mondayStr = customStartDate || startDate || getMondayOfCurrentWeek();
     const newTasks: DailySessionTask[] = [];
 
     availableDays.forEach((dayName) => {
@@ -566,7 +578,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
     });
 
     setDailyTasks(newTasks);
-  }, [availableDays, resolvedPeriodSlots, resolveDayOrderDetailed, startDate, selectedWeek, workingDaysCount, slots, mentorId, collegeId, selectedSubject, selectedClass, dailyConfigsMap]);
+  }, [availableDays, resolvedPeriodSlots, resolveDayOrderDetailed, startDate, slots, mentorId, collegeId, selectedSubject, selectedClass, dailyConfigsMap]);
 
   // 2. Load plan for a specific week number, cohort, and subject
   const loadPlanForWeek = useCallback((
@@ -618,7 +630,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
         generateDefaultTasksForWeek(match.start_date);
       }
     } else {
-      // New sequential week creation
+      // New sequential week creation (auto derived from previous logs/plans)
       setCurrentPlanId(null);
       setCurrentStatus("Draft");
       setCurrentFeedback("");
@@ -627,7 +639,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       setPlanUpdatedAt("");
       setUnitName(`Unit ${Math.min(5, Math.ceil(targetWeek / 3))}`);
 
-      // Calculate start date relative to previous week's end date
+      // Calculate start date relative to previous week's end date (or current week)
       const prevPlan = currentPlans.find(
         p =>
           p.week_number === targetWeek - 1 &&
@@ -641,7 +653,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
         if (!isNaN(prevEnd.getTime())) {
           const nextDay = new Date(prevEnd);
           const dow = prevEnd.getDay();
-          const addDays = dow === 6 ? 2 : dow === 0 ? 1 : 1;
+          const addDays = dow === 5 ? 3 : dow === 6 ? 2 : dow === 0 ? 1 : 1;
           nextDay.setDate(nextDay.getDate() + addDays);
           calculatedStart = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, "0")}-${String(nextDay.getDate()).padStart(2, "0")}`;
         }
@@ -654,7 +666,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       }
 
       if (!calculatedStart) {
-        calculatedStart = computeWeekWindow(targetWeek, undefined, workingDaysCount).start;
+        calculatedStart = getMondayOfCurrentWeek();
       }
 
       const calculatedEnd = computeEndDateFromStart(calculatedStart, workingDaysCount);
@@ -691,16 +703,16 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       setSelectedWeek(1);
       loadPlanForWeek(1, selectedClass, selectedSubject, plans);
     } else {
-      // If current selectedWeek is in matched plans, keep it and load it
-      const currentMatched = matched.find(p => p.week_number === selectedWeek);
-      if (currentMatched) {
-        loadPlanForWeek(selectedWeek, selectedClass, selectedSubject, plans);
+      // Prioritize draft/revision, or if all are submitted/verified, auto-advance to next sequential week
+      const activeDraft = matched.find(p => p.status === "Draft" || p.status === "Needs Revision");
+      if (activeDraft) {
+        setSelectedWeek(activeDraft.week_number);
+        loadPlanForWeek(activeDraft.week_number, selectedClass, selectedSubject, plans);
       } else {
-        // Prioritize draft/revision or pick the highest week
-        const activeDraft = matched.find(p => p.status === "Draft" || p.status === "Needs Revision");
-        const targetWeekNum = activeDraft ? activeDraft.week_number : matched[matched.length - 1].week_number;
-        setSelectedWeek(targetWeekNum);
-        loadPlanForWeek(targetWeekNum, selectedClass, selectedSubject, plans);
+        const highestWk = Math.max(...matched.map(p => p.week_number));
+        const nextWk = highestWk + 1;
+        setSelectedWeek(nextWk);
+        loadPlanForWeek(nextWk, selectedClass, selectedSubject, plans);
       }
     }
   }, [plansLoaded, selectedClass, selectedSubject, plans, loadPlanForWeek]);
@@ -754,9 +766,15 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       loadPlanForWeek(1, newClass, selectedSubject, plans);
     } else {
       const activeDraft = matched.find(p => p.status === "Draft" || p.status === "Needs Revision");
-      const targetWk = activeDraft ? activeDraft.week_number : matched[matched.length - 1].week_number;
-      setSelectedWeek(targetWk);
-      loadPlanForWeek(targetWk, newClass, selectedSubject, plans);
+      if (activeDraft) {
+        setSelectedWeek(activeDraft.week_number);
+        loadPlanForWeek(activeDraft.week_number, newClass, selectedSubject, plans);
+      } else {
+        const highestWk = Math.max(...matched.map(p => p.week_number));
+        const nextWk = highestWk + 1;
+        setSelectedWeek(nextWk);
+        loadPlanForWeek(nextWk, newClass, selectedSubject, plans);
+      }
     }
   };
 
@@ -779,9 +797,15 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       loadPlanForWeek(1, selectedClass, newSubject, plans);
     } else {
       const activeDraft = matched.find(p => p.status === "Draft" || p.status === "Needs Revision");
-      const targetWk = activeDraft ? activeDraft.week_number : matched[matched.length - 1].week_number;
-      setSelectedWeek(targetWk);
-      loadPlanForWeek(targetWk, selectedClass, newSubject, plans);
+      if (activeDraft) {
+        setSelectedWeek(activeDraft.week_number);
+        loadPlanForWeek(activeDraft.week_number, selectedClass, newSubject, plans);
+      } else {
+        const highestWk = Math.max(...matched.map(p => p.week_number));
+        const nextWk = highestWk + 1;
+        setSelectedWeek(nextWk);
+        loadPlanForWeek(nextWk, selectedClass, newSubject, plans);
+      }
     }
   };
 
@@ -809,13 +833,13 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
 
   // Check if CAM has assigned any Day Order for this week
   const hasAnyCamDayOrder = useMemo(() => {
-    const mondayStr = startDate || computeWeekWindow(selectedWeek, undefined, workingDaysCount).start;
+    const mondayStr = startDate || getMondayOfCurrentWeek();
     return availableDays.some(day => {
       const dStr = getDateForDay(day, mondayStr);
       const res = resolveDayOrderDetailed(dStr, day);
       return res.source === "cam";
     });
-  }, [availableDays, startDate, selectedWeek, workingDaysCount, resolveDayOrderDetailed]);
+  }, [availableDays, startDate, resolveDayOrderDetailed]);
 
   // Handle task field updates
   const updateDailyTask = (idx: number, field: keyof DailySessionTask, value: any) => {
