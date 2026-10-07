@@ -13,7 +13,8 @@ import { extractSessionToken } from "@/lib/authGuard";
 /** Profile tables that hold a display name for each role (whitelisted — never user input). */
 const ROLE_PROFILE_TABLES: Record<string, string> = {
   admin: "admin_users",
-  cam: "campus_managers",
+  cm: "campus_managers",
+  cam: "campus_managers",  // legacy token (pre-rename DB rows)
   mentor: "mentors",
   student: "students",
   kam: "kam_users",
@@ -146,7 +147,7 @@ export async function POST(request: Request) {
       let resolvedEmail = lowerEmail.includes("@") ? lowerEmail : `${lowerEmail}@university.edu`;
 
       // ── Parallel role lookup — all 5 tables queried in one round-trip ──
-      const [cam, mentor, student, kam, sme] = await Promise.all([
+      const [cm, mentor, student, kam, sme] = await Promise.all([
         db.get(
           "SELECT id, email FROM campus_managers WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
           [lowerEmail, lowerEmail, lowerEmail, `${lowerEmail}@%`, `%${lowerEmail}%`]
@@ -169,8 +170,8 @@ export async function POST(request: Request) {
         )
       ]);
 
-      // Priority: CAM > Mentor > Student > KAM > SME
-      const resolved = cam     ? { role: "cam",     record: cam }
+      // Priority: CM > Mentor > Student > KAM > SME
+      const resolved = cm       ? { role: "cm",     record: cm }
                      : mentor  ? { role: "mentor",  record: mentor }
                      : student ? { role: "student", record: student }
                      : kam     ? { role: "kam",     record: kam }
@@ -240,9 +241,9 @@ export async function POST(request: Request) {
     // Retrieve college_id if applicable for the role
     let collegeId = null;
     try {
-      if (user.role === "cam") {
-        const cam = await db.get("SELECT college_id FROM campus_managers WHERE id = ? OR LOWER(email) = ?", [user.reference_id, user.email?.toLowerCase()]);
-        collegeId = cam ? cam.college_id : null;
+      if (user.role === "cam" || user.role === "cm") {
+        const cm = await db.get("SELECT college_id FROM campus_managers WHERE id = ? OR LOWER(email) = ?", [user.reference_id, user.email?.toLowerCase()]);
+        collegeId = cm ? cm.college_id : null;
       } else if (user.role === "student") {
         const student = await db.get("SELECT college_id FROM students WHERE id = ? OR LOWER(email) = ?", [user.reference_id, user.email?.toLowerCase()]);
         collegeId = student ? student.college_id : null;

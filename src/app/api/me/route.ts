@@ -14,6 +14,7 @@ import { getDb } from "@/lib/db";
 const PROFILE_TABLES: Record<string, string> = {
   admin: "admin_users",
   kam: "kam_users",
+  cm: "campus_managers",
   cam: "campus_managers",
   mentor: "mentors",
   student: "students",

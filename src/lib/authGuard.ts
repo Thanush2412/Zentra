@@ -4,7 +4,19 @@ import { validateSession, SESSION_COOKIE_NAME, UserSessionRecord } from "@/lib/s
 import { verifyCsrfToken, CSRF_HEADER_NAME, generateCsrfToken } from "@/lib/csrf";
 import { roleGrantsSuperAdmin } from "@/lib/superadmin";
 
-export type Role = "admin" | "cam" | "mentor" | "student" | "kam" | "sme" | "fee_manager" | "L and D" | "hr";
+export type Role = "admin" | "cm" | "mentor" | "student" | "kam" | "sme" | "fee_manager" | "L and D" | "hr";
+
+/** Legacy role spellings that map onto the current machine tokens. */
+const LEGACY_ROLE_MAP: Record<string, string> = {
+  cam: "cm",           // pre-rename Campus Manager token
+  campus_manager: "cm"
+};
+
+/** Normalizes a raw DB role string (including legacy tokens) to the current Role. */
+export function normalizeRole(role: string): Role {
+  const raw = (role || "student").toLowerCase();
+  return ((LEGACY_ROLE_MAP as Record<string, string>)[raw] || raw) as Role;
+}
 
 export interface AuthenticatedUser {
   id: string;              // users.id
@@ -31,7 +43,7 @@ export interface RequireAuthOptions {
 /** Profile tables that hold display names and metadata for each role */
 const ROLE_PROFILE_TABLES: Record<string, string> = {
   admin: "admin_users",
-  cam: "campus_managers",
+  cm: "campus_managers",
   mentor: "mentors",
   student: "students",
   kam: "kam_users",
@@ -67,7 +79,7 @@ export async function resolveLiveUser(
 
   if (!user) return null;
 
-  const role = (user.role || "student").toLowerCase() as Role;
+  const role = normalizeRole(user.role);
   let name = user.name || "";
   let collegeId: string | null = null;
 
