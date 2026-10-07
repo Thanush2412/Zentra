@@ -108,7 +108,7 @@ export function DemoAllocationDashboard() {
           action: "resolve",
           requestId,
           decision,
-          decidedBy: "Learning and Development",
+          decidedBy: "L and D",
           decisionNotes: notes || undefined
         })
       });
@@ -1356,7 +1356,7 @@ export function DemoAllocationDashboard() {
 
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = "Zentra Timetable Engine - Learning and Development";
+    workbook.creator = "Zentra Timetable Engine - L and D";
 
     // Helper to get actual college working hours, start time, end time, and campus name
     const getCollegeTimingInfo = (collegeId?: string) => {
@@ -2451,7 +2451,7 @@ export function DemoAllocationDashboard() {
           <div className="space-y-1">
             <h1 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-[#D528A2] animate-pulse" />
-              Learning and Development Console
+              L and D Console
             </h1>
             <p className="text-[11.5px] text-slate-500 dark:text-slate-400 font-bold leading-none">
               Consolidate and allocate multi-campus department demo sessions for mentors and SMEs.
