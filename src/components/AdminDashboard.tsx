@@ -6071,7 +6071,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           { id: "sme", label: "SME" },
                           { id: "student", label: "Student" },
                           { id: "fee_manager", label: "Fee Mgr" },
-                          { id: "allocator", label: "L and D" },
+                          { id: "allocator", label: "L&D" },
                           { id: "hr", label: "HR" }
                         ].map(r => (
                           <button

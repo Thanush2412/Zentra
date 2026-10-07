@@ -2387,7 +2387,7 @@ export function DemoAllocationDashboard() {
                   <span className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white block leading-tight">
                     Learning &amp; Dev
                   </span>
-                  <span className="text-[9.5px] font-bold text-slate-400 block">Demo Allocator</span>
+                  <span className="text-[9.5px] font-bold text-slate-400 block">L&amp;D Portal</span>
                 </div>
               </div>
             )}
@@ -2451,7 +2451,7 @@ export function DemoAllocationDashboard() {
           <div className="space-y-1">
             <h1 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-[#D528A2] animate-pulse" />
-              L and D Console
+              L&amp;D Console
             </h1>
             <p className="text-[11.5px] text-slate-500 dark:text-slate-400 font-bold leading-none">
               Consolidate and allocate multi-campus department demo sessions for mentors and SMEs.
