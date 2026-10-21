@@ -1198,7 +1198,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       if (usersData.success && usersData.users) {
         setUsersList(usersData.users || []);
-        setCamList((usersData.users || []).filter((u: any) => u.role === "cam"));
+        setCamList((usersData.users || []).filter((u: any) => normalizeRoleValue(u.role) === "cm"));
         setKamList((usersData.users || []).filter((u: any) => u.role === "kam"));
       }
     } catch (e) {
@@ -5597,7 +5597,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       ? "bg-indigo-100 text-indigo-800 border-indigo-200"
                                       : (r.user_role || "").toLowerCase() === "mentor"
                                       ? "bg-teal-100 text-teal-800 border-teal-200"
-                                      : (r.user_role || "").toLowerCase() === "cam"
+                                      : normalizeRoleValue(r.user_role || "") === "cm"
                                       ? "bg-violet-100 text-violet-800 border-violet-200"
                                       : normalizeRoleValue(r.user_role || "") === "L and D"
                                       ? "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200"
@@ -6443,7 +6443,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           >
                             <option value="student">Student</option>
                             <option value="mentor">Mentor / Faculty</option>
-                            <option value="cam">Campus Manager (HOD)</option>
+                            <option value="cm">Campus Manager (HOD)</option>
                             <option value="sme">Subject Matter Expert (SME)</option>
                           </select>
                         </div>
@@ -6503,7 +6503,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       {s.name} ({s.email}) - {s.id}
                                     </option>
                                   ))}
-                              {approvingRole === "cam" &&
+                              {approvingRole === "cm" &&
                                 camList
                                   .filter((c: any) => !usersList.some((u: any) => u.reference_id === c.id))
                                   .map((c: any) => (
@@ -9919,7 +9919,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <option value="All">All Roles</option>
                       <option value="student">Students</option>
                       <option value="mentor">Mentors</option>
-                      <option value="cam">Campus Managers</option>
+                      <option value="cm">Campus Managers</option>
                     </select>
                   </div>
 
@@ -10228,7 +10228,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
                   >
                     <option value="admin">Admin (System Administrator)</option>
-                    <option value="cam">CM (Campus Manager)</option>
+                    <option value="cm">CM (Campus Manager)</option>
                     <option value="kam">KAM (Key Account Manager)</option>
                     <option value="mentor">Mentor (Faculty Staff)</option>
                     <option value="sme">SME (Subject Matter Expert)</option>
