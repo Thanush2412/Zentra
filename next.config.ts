@@ -33,14 +33,11 @@ function getDynamicDevOrigins(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: getDynamicDevOrigins(),
-  // Legacy /cam routes were renamed to /cm; keep old stored notification
-  // links and bookmarks working.
-  async redirects() {
-    return [
-      { source: "/cam", destination: "/cm", permanent: true },
-      { source: "/cam/:path*", destination: "/cm/:path*", permanent: true }
-    ];
-  },
+  // /cam and /cm are BOTH first-class routes — src/app/cam and src/app/cm render the
+  // same CM workspace, and /l-and-d, /ld and /allocator render the same L&D workspace.
+  // Never redirect one onto the other: stored notification links, bookmarks and role
+  // tokens from either era must keep resolving without a hop, and a permanent redirect
+  // aimed at a route the running build lacks dead-ends the entire login flow.
   // Native binaries must stay outside the webpack bundle — resvg's .node file
   // is loaded by Node directly (skill report chart rendering).
   serverExternalPackages: ["@resvg/resvg-js"],
