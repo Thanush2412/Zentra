@@ -280,7 +280,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   ];
 
   const [localActiveTab, setLocalActiveTab] = useState<"overview" | "campuses" | "kams" | "cams" | "mentors" | "subjects" | "schedules" | "monitoring" | "oversight" | "hierarchy" | "logs" | "feedback" | "courses" | "announcements" | "holidays" | "sessions" | "users" | "smes" | "settings" | "more_menu">("overview");
-  const activeTab = propActiveTab || localActiveTab;
+  const ADMIN_TAB_IDS = ["overview", "campuses", "kams", "cams", "mentors", "subjects", "schedules", "monitoring", "oversight", "hierarchy", "logs", "feedback", "courses", "announcements", "holidays", "sessions", "users", "smes", "settings", "more_menu"];
+  // Notification deep links use feature-oriented slugs that differ from the admin tab ids.
+  const adminTabAliases: Record<string, string> = {
+    schedule: "schedules",
+    attendance: "monitoring",
+    audit: "logs",
+    audit_logs: "logs",
+    credentials: "users",
+    settings: "settings",
+    holidays: "holidays",
+    announcements: "announcements"
+  };
+  // Unrecognised slugs (approvals / exams / interviews have no admin tab) fall back to the
+  // dashboard instead of rendering an empty workspace.
+  const resolvedPropTab = (() => {
+    if (!propActiveTab) return undefined;
+    const mapped: string = adminTabAliases[propActiveTab] || propActiveTab;
+    return ADMIN_TAB_IDS.includes(mapped) ? mapped : undefined;
+  })();
+  const activeTab = (resolvedPropTab || localActiveTab) as typeof localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 
 

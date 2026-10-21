@@ -8969,10 +8969,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     "skill_tracker": "mentor_skill_tracker",
     "skill-tracker": "mentor_skill_tracker",
     "demo": "demo_schedule",
-    "demos": "demo_schedule"
+    "demos": "demo_schedule",
+    "analytics": "reports"
   };
 
-  const resolvedPropTab = propActiveTab ? (tabAliases[propActiveTab] || propActiveTab) : undefined;
+  const CAM_TAB_IDS: CAMTabId[] = [
+    "overview", "config", "curriculum", "academic_tracker", "exams_and_marks", "audit", "faculty",
+    "timetable", "monitoring", "handovers", "reports", "tasks", "profile", "tracker", "fees",
+    "students_list", "more_menu", "mentor_attendance", "interviews", "events", "faculty_weekly_plan",
+    "mentor_skill_tracker", "demo_schedule", "profile_edits"
+  ];
+
+  // Unrecognised slugs (e.g. stale notification links kept in the notifications table)
+  // fall back to the dashboard instead of rendering an empty workspace.
+  const resolvedPropTab = (() => {
+    if (!propActiveTab) return undefined;
+    const mapped = tabAliases[propActiveTab] || propActiveTab;
+    return CAM_TAB_IDS.includes(mapped) ? mapped : "overview";
+  })();
   const [localActiveTab, setLocalActiveTab] = useState<CAMTabId>("overview");
   const [approvalsCategoryFilter, setApprovalsCategoryFilter] = useState<"all" | "late_attendance" | "handovers" | "exam_marks" | "late_punches">("all");
   const activeTab = resolvedPropTab || localActiveTab;

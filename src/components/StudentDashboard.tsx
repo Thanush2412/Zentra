@@ -146,7 +146,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     "profile": "profile",
     "materials": "materials"
   };
-  const resolvedPropTab = propActiveTab ? (studentTabAliases[propActiveTab] || propActiveTab) : undefined;
+  const STUDENT_TAB_IDS = ["dashboard", "schedule", "exams", "materials", "library", "fees", "profile", "tracker", "interviews", "more_menu"];
+  // Unknown slugs (e.g. a stale notification link stored in the DB) fall back to the
+  // default tab instead of rendering an empty workspace.
+  const resolvedPropTab = (() => {
+    if (!propActiveTab) return undefined;
+    const mapped: string = studentTabAliases[propActiveTab] || propActiveTab;
+    return STUDENT_TAB_IDS.includes(mapped) ? mapped : undefined;
+  })();
   const activeTab = (resolvedPropTab || localActiveTab) as typeof localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
 

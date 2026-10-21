@@ -2950,7 +2950,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     "academic-tracker": "academic_tracker",
     "academic_tracker": "academic_tracker"
   };
-  const resolvedPropTab = propActiveTab ? (mentorTabAliases[propActiveTab] || propActiveTab) : undefined;
+  const MENTOR_TAB_IDS = ["home", "timetable", "handovers", "attendance", "exams", "profile", "tracker", "academic_tracker", "materials", "demo_evaluations", "more_menu", "leave_requests", "interviews", "weekly_plan", "my_skill_tracker"];
+  // Unknown slugs (e.g. a stale notification link stored in the DB) fall back to the
+  // default tab instead of rendering an empty workspace.
+  const resolvedPropTab = (() => {
+    if (!propActiveTab) return undefined;
+    const mapped: string = mentorTabAliases[propActiveTab] || propActiveTab;
+    return MENTOR_TAB_IDS.includes(mapped) ? mapped : undefined;
+  })();
   const activeTab = (resolvedPropTab || localActiveTab) as typeof localActiveTab;
 
   // useTransition: marks tab switches as non-urgent so the current UI stays
