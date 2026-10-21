@@ -9,7 +9,8 @@ export type Role = "admin" | "cm" | "mentor" | "student" | "kam" | "sme" | "fee_
 /** Legacy role spellings that map onto the current machine tokens. */
 const LEGACY_ROLE_MAP: Record<string, string> = {
   cam: "cm",           // pre-rename Campus Manager token
-  campus_manager: "cm"
+  campus_manager: "cm",
+  "l and d": "L and D" // lowercase DB storage → canonical mixed-case token
 };
 
 /** Normalizes a raw DB role string (including legacy tokens) to the current Role. */

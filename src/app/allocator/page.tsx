@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { DashboardLayout } from "@/components/DashboardLayout";
 
-const DemoAllocationDashboard = dynamic(() => import("@/components/DemoAllocationDashboard").then(m => m.DemoAllocationDashboard), {
+const LndAllocationDashboard = dynamic(() => import("@/components/LndAllocationDashboard").then(m => m.LndAllocationDashboard), {
   ssr: false,
   loading: () => (
     <div className="flex-1 flex items-center justify-center p-12 text-slate-400 font-bold text-sm">
@@ -18,7 +18,7 @@ const DemoAllocationDashboard = dynamic(() => import("@/components/DemoAllocatio
 export default function LearningAndDevelopmentPortalPage() {
   return (
     <DashboardLayout requiredRole="L and D">
-      <DemoAllocationDashboard />
+      <LndAllocationDashboard />
     </DashboardLayout>
   );
 }

@@ -3,6 +3,9 @@ import { type SessionPayload, validateSession } from "@/lib/session";
 import { getDb } from "@/lib/db";
 import { extractSessionToken, resolveLiveUser, normalizeRole } from "@/lib/authGuard";
 
+// Re-export normalizeRole for backward compatibility
+export { normalizeRole };
+
 /**
  * Session + role helpers for API routes.
  *
@@ -15,16 +18,6 @@ export class ApiAuthError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-const ROLE_ALIASES: Record<string, string> = {
-  cam: "cm",              // legacy token (pre-rename DB rows)
-  campus_manager: "cm",  // long-form alias
-  superadmin: "admin"
-};
-
-export function normalizeRole(role: string): string {
-  return ROLE_ALIASES[role] || role;
 }
 
 export async function getSessionFromRequest(request: Request): Promise<SessionPayload | null> {
