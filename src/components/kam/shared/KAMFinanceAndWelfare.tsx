@@ -161,7 +161,7 @@ export const KAMFinanceAndWelfare: React.FC<{
               <p className="text-[10px] font-bold text-indigo-600 mt-1">Symposiums, Sports & Hackathons</p>
             </div>
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Pending CAM/Advisor Review</span>
+              <span className="text-[10px] font-black uppercase text-slate-400">Pending CM/Advisor Review</span>
               <p className="text-2xl font-black text-amber-700 mt-2">{welfare.pendingApprovals}</p>
               <p className="text-[10px] font-bold text-amber-600 mt-1">Applications awaiting sign-off</p>
             </div>

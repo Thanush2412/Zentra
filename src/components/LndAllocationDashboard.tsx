@@ -1330,7 +1330,7 @@ export function LndAllocationDashboard() {
       const unconfiguredNames = allCollegesDayOrderStatus.unconfiguredColleges
         .map(u => `${u.college.name} (missing: ${u.missingDates.join(", ")})`)
         .join("; ");
-      toast(`Template download blocked: Day Order has not been configured by Campus Managers for: ${unconfiguredNames}. Please configure Day Orders first in CAM Console.`, "error");
+      toast(`Template download blocked: Day Order has not been configured by Campus Managers for: ${unconfiguredNames}. Please configure Day Orders first in CM Console.`, "error");
       return;
     }
 
@@ -2079,11 +2079,11 @@ export function LndAllocationDashboard() {
       ["Scope", "All Applicable Colleges & Campuses"],
       ["Target Mentor Group", targetGroup],
       ["Active Week Date Range", `${currentWeekDates[0]?.dateStr || "Start"} to ${currentWeekDates[currentWeekDates.length - 1]?.dateStr || "End"}`],
-      ["CAM Configured Campus Day Orders", campusDayOrderSummary],
+      ["CM Configured Campus Day Orders", campusDayOrderSummary],
       ["Total Colleges Included", `${applicableColleges.length} colleges (${applicableColleges.map(c => c.name).join(", ")})`],
       ["Eligible Faculty Count", `${relevantMentors.length} active mentors`],
       ["Assigned SMEs Count", `${relevantSmes.length} assigned SMEs`],
-      ["Allocation Engine Rules", "L&D sessions require: (1) Mentor is free from teaching and leave, (2) SME is free and within L&D evaluation window (Standard shift: 09:00 AM - 05:30 PM), (3) College is open (not a holiday), (4) CAM Day Order is configured."],
+      ["Allocation Engine Rules", "L&D sessions require: (1) Mentor is free from teaching and leave, (2) SME is free and within L&D evaluation window (Standard shift: 09:00 AM - 05:30 PM), (3) College is open (not a holiday), (4) CM Day Order is configured."],
       ["Sheet Usage", "Fill out 'Master_LnD_Schedule' for bulk multi-college uploads, or use individual 'Grid_[College]' tabs for visual timetable matrix entry with built-in free faculty dropdowns."]
     ];
 
@@ -4248,7 +4248,7 @@ export function LndAllocationDashboard() {
                     Download Multi-Campus Timetable Template
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                    Includes all {colleges.length} applicable colleges, CAM Day Orders &amp; live mentor availability.
+                    Includes all {colleges.length} applicable colleges, CM Day Orders &amp; live mentor availability.
                   </p>
                 </div>
               </div>
@@ -4261,7 +4261,7 @@ export function LndAllocationDashboard() {
                     <span>Day Order Configuration Required by Campus Managers</span>
                   </div>
                   <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium leading-relaxed">
-                    Template download is currently <strong>locked</strong>. Campus Academic Managers (CM) must configure the Day Order for all colleges for the active week ({currentWeekDates[0]?.formatted} – {currentWeekDates[currentWeekDates.length - 1]?.formatted}) before the template can be generated.
+                    Template download is currently <strong>locked</strong>. Campus Managers (CM) must configure the Day Order for all colleges for the active week ({currentWeekDates[0]?.formatted} – {currentWeekDates[currentWeekDates.length - 1]?.formatted}) before the template can be generated.
                   </p>
                   <div className="pt-1.5 border-t border-amber-200/60 dark:border-amber-900/60 space-y-1">
                     <span className="text-[10px] font-black uppercase text-amber-900 dark:text-amber-300 block">
@@ -4357,13 +4357,13 @@ export function LndAllocationDashboard() {
                     type="button"
                     onClick={() => {
                       fetchDailyConfigs();
-                      toast("Refreshed latest Day Orders from CAM database.", "success");
+                      toast("Refreshed latest Day Orders from CM database.", "success");
                     }}
                     className="p-1 text-slate-400 hover:text-[#D528A2] dark:hover:text-[#f45fc6] rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-[10px]"
-                    title="Refresh Day Orders from CAM Console"
+                    title="Refresh Day Orders from CM Console"
                   >
                     <RefreshCw className="h-3 w-3" />
-                    <span className="text-[9.5px] font-bold">Sync CAM</span>
+                    <span className="text-[9.5px] font-bold">Sync CM</span>
                   </button>
                 </div>
 
@@ -4397,7 +4397,7 @@ export function LndAllocationDashboard() {
                             {d.dayOrder}
                           </span>
                           <span className={`block text-[7.5px] font-bold uppercase tracking-tight ${d.isHoliday ? "text-rose-600" : d.isConfiguredInCam ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600"}`}>
-                            {d.isHoliday ? "Holiday" : d.isConfiguredInCam ? "CAM Set" : "Unset in CAM"}
+                            {d.isHoliday ? "Holiday" : d.isConfiguredInCam ? "CM Set" : "Unset in CM"}
                           </span>
                         </div>
                       ))}
@@ -4435,7 +4435,7 @@ export function LndAllocationDashboard() {
                       ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] hover:opacity-95 text-white shadow-[#D528A2]/25 cursor-pointer"
                       : "bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-300 dark:border-slate-700 shadow-none"
                   }`}
-                  title={!allCollegesDayOrderStatus.isAllConfigured ? "Day Order must be configured in CAM before template can be downloaded" : "Download Multi-Campus Excel Template"}
+                  title={!allCollegesDayOrderStatus.isAllConfigured ? "Day Order must be configured in CM before template can be downloaded" : "Download Multi-Campus Excel Template"}
                 >
                   <Download className="h-4 w-4" />
                   {allCollegesDayOrderStatus.isAllConfigured ? "Download Multi-Campus Template (.xlsx)" : "Day Order Required to Download"}

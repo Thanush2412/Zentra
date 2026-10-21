@@ -42,7 +42,7 @@ export default function CAMTabPage() {
   }, []);
 
   return (
-    <DashboardLayout requiredRole="cam">
+    <DashboardLayout requiredRole="cm">
       <CAMDashboard
         activeTab={activeTab as any}
         onTabChange={handleTabChange}

@@ -988,7 +988,7 @@ const CAMCampusInsightPanel: React.FC<{
         updated_at: nowIso
       };
       if (newStatus === "resolved") {
-        payload.closed_by = "Campus Academic Manager";
+        payload.closed_by = "Campus Manager";
         payload.closed_at = nowIso;
       }
       try {
@@ -1312,7 +1312,7 @@ const CAMCampusInsightPanel: React.FC<{
         return;
       }
 
-      const docId = `AUD-${(activeCollegeName || "CAM").replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+      const docId = `AUD-${(activeCollegeName || "CM").replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const formatCellForPDF = (cell: any): string => {
         if (cell === null || cell === undefined || cell === "") return '<span style="color:#94a3b8;">—</span>';
@@ -1408,7 +1408,7 @@ const CAMCampusInsightPanel: React.FC<{
       </div>
     ` : '';
 
-      const scopeNoticeText = options?.scopeNotice || `This audit document constitutes an official Institutional Intelligence Ledger compiled for ${activeCollegeName || "University Campus"}. All metrics, attendance records, exam clearances, and faculty distributions represent verified database census records prepared under the authority of the Campus Academic Manager (CAM) and comply with University Academic Bylaws.`;
+      const scopeNoticeText = options?.scopeNotice || `This audit document constitutes an official Institutional Intelligence Ledger compiled for ${activeCollegeName || "University Campus"}. All metrics, attendance records, exam clearances, and faculty distributions represent verified database census records prepared under the authority of the Campus Manager (CM) and comply with University Academic Bylaws.`;
 
       const html = `
       <!DOCTYPE html>
@@ -2078,7 +2078,7 @@ const CAMCampusInsightPanel: React.FC<{
                     <span class="inst-tag-pill-gold">ISO 9001:2015</span>
                   </div>
                   <span class="brand-sub">Academic Governance &amp; Institutional Intelligence</span>
-                  <span class="brand-council">Office of the Campus Academic Manager (CAM)</span>
+                  <span class="brand-council">Office of the Campus Manager (CM)</span>
                 </div>
               </div>
 
@@ -2229,7 +2229,7 @@ const CAMCampusInsightPanel: React.FC<{
                   <span class="sig-badge">CHIEF AUDITOR</span>
                 </div>
                 <div class="sig-line"></div>
-                <div class="sig-name">Campus Academic Manager (CAM)</div>
+                <div class="sig-name">Campus Manager (CM)</div>
                 <div class="sig-dept">Department of Academic Operations &amp; Intelligence</div>
                 <div class="sig-date">Certified: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</div>
               </div>
@@ -2655,7 +2655,7 @@ const CAMCampusInsightPanel: React.FC<{
 
       const records = (handoverRequests || []).map((req, idx) => {
         const isApproved = req.status === "approved" || approvedIds.has(req.id) || approvedIds.has(req.slotId);
-        const statusLabel = isApproved ? "Approved & Covered" : req.status === "rejected" ? "Declined" : "Pending CAM Approval";
+        const statusLabel = isApproved ? "Approved & Covered" : req.status === "rejected" ? "Declined" : "Pending CM Approval";
         const rawReason = req.reason || req.headerReason || "Leave / Personal";
         const lowerR = rawReason.toLowerCase();
         let reasonCategory = "Personal / Emergency";
@@ -2899,7 +2899,7 @@ const CAMCampusInsightPanel: React.FC<{
           recommendedAction = "Enroll in Mentor 1-on-1 Tutorial Support";
         } else if (ticketPoints > 0) {
           primaryTrigger = `Grievance Escalation (${openTicketsCount} Unresolved Tickets)`;
-          recommendedAction = "Help Desk Priority Resolution by CAM";
+          recommendedAction = "Help Desk Priority Resolution by CM";
         }
 
         return {
@@ -3731,7 +3731,7 @@ const CAMCampusInsightPanel: React.FC<{
         rows: [
           ["Total Class Substitution Requests", handoverMetrics.totalRequests, "All Logged", activeCollegeName],
           ["Approved & Covered Sessions", handoverMetrics.approvedCount, `${handoverMetrics.fulfillmentRate}% Fulfillment`, activeCollegeName],
-          ["Pending CAM Actions", handoverMetrics.pendingCount, handoverMetrics.pendingCount > 0 ? "Requires Action" : "Zero Backlog", activeCollegeName],
+          ["Pending CM Actions", handoverMetrics.pendingCount, handoverMetrics.pendingCount > 0 ? "Requires Action" : "Zero Backlog", activeCollegeName],
           ["Top Substitute Faculty", handoverMetrics.topCoverName, `${handoverMetrics.maxCover} classes covered`, activeCollegeName]
         ]
       };
@@ -3744,7 +3744,7 @@ const CAMCampusInsightPanel: React.FC<{
         const kpis = [
           { label: "Total Requests", value: handoverMetrics.totalRequests, color: "slate" as const, note: "Substitution filings" },
           { label: "Fulfillment Rate", value: `${handoverMetrics.fulfillmentRate}%`, color: handoverMetrics.fulfillmentRate >= 90 ? "emerald" as const : "amber" as const, note: "Coverage achieved" },
-          { label: "Pending Approval", value: handoverMetrics.pendingCount, color: handoverMetrics.pendingCount > 0 ? "rose" as const : "slate" as const, note: "Awaiting CAM" },
+          { label: "Pending Approval", value: handoverMetrics.pendingCount, color: handoverMetrics.pendingCount > 0 ? "rose" as const : "slate" as const, note: "Awaiting CM" },
           { label: "Top Covering Faculty", value: handoverMetrics.topCoverName !== "—" ? handoverMetrics.topCoverName.split(" ")[0] : "None", color: "purple" as const, note: `${handoverMetrics.maxCover} substitutions` }
         ];
 
@@ -3766,7 +3766,7 @@ const CAMCampusInsightPanel: React.FC<{
             <div class="chart-title"><span>Fulfillment Status</span><span>Velocity Health</span></div>
             ${generateDistributionBarHtml("Coverage Status", [
           { name: "Approved & Covered", value: handoverMetrics.approvedCount, color: '#10b981' },
-          { name: "Pending CAM Action", value: handoverMetrics.pendingCount, color: '#f59e0b' }
+          { name: "Pending CM Action", value: handoverMetrics.pendingCount, color: '#f59e0b' }
         ].filter(d => d.value > 0), " classes")}
           </div>
         </div>
@@ -19590,7 +19590,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         if (await showConfirm({ message: `Approve this Exam Mark Modification Request? New mark will be saved into the official exam record.`, confirmLabel: "Approve Mark", title: "Approve Mark Edit" })) {
                                           setActionLoading(`approve_req_${req.id}`, true);
                                           try {
-                                            await handleRequest(req.id, "approved", "Approved by CAM", "Campus Manager");
+                                            await handleRequest(req.id, "approved", "Approved by CM", "Campus Manager");
                                             toast("Exam mark modification approved successfully!", "success");
                                           } finally {
                                             setActionLoading(`approve_req_${req.id}`, false);
@@ -19613,7 +19613,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         if (await showConfirm({ message: "Are you sure you want to reject this mark modification request?", danger: true, confirmLabel: "Reject" })) {
                                           setActionLoading(`reject_req_${req.id}`, true);
                                           try {
-                                            await handleRequest(req.id, "rejected", "Rejected by CAM", "Campus Manager");
+                                            await handleRequest(req.id, "rejected", "Rejected by CM", "Campus Manager");
                                             toast("Exam mark modification request rejected.", "info");
                                           } finally {
                                             setActionLoading(`reject_req_${req.id}`, false);
@@ -21108,7 +21108,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 collegeId={activeCollegeId}
                 collegeName={activeCollegeName}
                 role={isKAMView ? "kam" : (isSuperAdminUser ? "admin" : "cam")}
-                userName={currentCAM?.name || currentKAM?.name || "Campus Academic Manager"}
+                userName={currentCAM?.name || currentKAM?.name || "Campus Manager"}
               />
             </div>
           )}
@@ -24503,7 +24503,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         {isKAMView ? currentKAM?.name || "Key Account Manager" : currentCAM?.name || "Campus Manager"}
                       </h2>
                       <p className="text-[10px] text-slate-455 font-bold uppercase tracking-wider mt-1">
-                        {isKAMView ? "Key Account Manager (KAM)" : "Campus Academic Manager (CAM)"}
+                        {isKAMView ? "Key Account Manager (KAM)" : "Campus Manager (CM)"}
                       </p>
                     </div>
                     <div className="flex flex-wrap justify-center gap-1.5 pt-1">
@@ -26290,7 +26290,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               type="text"
                               required
                               autoFocus
-                              placeholder="e.g. Verified by CAM / OD Approved / Medical exemption"
+                              placeholder="e.g. Verified by CM / OD Approved / Medical exemption"
                               value={activePeriodChange.reason}
                               onChange={e => setActivePeriodChange({ ...activePeriodChange, reason: e.target.value })}
                               className="w-full p-2.5 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"

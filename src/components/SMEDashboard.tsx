@@ -156,7 +156,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
 
   // Reallocation Modal state
   const [swapModalSession, setSwapModalSession] = useState<any | null>(null);
-  const [swapReason, setSwapReason] = useState<string>("CAM Approved Mentor Leave");
+  const [swapReason, setSwapReason] = useState<string>("CM Approved Mentor Leave");
   const [swapRemarks, setSwapRemarks] = useState<string>("");
   const [swapStep, setSwapStep] = useState<number>(1);
   const [selectedProposedMentor, setSelectedProposedMentor] = useState<any | null>(null);
@@ -518,7 +518,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
 
   const handleOpenSwapModal = (session: any) => {
     setSwapModalSession(session);
-    setSwapReason(session.status === "reallocation_required" ? "CAM Approved Mentor Leave" : "SME Unavailable");
+    setSwapReason(session.status === "reallocation_required" ? "CM Approved Mentor Leave" : "SME Unavailable");
     setSwapRemarks("");
     setSwapStep(1);
     setSelectedProposedMentor(null);
@@ -1316,7 +1316,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                             </div>
                           </div>
 
-                          <p className="text-[10px] text-slate-500 italic">Reason: &quot;{req.reason || "CAM Approved Mentor Leave"}&quot;</p>
+                          <p className="text-[10px] text-slate-500 italic">Reason: &quot;{req.reason || "CM Approved Mentor Leave"}&quot;</p>
 
                           <div className="flex gap-3 pt-1">
                             <button
@@ -1367,7 +1367,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                               </span>
                             </div>
                             <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{demo.dateStr} • {demo.timeSlot} • {demo.subject}</p>
-                            <p className="text-[9.5px] text-amber-700 italic mt-0.5">{demo.comments || "CAM Approved Mentor Leave. Mentor has been prompted to reschedule."}</p>
+                            <p className="text-[9.5px] text-amber-700 italic mt-0.5">{demo.comments || "CM Approved Mentor Leave. Mentor has been prompted to reschedule."}</p>
                           </div>
 
                           <div className="px-3.5 py-1.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5 shrink-0">
@@ -1487,7 +1487,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                       <label className="text-[9px] font-black uppercase text-slate-400 block mb-1.5">Reason for Reallocation</label>
                       <select value={swapReason} onChange={e => setSwapReason(e.target.value)}
                         className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer">
-                        <option value="CAM Approved Mentor Leave">CAM Approved Mentor Leave</option>
+                        <option value="CM Approved Mentor Leave">CM Approved Mentor Leave</option>
                         <option value="SME Unavailable">SME Unavailable</option>
                         <option value="Timetable Conflict">Timetable Conflict</option>
                         <option value="Emergency">Emergency</option>

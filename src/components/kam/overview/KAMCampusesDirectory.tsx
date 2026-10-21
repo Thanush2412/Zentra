@@ -34,9 +34,9 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
       {/* Header & Controls */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-black text-slate-900">Supervised Institutions & CAM Leadership</h2>
+          <h2 className="text-base font-black text-slate-900">Supervised Institutions & CM Leadership</h2>
           <p className="text-xs text-slate-400 font-semibold mt-0.5">
-            Institutional operational health, student-faculty ratios, and direct Campus Academic Manager (CAM) reports.
+            Institutional operational health, student-faculty ratios, and direct Campus Manager (CM) reports.
           </p>
         </div>
 
@@ -59,7 +59,7 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
                 viewMode === "cams" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              👔 CAM Reports ({colleges.length})
+              👔 CM Reports ({colleges.length})
             </button>
           </div>
 
@@ -67,7 +67,7 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
             <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
             <input
               type="text"
-              placeholder="Search campus or CAM..."
+              placeholder="Search campus or CM..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-8 pr-3 py-1.5 border border-slate-200 bg-slate-50 text-xs rounded-xl focus:outline-none focus:ring-1 focus:ring-[#D528A2] font-semibold w-48"
@@ -177,7 +177,7 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
           {filteredColleges.map(c => {
             const camUsers = (mentors as any[]).filter((m: any) => m.role === "cam" && m.college_id === c.id);
             const cam = camUsers[0];
-            const camName = cam?.name || `Lead Operations CAM (${c.name.split(" ")[0]})`;
+            const camName = cam?.name || `Lead Operations CM (${c.name.split(" ")[0]})`;
             const camEmail = cam?.email || `cam.${c.id.toLowerCase().replace(/[^a-z0-9]/g, "")}@faceprep.in`;
             const camPhone = cam?.phone || "+91 98400 00000";
 
@@ -192,7 +192,7 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
                       <h4 className="text-xs font-black text-slate-900">{camName}</h4>
                       <p className="text-[10px] text-slate-400 font-semibold">{camEmail}</p>
                       <span className="inline-block mt-0.5 px-2 py-0.2 rounded-md text-[8.5px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-100">
-                        Reporting CAM Lead
+                        Reporting CM Lead
                       </span>
                     </div>
                   </div>

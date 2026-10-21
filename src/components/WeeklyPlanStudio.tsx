@@ -511,7 +511,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           date: dateStr,
           periodSlot: "Holiday",
           topic: "Campus Holiday (No Sessions)",
-          objectives: "Holiday observed as per CAM schedule",
+          objectives: "Holiday observed as per CM schedule",
           teachingMode: "Theory",
           materialUrl: "",
           status: "Planned"
@@ -1779,14 +1779,14 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                               ? "bg-rose-50 text-rose-700 border-rose-200"
                               : "bg-purple-50 text-purple-700 border-purple-200"
                           }`}
-                          title="Day Order assigned by CAM daily configuration"
+                          title="Day Order assigned by CM daily configuration"
                         >
                           {task.dayOrder}
                         </span>
                       ) : (
                         <span
                           className="inline-flex items-center px-2.5 py-1 rounded-lg text-[10.5px] text-slate-300 whitespace-nowrap"
-                          title="Day Order not set by CAM for this date"
+                          title="Day Order not set by CM for this date"
                         >
                           —
                         </span>

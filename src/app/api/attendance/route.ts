@@ -498,13 +498,13 @@ export async function POST(request: Request) {
       if (!dayConfig || !dayConfig.day_type || dayConfig.day_order === "None") {
         return NextResponse.json({
           success: false,
-          message: "Day order/type has not been configured for this date. The CAM must set the day schedule before attendance can be marked."
+          message: "Day order/type has not been configured for this date. The CM must set the day schedule before attendance can be marked."
         }, { status: 422 });
       }
       if (dayConfig.day_type === "holiday") {
         return NextResponse.json({
           success: false,
-          message: "This date is marked as a Holiday by the CAM. Attendance cannot be recorded on a holiday."
+          message: "This date is marked as a Holiday by the CM. Attendance cannot be recorded on a holiday."
         }, { status: 422 });
       }
     }

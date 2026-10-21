@@ -140,7 +140,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       department = currentMentor.department || "";
       registerNumber = (currentMentor as any).employee_id || currentMentor.id || "";
       contactInfo = (currentMentor as any).phone || "";
-    } else if (currentRole === "cam" && currentCAM) {
+    } else if (currentRole === "cm" && currentCAM) {
       name = currentCAM.name || name;
       email = currentCAM.email || email;
       collegeId = currentCAM.college_id || collegeId;
@@ -455,7 +455,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     (typeof window !== "undefined" ? (localStorage.getItem("fp_user_email") || localStorage.getItem("user_email") || "") : "") ||
     (currentRole === "mentor" && currentMentor?.email) ||
     (currentRole === "hr" && currentHR?.email) ||
-    (currentRole === "cam" && currentCAM?.email) ||
+    (currentRole === "cm" && currentCAM?.email) ||
     (currentRole === "kam" && currentKAM?.email) ||
     (currentRole === "admin" && currentAdmin?.email) ||
     (currentRole === "student" && currentStudent?.email) ||

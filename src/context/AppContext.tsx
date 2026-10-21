@@ -241,7 +241,7 @@ export interface HandoverRequest {
   targetStaffId: string;
   targetStaffName: string;
   reason: string;
-  status: "pending" | "pending_cm" | "approved" | "rejected" | "needs_cm_allocation";
+  status: "pending" | "pending_cm" | "pending_cam" | "approved" | "rejected" | "needs_cm_allocation" | "needs_cam_allocation";
   headerReason?: string;
   approvedBy?: string;
   timestamp: string;
@@ -1065,7 +1065,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(storedUserEmail || storedUserId)}`
         } as any);
         setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-      } else if (parsedRole === "cm" || parsedRole === "cam") {
+      } else if (parsedRole === "cm" || (parsedRole as string) === "cam") {
         setCurrentCAM({
           id: storedUserId,
           name: storedUserName || "Campus Manager",
@@ -1177,7 +1177,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentMentor(m as any);
       }
       setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
-    } else if (role === "cm" || role === "cam") {
+    } else if (role === "cm" || (role as string) === "cam") {
       const targetCamId = userId || sessionUserId;
       if (targetCamId) {
         const placeholderCam = { id: targetCamId, name: userName || "Campus Manager", email: userEmail, college_id: collegeId, role: "cm" as const };

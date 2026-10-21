@@ -451,7 +451,7 @@ export const MentorExamMarksStudio: React.FC = () => {
       });
       const data = await res.json();
       if (data.success) {
-        toast("Marks edit approval request submitted to Campus Manager (CAM)!", "success");
+        toast("Marks edit approval request submitted to Campus Manager (CM)!", "success");
         setEditRequestModalOpen(false);
         setEditingStudent(null);
         setProposedMark("");
@@ -503,7 +503,7 @@ export const MentorExamMarksStudio: React.FC = () => {
             <h1 className="text-xl font-black tracking-tight">Faculty Exam Grading & Scorecard Studio</h1>
           </div>
           <p className="text-xs text-slate-300 font-medium max-w-2xl">
-            Input, evaluate, and publish academic marks with customized scales (Out of 50, 75, or 100). Submitted scores instantly sync to student report cards and CAM registries.
+            Input, evaluate, and publish academic marks with customized scales (Out of 50, 75, or 100). Submitted scores instantly sync to student report cards and CM registries.
           </p>
         </div>
 
@@ -1021,7 +1021,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                                 </span>
                                 {pendingReqMark ? (
                                   <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[9px] font-black uppercase">
-                                    Req: {pendingReqMark} (Pending CAM)
+                                    Req: {pendingReqMark} (Pending CM)
                                   </span>
                                 ) : (
                                   <button
@@ -1033,10 +1033,10 @@ export const MentorExamMarksStudio: React.FC = () => {
                                       setEditRequestModalOpen(true);
                                     }}
                                     className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[9.5px] font-black uppercase inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                    title="Marks have been submitted. Click to request CAM approval to edit mark."
+                                    title="Marks have been submitted. Click to request CM approval to edit mark."
                                   >
                                     <Edit3 className="h-3 w-3" />
-                                    <span>Edit (Req CAM)</span>
+                                    <span>Edit (Req CM)</span>
                                   </button>
                                 )}
                               </div>
@@ -1141,7 +1141,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="text-sm font-black text-slate-900">Request Marks Modification</h3>
-                      <p className="text-[10.5px] text-slate-500 font-medium">CAM Approval Required to alter submitted mark</p>
+                      <p className="text-[10.5px] text-slate-500 font-medium">CM Approval Required to alter submitted mark</p>
                     </div>
                   </div>
                   <button
@@ -1217,7 +1217,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                       disabled={isSubmittingEditReq}
                       className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                     >
-                      {isSubmittingEditReq ? "Submitting..." : "Send Request to CAM"}
+                      {isSubmittingEditReq ? "Submitting..." : "Send Request to CM"}
                     </button>
                   </div>
                 </form>

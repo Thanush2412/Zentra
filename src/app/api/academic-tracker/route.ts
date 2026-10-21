@@ -431,7 +431,7 @@ export async function POST(request: Request) {
 
       if (!dayConfig || !dayConfig.day_type || dayConfig.day_order === "None") {
         return NextResponse.json(
-          { success: false, message: "Day order has not been configured by Campus Manager for today. The CAM must set today's day schedule before period conduction can be logged." },
+          { success: false, message: "Day order has not been configured by Campus Manager for today. The CM must set today's day schedule before period conduction can be logged." },
           { status: 422 }
         );
       }
@@ -445,7 +445,7 @@ export async function POST(request: Request) {
 
       if (!dayConfig.day_order || dayConfig.day_order === "None") {
         return NextResponse.json(
-          { success: false, message: "Campus Manager has not specified a Day Order for today. Period logging requires an active CAM Day Order setting." },
+          { success: false, message: "Campus Manager has not specified a Day Order for today. Period logging requires an active CM Day Order setting." },
           { status: 422 }
         );
       }

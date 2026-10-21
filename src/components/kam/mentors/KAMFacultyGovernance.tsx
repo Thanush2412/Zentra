@@ -109,7 +109,7 @@ export const KAMFacultyGovernance: React.FC<{
                 <span className="text-2xl font-black text-amber-700">{punchSummary.latePunchesToday}</span>
                 <span className="text-xs font-bold text-amber-600">&gt;30m Window</span>
               </div>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">Requires CAM late justification</p>
+              <p className="text-[10px] font-bold text-slate-400 mt-1">Requires CM late justification</p>
             </div>
 
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">

@@ -195,7 +195,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
             <span className="text-2xl font-black text-slate-900">{kpis.campusHealth}%</span>
             <span className="text-xs font-bold text-emerald-600">Optimal</span>
           </div>
-          <p className="text-[11px] text-slate-400 font-medium mt-1">Timetable coverage & CAM SLA</p>
+          <p className="text-[11px] text-slate-400 font-medium mt-1">Timetable coverage & CM SLA</p>
         </div>
       </div>
 
@@ -307,8 +307,8 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-black text-slate-900 tracking-tight">Campus Health & CAM Direct Reports</h3>
-            <p className="text-xs font-medium text-slate-400">Real-time status of each supervised college and assigned Campus Academic Manager</p>
+            <h3 className="text-sm font-black text-slate-900 tracking-tight">Campus Health & CM Direct Reports</h3>
+            <p className="text-xs font-medium text-slate-400">Real-time status of each supervised college and assigned Campus Manager</p>
           </div>
           <button
             onClick={() => onNavigateTab("campuses")}
@@ -364,7 +364,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
                 {c.cam ? (
                   <div className="mt-3 bg-slate-50/80 rounded-xl p-2.5 border border-slate-100 flex items-center justify-between">
                     <div>
-                      <span className="text-[9px] font-extrabold uppercase text-slate-400 block">Reporting CAM:</span>
+                      <span className="text-[9px] font-extrabold uppercase text-slate-400 block">Reporting CM:</span>
                       <span className="text-xs font-bold text-slate-800">{c.cam.name}</span>
                     </div>
                     <div className="flex items-center gap-1 text-slate-400">
@@ -374,7 +374,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
                   </div>
                 ) : (
                   <div className="mt-3 bg-amber-50 rounded-xl p-2 text-center text-[10px] font-bold text-amber-700">
-                    No CAM Assigned
+                    No CM Assigned
                   </div>
                 )}
               </div>

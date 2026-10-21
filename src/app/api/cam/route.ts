@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const camId = searchParams.get("id");
 
     if (!camId) {
-      return NextResponse.json({ success: false, message: "CAM id required" }, { status: 400 });
+      return NextResponse.json({ success: false, message: "CM id required" }, { status: 400 });
     }
 
     const cam = await db.get(`

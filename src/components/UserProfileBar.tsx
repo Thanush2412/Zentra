@@ -75,7 +75,6 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
         shortRole = "HR";
         break;
       case "cm":
-      case "cam":
         name = currentCAM?.name || name || "Campus Manager";
         email = currentCAM?.email || email;
         roleLabel = "Campus Manager";

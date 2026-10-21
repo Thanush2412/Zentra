@@ -159,7 +159,7 @@ const ConductedStatusBadge = ({
   if (status === "pending_verification") {
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-800 border border-indigo-300">
-        <CheckSquare className="w-3 h-3 text-indigo-600" /> Evaluations Completed — Pending CAM Verification
+        <CheckSquare className="w-3 h-3 text-indigo-600" /> Evaluations Completed — Pending CM Verification
       </span>
     );
   }
@@ -1044,7 +1044,7 @@ const StudentConductedRosterDrawer = ({
                   <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-purple-600 border-2 border-white shadow-2xs" />
                   <div className="bg-purple-50/60 border border-purple-200 rounded-xl p-3.5 space-y-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-purple-900">2. Zone Broadcast &amp; CAM Capacity Responses</span>
+                      <span className="text-xs font-black text-purple-900">2. Zone Broadcast &amp; CM Capacity Responses</span>
                       <span className="text-[10px] text-purple-400 font-semibold">{interview.updated_at || "Zone Broadcast"}</span>
                     </div>
                     {isPartnerCM ? (
@@ -1801,7 +1801,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           class_group: selectedClassGroup,
           type: activeMode,
           target_date: targetDate,
-          preferred_start_time: "To be mapped by CAM",
+          preferred_start_time: "To be mapped by CM",
           student_count: dynamicStudentCount,
           topics: topics.trim(),
           mentor_id: currentMentor?.id || "mentor_1",
@@ -1812,7 +1812,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         },
       });
       if (data.success) {
-        toast("Interview request raised & marked on calendar! CAM will schedule time slot based on mentor free periods.", "success");
+        toast("Interview request raised & marked on calendar! CM will schedule time slot based on mentor free periods.", "success");
         setTopics(""); setTargetDate("");
         fetchInterviews();
         if (typeof window !== "undefined") {
@@ -3999,7 +3999,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                       </div>
                                       <p className="text-[10px] text-slate-500 mt-1">
                                         {isAccepted 
-                                          ? `Faculty mapped by ${camResp?.cam_name || "CAM"}` 
+                                          ? `Faculty mapped by ${camResp?.cam_name || "CM"}` 
                                           : "Zone Partner Campus"}
                                       </p>
                                     </div>

@@ -2647,7 +2647,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                     myEval.status === "Needs Improvement" ? "bg-amber-50 text-amber-700 border border-amber-200" :
                                       "bg-rose-50 text-rose-700 border border-rose-200"
                                   }`}>
-                                  {isVerified ? `✓ Conducted & Verified — ${myEval.status}` : `Conducted — Pending CAM Verification`}
+                                  {isVerified ? `✓ Conducted & Verified — ${myEval.status}` : `Conducted — Pending CM Verification`}
                                 </span>
                                 <span className="text-xs font-black text-indigo-700">Total Score: {myEval.total_score || 0}/10 ({Math.round((Number(myEval.total_score) || 0) * 10)}%)</span>
                               </div>

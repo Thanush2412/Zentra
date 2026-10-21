@@ -227,8 +227,8 @@ export const KAMAnalytics: React.FC<KAMAnalyticsProps> = ({
       "Avg Attendance (%)",
       "Campus Health Index (%)",
       "Open Issues",
-      "Assigned CAM",
-      "CAM Email"
+      "Assigned CM",
+      "CM Email"
     ];
 
     const mainRows = campuses.map(c => {
@@ -243,7 +243,7 @@ export const KAMAnalytics: React.FC<KAMAnalyticsProps> = ({
         `${c.attendancePct}%`,
         `${c.healthScore}%`,
         c.openIssues,
-        c.cam?.name || "Campus Academic Manager",
+        c.cam?.name || "Campus Manager",
         c.cam?.email || "—"
       ];
     });
@@ -285,7 +285,7 @@ export const KAMAnalytics: React.FC<KAMAnalyticsProps> = ({
       "Attendance",
       "Health Score",
       "Issues",
-      "CAM Lead"
+      "CM Lead"
     ];
 
     const pdfRows = campuses.map(c => {
@@ -299,7 +299,7 @@ export const KAMAnalytics: React.FC<KAMAnalyticsProps> = ({
         `${c.attendancePct}%`,
         `${c.healthScore}%`,
         c.openIssues,
-        c.cam?.name || "CAM Lead"
+        c.cam?.name || "CM Lead"
       ];
     });
 
@@ -900,7 +900,7 @@ export const KAMAnalytics: React.FC<KAMAnalyticsProps> = ({
                         {c.activeFaculty} Faculty • {c.totalStudents} Students
                       </p>
                       <span className="text-[10px] text-indigo-600 font-bold block">
-                        CAM: {c.cam?.name || "Assigned CAM"}
+                        CM: {c.cam?.name || "Assigned CM"}
                       </span>
                     </div>
                     <div className="text-right shrink-0">

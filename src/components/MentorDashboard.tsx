@@ -8142,7 +8142,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <div className="text-xs text-amber-900">
                     <p className="font-bold mb-1">Attendance window has expired</p>
                     <p className="text-amber-700">
-                      This session is past the standard edit window. Your request will be sent to the Campus Academic Manager (CM) for approval.
+                      This session is past the standard edit window. Your request will be sent to the Campus Manager (CM) for approval.
                     </p>
                   </div>
                 </div>

@@ -1995,7 +1995,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           await fetchAdminDetails();
           const counts = res.deletedCounts;
           if (counts && (counts.mentors > 0 || counts.students > 0)) {
-            toast(`Campus deleted. Cascade removed: ${counts.mentors} mentor(s), ${counts.students} student(s), ${counts.cams} CAM(s) and all associated records.`, "info");
+            toast(`Campus deleted. Cascade removed: ${counts.mentors} mentor(s), ${counts.students} student(s), ${counts.cams} CM(s) and all associated records.`, "info");
           } else {
             toast("Campus deleted successfully.", "success");
           }
@@ -5265,10 +5265,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-xs shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
                                       >
                                         {expandedNodes[colNodeId] ? <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-500" />}
-                                        <div className="h-6 w-6 rounded-full bg-teal-500 text-white flex items-center justify-center font-black">CAM</div>
+                                        <div className="h-6 w-6 rounded-full bg-teal-500 text-white flex items-center justify-center font-black">CM</div>
                                         <div>
                                           <div className="font-extrabold text-gray-855 leading-tight">{col.name}</div>
-                                          <div className="text-[9px] text-gray-400 font-medium">CAM: {cam ? cam.name : "Unassigned"} ({colMentors.length} Faculty)</div>
+                                          <div className="text-[9px] text-gray-400 font-medium">CM: {cam ? cam.name : "Unassigned"} ({colMentors.length} Faculty)</div>
                                         </div>
                                       </div>
 
@@ -6065,7 +6065,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {[
                           { id: "all", label: "All Roles" },
                           { id: "admin", label: "Admin" },
-                          { id: "cam", label: "CAM" },
+                          { id: "cam", label: "CM" },
                           { id: "kam", label: "KAM" },
                           { id: "mentor", label: "Mentor" },
                           { id: "sme", label: "SME" },
@@ -6883,11 +6883,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <p className="text-xs text-gray-600 font-medium leading-relaxed mt-2 bg-gray-50/80 p-3.5 rounded-xl border border-gray-150">
                       {systemSettings.attendance_lock_enabled !== false ? (
                         <>
-                          When <strong className="text-amber-700 font-bold">ENABLED (Strict Mode)</strong>, direct attendance marking is locked as soon as a period&apos;s scheduled end time passes or for prior calendar dates. Faculty must request <span className="text-indigo-600 font-semibold">Campus Manager (CAM) approval</span> with a reason to unlock the session.
+                          When <strong className="text-amber-700 font-bold">ENABLED (Strict Mode)</strong>, direct attendance marking is locked as soon as a period&apos;s scheduled end time passes or for prior calendar dates. Faculty must request <span className="text-indigo-600 font-semibold">Campus Manager (CM) approval</span> with a reason to unlock the session.
                         </>
                       ) : (
                         <>
-                          When <strong className="text-emerald-700 font-bold">DISABLED (Flexible Mode)</strong>, the period time window and past-date lockouts are completely bypassed. <span className="text-emerald-700 font-semibold">Faculty / Mentors can directly mark, edit, and record attendance for past periods and dates without CAM approval.</span>
+                          When <strong className="text-emerald-700 font-bold">DISABLED (Flexible Mode)</strong>, the period time window and past-date lockouts are completely bypassed. <span className="text-emerald-700 font-semibold">Faculty / Mentors can directly mark, edit, and record attendance for past periods and dates without CM approval.</span>
                         </>
                       )}
                     </p>
@@ -7343,7 +7343,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onChange={(e) => setCampusForm({ ...campusForm, manager: e.target.value })}
                               className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650 cursor-pointer"
                             >
-                              <option value="">Select CAM (Optional)</option>
+                              <option value="">Select CM (Optional)</option>
                               {camList.map(cam => (
                                 <option key={cam.id} value={cam.id}>{cam.name}</option>
                               ))}
@@ -8667,7 +8667,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">CAM ID</label>
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">CM ID</label>
                   <input
                     type="text"
                     required
@@ -10225,7 +10225,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="w-full bg-gray-55 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-655 cursor-pointer"
                   >
                     <option value="admin">Admin (System Administrator)</option>
-                    <option value="cam">CAM (Campus Academic Manager)</option>
+                    <option value="cam">CM (Campus Manager)</option>
                     <option value="kam">KAM (Key Account Manager)</option>
                     <option value="mentor">Mentor (Faculty Staff)</option>
                     <option value="sme">SME (Subject Matter Expert)</option>
