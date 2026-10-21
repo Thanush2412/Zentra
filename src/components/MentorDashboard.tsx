@@ -4624,7 +4624,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
       setAttendanceType("Non-Regular");
       setAttendanceTypeSub("Exam");
       setAttendanceMode("Offline");
-    } else if (configForDate && configForDate.day_type && configForDate.day_type !== "None") {
+    } else if (configForDate && configForDate.day_type && configForDate.day_order !== "None") {
       setIsDayConfigSet(true);
       setDayConfigDetails(configForDate);
       if (configForDate.day_type === "event") {

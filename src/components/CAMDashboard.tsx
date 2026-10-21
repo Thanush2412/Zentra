@@ -13444,6 +13444,41 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setDailyDeptScope("All Departments");
   };
 
+  const handleAutoAdaptNextWeek = async () => {
+    if (!activeCollegeId) {
+      toast("Please select a college before auto-adapting next week.", "error");
+      return;
+    }
+    
+    if (!confirm("Auto-adapt next week's schedule based on current week's pattern? This will create configurations for all 7 days of next week and notify all mentors and students.")) {
+      return;
+    }
+
+    setIsDailySaving(true);
+    try {
+      const res = await fetch("/api/daily-configs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          college_id: activeCollegeId,
+          action: "auto_adapt_next_week",
+          skip_sundays: skipSundays
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast(`Next week schedule auto-configured: ${data.configs?.length || 7} days created. Notifications sent to all users.`, "success");
+        await fetchDailyConfigs();
+      } else {
+        toast(data.message || "Failed to auto-adapt next week schedule.", "error");
+      }
+    } catch (err: any) {
+      toast("Error auto-adapting next week: " + err.message, "error");
+    } finally {
+      setIsDailySaving(false);
+    }
+  };
+
   const handleSaveDailyConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCollegeId) {
@@ -27356,6 +27391,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                 {/* Action Buttons */}
                 <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleAutoAdaptNextWeek}
+                    disabled={isDailySaving || isDailyLoading}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    title="Auto-configure next week's schedule based on current week's pattern"
+                  >
+                    <Calendar className="h-3.5 w-3.5" />
+                    Auto-Adapt Next Week
+                  </button>
                   <button
                     type="button"
                     onClick={handleDeleteDailyConfigRange}

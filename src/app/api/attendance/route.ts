@@ -495,7 +495,7 @@ export async function POST(request: Request) {
         "SELECT day_type, day_order FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?",
         [collegeIdForSlot, dateStr]
       );
-      if (!dayConfig || !dayConfig.day_type || dayConfig.day_type === "None") {
+      if (!dayConfig || !dayConfig.day_type || dayConfig.day_order === "None") {
         return NextResponse.json({
           success: false,
           message: "Day order/type has not been configured for this date. The CAM must set the day schedule before attendance can be marked."

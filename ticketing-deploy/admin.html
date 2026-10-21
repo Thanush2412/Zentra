@@ -7350,8 +7350,26 @@
         senderName: 'FACE Prep Campus Help Desk',
         senderEmail: 'thanush@faceprep.in',
         defaultCc: 'arun.senthil@faceprep.in',
-        escalationEmail: 'thanush@faceprep.in'
+        escalationEmail: 'thanush@faceprep.in',
+        extraCc: ['sainaveen@faceprep.in', 'ashok@faceprep.in']
       };
+
+      function getAllKamEmails() {
+        const emails = new Set();
+        (collegeContacts || []).forEach(c => {
+          if (c.senior_manager_email && c.senior_manager_email.includes('@')) {
+            emails.add(c.senior_manager_email.trim().toLowerCase());
+          }
+        });
+        return [...emails];
+      }
+      function buildFullCc() {
+        const set = new Set();
+        if (BREVO_CONFIG.defaultCc) set.add(BREVO_CONFIG.defaultCc.toLowerCase());
+        (BREVO_CONFIG.extraCc || []).forEach(e => set.add(e.toLowerCase()));
+        getAllKamEmails().forEach(e => set.add(e));
+        return [...set];
+      }
 
       const _origFunctionsInvoke = sb.functions.invoke.bind(sb.functions);
       sb.functions.invoke = async function (functionName, options) {
@@ -7369,11 +7387,11 @@
             const toEmails = normEmails(to);
             if (!toEmails.length) toEmails.push('thanush@faceprep.in');
 
-            const rawCc = normEmails(cc);
-            if (BREVO_CONFIG.defaultCc && !rawCc.includes(BREVO_CONFIG.defaultCc)) {
-              rawCc.push(BREVO_CONFIG.defaultCc);
-            }
-            const ccEmails = rawCc.filter(e => !toEmails.includes(e));
+            const fullCc = buildFullCc();
+            const callerCc = normEmails(cc);
+            const ccSet = new Set(fullCc);
+            callerCc.forEach(e => ccSet.add(e.toLowerCase()));
+            const ccEmails = [...ccSet].filter(e => !toEmails.map(t => t.toLowerCase()).includes(e));
 
             let subject = `[Monthly Report] Update — ${college || 'Campus'} (${reportMonth || 'Current'})`;
             let stepTitle = 'Report Workflow Update';
@@ -7491,8 +7509,9 @@
           if (functionName === 'notify-not-satisfied') {
             const { college, teacher, department, courseName, overallRating, manager, remarks, observationDate, recipientEmail } = data;
             const toEmails = recipientEmail ? [recipientEmail] : [BREVO_CONFIG.escalationEmail || 'thanush@faceprep.in'];
-            const rawCc = [BREVO_CONFIG.defaultCc, 'thanush@faceprep.in'].filter(Boolean);
-            const ccEmails = rawCc.filter(e => !toEmails.includes(e));
+            const fullCc = buildFullCc();
+            fullCc.push('thanush@faceprep.in');
+            const ccEmails = [...new Set(fullCc)].filter(e => !toEmails.map(t => t.toLowerCase()).includes(e.toLowerCase()));
 
             const htmlContent = `
         <div style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #FCA5A5;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(220,38,38,0.08);">
@@ -7550,8 +7569,10 @@
             if (rec?.senior_manager_email && rec.senior_manager_email.includes('@')) toEmails.push(rec.senior_manager_email.trim());
             if (!toEmails.length) toEmails.push(BREVO_CONFIG.escalationEmail || 'thanush@faceprep.in');
 
-            const rawCc = [BREVO_CONFIG.defaultCc, 'thanush@faceprep.in', rec?.campus_manager_email].filter(e => e && e.includes('@'));
-            const ccEmails = rawCc.filter(e => !toEmails.includes(e));
+            const fullCc = buildFullCc();
+            fullCc.push('thanush@faceprep.in');
+            if (rec?.campus_manager_email && rec.campus_manager_email.includes('@')) fullCc.push(rec.campus_manager_email.trim().toLowerCase());
+            const ccEmails = [...new Set(fullCc)].filter(e => !toEmails.map(t => t.toLowerCase()).includes(e));
 
             const htmlContent = `
         <div style="font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #FCA5A5;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(220,38,38,0.08);">
@@ -7613,8 +7634,9 @@
             if (rec?.senior_manager_email && rec.senior_manager_email.includes('@') && !toEmails.includes(rec.senior_manager_email.trim())) toEmails.push(rec.senior_manager_email.trim());
             if (!toEmails.length) toEmails.push('thanush@faceprep.in');
 
-            const rawCc = [BREVO_CONFIG.defaultCc, 'thanush@faceprep.in'].filter(e => e && e.includes('@'));
-            const ccEmails = rawCc.filter(e => !toEmails.includes(e));
+            const fullCc = buildFullCc();
+            fullCc.push('thanush@faceprep.in');
+            const ccEmails = [...new Set(fullCc)].filter(e => !toEmails.map(t => t.toLowerCase()).includes(e));
 
             const isResolved = status === 'resolved';
             const badgeColor = isResolved ? '#16A34A' : '#D9840C';
@@ -7907,7 +7929,9 @@
       const CLASSROOM_SNAP_ALLOWED_MANAGERS = [
         'Sanjaykumar', 'Syed Asrar', 'Monish', 'Karthika', 'Ragul', 'Dunomine J',
         'Ramalakshmi B', 'Ajith kumar', 'Haripriya', 'Ramalakshmi', 'Greeta Paulin',
-        'Gayathri', 'Aparna', 'Mohammed Shabeeb', 'Bavatharani', 'Santhiya', 'Sathana C'
+        'Gayathri', 'Aparna', 'Mohammed Shabeeb', 'Bavatharani', 'Santhiya', 'Sathana C',
+        'Amritha', 'Jagadeesan', 'Ghaniska', 'Dhamayendhi', 'Kapila', 'Aarthi R',
+        'Akarsh', 'Nithya Dharshini'
       ].map(n => n.trim().toLowerCase());
 
       function isClassroomSnapAllowedForSession() {

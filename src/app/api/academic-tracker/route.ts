@@ -429,7 +429,7 @@ export async function POST(request: Request) {
         [resolvedCollegeId, todayStr]
       );
 
-      if (!dayConfig || !dayConfig.day_type || dayConfig.day_type === "None") {
+      if (!dayConfig || !dayConfig.day_type || dayConfig.day_order === "None") {
         return NextResponse.json(
           { success: false, message: "Day order has not been configured by Campus Manager for today. The CAM must set today's day schedule before period conduction can be logged." },
           { status: 422 }
