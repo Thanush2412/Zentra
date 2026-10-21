@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
+import { normalizeRole } from "@/lib/authGuard";
 
 export async function GET(request: Request) {
   try {
@@ -14,7 +15,8 @@ export async function GET(request: Request) {
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "50", 10);
     const search = (searchParams.get("search") || "").toLowerCase().trim();
-    const role = (searchParams.get("role") || "").toLowerCase().trim();
+    const rawRole = (searchParams.get("role") || "").trim();
+    const role = rawRole && rawRole.toLowerCase() !== "all" ? normalizeRole(rawRole) : "";
 
     const offset = (page - 1) * limit;
     let query = "SELECT id, email, role, reference_id, status, must_change_password, last_login, created_at, updated_at FROM users WHERE 1=1";
@@ -22,11 +24,11 @@ export async function GET(request: Request) {
     const params: any[] = [];
     const countParams: any[] = [];
 
-    if (role && role !== "all") {
-      query += " AND role = ?";
-      countQuery += " AND role = ?";
-      params.push(role);
-      countParams.push(role);
+    if (role) {
+      query += " AND LOWER(role) = ?";
+      countQuery += " AND LOWER(role) = ?";
+      params.push(role.toLowerCase());
+      countParams.push(role.toLowerCase());
     }
 
     if (search) {
@@ -75,7 +77,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "A user credential with this email already exists." }, { status: 400 });
       }
 
-      const userRole = (role || "mentor").toLowerCase().trim();
+      const normalizedRole = normalizeRole(role || "mentor");
+      const userRole = normalizedRole.toLowerCase().trim();
       const refId = (reference_id || "").trim() || `${userRole}_${Date.now()}`;
       const newId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const rawPassword = password ? password.trim() : "password123";
@@ -89,7 +92,7 @@ export async function POST(request: Request) {
       await db.run(
         `INSERT INTO users (id, email, password_hash, plain_password, role, reference_id, status, must_change_password, created_at, updated_at)
          VALUES (?, ?, ?, NULL, ?, ?, ?, 1, ?, ?)`,
-        [newId, cleanEmail, passHash, userRole, refId, userStatus, nowStr, nowStr]
+        [newId, cleanEmail, passHash, normalizedRole, refId, userStatus, nowStr, nowStr]
       );
 
       // Auto-sync into role-specific tables so new KAMs, CAMs, Mentors appear in dropdowns instantly
@@ -147,7 +150,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         message: "User credential created successfully.",
-        user: { id: newId, email: cleanEmail, role: userRole, reference_id: refId, status: userStatus }
+        user: { id: newId, email: cleanEmail, role: normalizedRole, reference_id: refId, status: userStatus }
       });
     }
 
@@ -223,7 +226,7 @@ export async function PUT(request: Request) {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const userRole = (role || existingUser.role).toLowerCase().trim();
+    const userRole = normalizeRole(role || existingUser.role);
     const refId = reference_id !== undefined ? reference_id.trim() : existingUser.reference_id;
     const userStatus = status || existingUser.status || "Active";
     const nowStr = new Date().toISOString();

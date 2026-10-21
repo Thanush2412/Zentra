@@ -21,7 +21,8 @@ const PROFILE_TABLES: Record<string, string> = {
   sme: "sme_users",
   fee_manager: "users",
   hr: "users",
-  allocator: "users"
+  allocator: "users",
+  "L and D": "users"
 };
 
 export async function GET(request: Request) {

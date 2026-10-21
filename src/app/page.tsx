@@ -7,6 +7,7 @@ import { ProfessionalLoader } from "@/components/DashboardLayout";
 import { LoadingButton } from "@/components/ui/LoadingButton";
 import { setSuperAdminSession } from "@/lib/superadmin";
 import { setClientCsrfToken } from "@/lib/apiFetch";
+import { getRoleHomePath } from "@/lib/utils";
 
 import {
   User,
@@ -72,8 +73,7 @@ export default function Home() {
     if (!appLoading && isAuthenticated && currentUser) {
       const activeRole = currentRole || currentUser.role || "mentor";
       setIsRedirecting(true);
-      const target = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
-      router.replace(target);
+      router.replace(getRoleHomePath(activeRole));
       return;
     }
     
@@ -144,8 +144,7 @@ export default function Home() {
         }
         
         // Redirect based on role
-        const target = "/" + (data.role === "fee_manager" ? "fee-manager" : data.role);
-        router.push(target);
+        router.push(getRoleHomePath(data.role));
       } else {
         setLoginError(data.message || data.error || "Login failed. Please check your credentials.");
       }

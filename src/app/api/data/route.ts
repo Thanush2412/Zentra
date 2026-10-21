@@ -5,6 +5,7 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ensureMigration } from "@/lib/migrations";
+import { normalizeRole } from "@/lib/authGuard";
 
 export async function GET(request: Request) {
   try {
@@ -13,7 +14,8 @@ export async function GET(request: Request) {
     const db = await getDb();
 
     const { searchParams } = new URL(request.url);
-    const role = searchParams.get("role");
+    const rawRole = searchParams.get("role");
+    const role = rawRole ? normalizeRole(rawRole) : rawRole;
     const userId = searchParams.get("userId");
     const fields = searchParams.get("fields"); // e.g. "attendance" for surgical re-fetch
 

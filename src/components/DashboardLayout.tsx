@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { isSuperAdminSession } from "@/lib/superadmin";
+import { getRoleHomePath } from "@/lib/utils";
 import { useApp, Role } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { UserProfileBar } from "./UserProfileBar";
@@ -243,7 +244,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
     // Resolve base prefix for current role
     const role = currentRole || "student";
-    const roleBase = `/${role === "fee_manager" ? "fee-manager" : role}`;
+    const roleBase = getRoleHomePath(role);
 
     // If explicit relative link exists
     if (rawLink) {
@@ -461,7 +462,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     (currentRole === "student" && currentStudent?.email) ||
     (currentRole === "fee_manager" && "fee.manager@zentra.edu") ||
     (currentRole === "sme" && currentSME?.email) ||
-    (currentRole === "L and D" && "allocator@zentra.edu") ||
     "";
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -611,7 +611,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       const activeRole = currentRole || currentUser?.role;
 
       if (!isSuperAdmin && activeRole && activeRole !== requiredRole && !isLoading && !isDataLoading) {
-        const targetPath = "/" + (activeRole === "fee_manager" ? "fee-manager" : activeRole);
+        const targetPath = getRoleHomePath(activeRole);
         router.replace(targetPath);
       }
     }, 300); // Wait 300ms before running protection to avoid race conditions

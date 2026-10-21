@@ -8,7 +8,7 @@ import { getDb, PostgresDbAdapter } from "@/lib/db";
 import { verifyPassword, hashPassword, needsRehash } from "@/lib/auth";
 import { SUPER_ADMIN_ROLE, roleGrantsSuperAdmin } from "@/lib/superadmin";
 import { createUserSession, revokeSession, buildSessionCookie, buildCsrfCookie, buildClearSessionCookies } from "@/lib/session";
-import { extractSessionToken } from "@/lib/authGuard";
+import { extractSessionToken, normalizeRole } from "@/lib/authGuard";
 
 /** Profile tables that hold a display name for each role (whitelisted — never user input). */
 const ROLE_PROFILE_TABLES: Record<string, string> = {
@@ -287,7 +287,7 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({
       success: true,
-      role: user.role,
+      role: normalizeRole(user.role),
       userId: user.reference_id || user.id,
       collegeId: collegeId,
       userEmail: user.email || lowerEmail,

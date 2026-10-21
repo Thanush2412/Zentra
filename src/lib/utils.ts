@@ -1,6 +1,44 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+export type NormalizedRole =
+  | "mentor" | "hr" | "cm" | "kam" | "admin" | "student" | "fee_manager" | "sme" | "L and D";
+
+const ROLE_ALIASES: Record<string, NormalizedRole> = {
+  cam: "cm",
+  campus_manager: "cm",
+  "l and d": "L and D",
+  lnd: "L and D",
+  "l&d": "L and D",
+  ld: "L and D",
+  allocator: "L and D"
+};
+
+const ROLE_HOME_PATHS: Record<string, string> = {
+  admin: "/admin",
+  cm: "/cm",
+  mentor: "/mentor",
+  student: "/student",
+  kam: "/kam",
+  sme: "/sme",
+  fee_manager: "/fee-manager",
+  hr: "/hr",
+  "L and D": "/allocator"
+};
+
+/** Client-safe role normalization (mirrors authGuard.normalizeRole). */
+export function normalizeRoleValue(role?: string | null): NormalizedRole {
+  const raw = String(role || "").toLowerCase().trim();
+  if (!raw) return "student";
+  return (ROLE_ALIASES[raw] || raw) as NormalizedRole;
+}
+
+/** Canonical dashboard URL for a role — the L&D workspace lives at /allocator. */
+export function getRoleHomePath(role?: string | null): string {
+  const normalized = normalizeRoleValue(role);
+  return ROLE_HOME_PATHS[normalized] || `/${normalized}`;
+}
+
 export function isTimeSlotMatch(t1?: string, t2?: string): boolean {
   if (!t1 || !t2) return false;
   if (t1 === t2) return true;

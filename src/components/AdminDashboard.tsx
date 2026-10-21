@@ -65,7 +65,7 @@ import {
   User,
   CornerDownRight
 } from "lucide-react";
-import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester, normalizeRoleValue } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { CourseInfoButton } from "./CourseInfoModal";
 import { CourseModal } from "./CourseModal";
@@ -6065,7 +6065,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {[
                           { id: "all", label: "All Roles" },
                           { id: "admin", label: "Admin" },
-                          { id: "cam", label: "CM" },
+                          { id: "cm", label: "CM" },
                           { id: "kam", label: "KAM" },
                           { id: "mentor", label: "Mentor" },
                           { id: "sme", label: "SME" },
@@ -6118,7 +6118,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {/* Directory Table */}
                     {(() => {
                       const filteredUsers = (usersList || []).filter(u => {
-                        const matchesRole = usersRoleFilter === "all" || (u.role || "").toLowerCase() === usersRoleFilter;
+                        const matchesRole = usersRoleFilter === "all" || normalizeRoleValue(u.role) === usersRoleFilter;
                         const matchesSearch =
                           !usersSearchQuery ||
                           (u.email || "").toLowerCase().includes(usersSearchQuery.toLowerCase()) ||
@@ -6154,24 +6154,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </thead>
                             <tbody className="divide-y divide-gray-150 bg-white">
                               {paginatedUsers.map((user) => {
+                                const userRole = normalizeRoleValue(user.role);
                                 const roleColor =
-                                  user.role === "admin"
+                                  userRole === "admin"
                                     ? "bg-purple-50 text-purple-700 border-purple-100"
-                                    : user.role === "cam"
+                                    : userRole === "cm"
                                     ? "bg-amber-50 text-amber-700 border-amber-100"
-                                    : user.role === "kam"
+                                    : userRole === "kam"
                                     ? "bg-orange-50 text-orange-700 border-orange-100"
-                                    : user.role === "mentor"
+                                    : userRole === "mentor"
                                     ? "bg-indigo-50 text-indigo-700 border-indigo-100"
-                                    : user.role === "sme"
+                                    : userRole === "sme"
                                     ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-                                    : user.role === "student"
+                                    : userRole === "student"
                                     ? "bg-sky-50 text-sky-700 border-sky-100"
-                                    : user.role === "fee_manager"
+                                    : userRole === "fee_manager"
                                     ? "bg-teal-50 text-teal-700 border-teal-100"
-                                    : user.role === "L and D"
+                                    : userRole === "L and D"
                                     ? "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-100"
-                                    : user.role === "hr"
+                                    : userRole === "hr"
                                     ? "bg-rose-50 text-rose-700 border-rose-100"
                                     : "bg-gray-50 text-gray-600 border-gray-200";
 
@@ -6187,7 +6188,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </td>
                                     <td className="p-3">
                                       <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${roleColor}`}>
-                                        {user.role === "L and D" ? "L&D" : user.role}
+                                        {userRole === "L and D" ? "L&D" : userRole}
                                       </span>
                                     </td>
                                     <td className="p-3 font-mono text-[10.5px] text-gray-600 font-semibold">

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { resolveClassGroupDetailsFromState, isCohortMatch } from "@/lib/utils";
+import { resolveClassGroupDetailsFromState, isCohortMatch, normalizeRoleValue } from "@/lib/utils";
 import { useToast } from "@/context/ToastContext";
 import { apiFetch, setClientCsrfToken } from "@/lib/apiFetch";
 import { roleGrantsSuperAdmin } from "@/lib/superadmin";
@@ -829,7 +829,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         startLoading("Fetching live database data…");
       }
     try {
-      let role = currentRole || currentUser?.role || "admin";
+      let role: Role = normalizeRoleValue(currentRole || currentUser?.role || "admin");
       if (typeof window !== "undefined" && window.location.pathname.startsWith("/admin")) {
         role = "admin";
       }
@@ -1137,6 +1137,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Set current role and user from DB data ─────────────────────────────────
   const setRole = (role: Role, userId?: string, extra?: { collegeId?: string; userEmail?: string; userName?: string; isSuperAdmin?: boolean }) => {
+    role = normalizeRoleValue(role);
     setCurrentRoleState(role);
     const userEmail = (extra?.userEmail || currentUser?.email || (typeof window !== "undefined" ? localStorage.getItem("fp_user_email") : "") || "").toLowerCase().trim();
     const sessionUserId = userId || currentUser?.reference_id || currentUser?.id || (typeof window !== "undefined" ? localStorage.getItem("fp_user_id") : "") || "";

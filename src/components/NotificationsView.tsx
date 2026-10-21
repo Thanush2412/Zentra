@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
+import { getRoleHomePath } from "@/lib/utils";
 import {
   Bell,
   CheckCircle2,
@@ -96,7 +97,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
     const targetDate = dateMatch ? dateMatch[1] : null;
 
     const role = portalType || "student";
-    const roleBase = `/${role === "fee_manager" ? "fee-manager" : role}`;
+    const roleBase = getRoleHomePath(role);
 
     if (rawLink) {
       let cleanLink = rawLink.startsWith("/") ? rawLink : `${roleBase}/${rawLink}`;
