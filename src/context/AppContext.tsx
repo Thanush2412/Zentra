@@ -1578,9 +1578,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         created_at: new Date().toISOString()
       };
       setDemoSessions(prev => [newSession, ...prev]);
-      return { success: true, message: data.message || "Demo allocated successfully!" };
+      return { success: true, message: data.message || "L&D session allocated successfully!" };
     } else {
-      return { success: false, message: data.message || "Failed to allocate demo." };
+      return { success: false, message: data.message || "Failed to allocate L&D session." };
     }
   };
 
@@ -1620,9 +1620,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data.sessions && Array.isArray(data.sessions)) {
           setDemoSessions(prev => [...data.sessions, ...prev]);
         }
-        return { success: true, message: data.message || "Bulk demos allocated successfully!" };
+        return { success: true, message: data.message || "L&D sessions allocated successfully!" };
       }
-      return { success: false, message: data.message || "Failed to allocate bulk demos." };
+      return { success: false, message: data.message || "Failed to allocate L&D sessions." };
     } catch (e: any) {
       return { success: false, message: e.message || "An unexpected error occurred." };
     }
@@ -1638,9 +1638,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setDemoSessions(prev => prev.map(s => s.id === sessionId ? { ...s, date_str: dateStr, time_slot: timeSlot, sme_id: smeId, sme_name: smeName } : s));
-        return { success: true, message: data.message || "Demo session updated successfully." };
+        return { success: true, message: data.message || "L&D session updated successfully." };
       }
-      return { success: false, message: data.message || "Failed to update demo session." };
+      return { success: false, message: data.message || "Failed to update L&D session." };
     } catch (e: any) {
       return { success: false, message: e.message || "An unexpected error occurred." };
     }
@@ -1665,9 +1665,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return s;
           });
         });
-        return { success: true, message: data.message || "Demo sessions swapped successfully." };
+        return { success: true, message: data.message || "L&D sessions swapped successfully." };
       }
-      return { success: false, message: data.message || "Failed to swap demo sessions." };
+      return { success: false, message: data.message || "Failed to swap L&D sessions." };
     } catch (e: any) {
       return { success: false, message: e.message || "An unexpected error occurred." };
     }
@@ -1685,9 +1685,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (data.request) {
           setDemoSwapRequests(prev => [data.request, ...prev]);
         }
-        return { success: true, message: data.message || "Demo swap requested successfully." };
+        return { success: true, message: data.message || "L&D swap requested successfully." };
       }
-      return { success: false, message: data.message || "Failed to request demo swap." };
+      return { success: false, message: data.message || "Failed to request L&D swap." };
     } catch (e: any) {
       return { success: false, message: e.message || "An unexpected error occurred." };
     }
@@ -1703,7 +1703,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setDemoSwapRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
-        return { success: true, message: data.message || `Demo swap request ${status} successfully.` };
+        return { success: true, message: data.message || `L&D swap request ${status} successfully.` };
       }
       return { success: false, message: data.message || "Failed to resolve swap request." };
     } catch (e: any) {
@@ -1719,9 +1719,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setDemoSessions(prev => prev.filter(s => s.id !== sessionId));
-        return { success: true, message: data.message || "Demo session deleted successfully." };
+        return { success: true, message: data.message || "L&D session deleted successfully." };
       }
-      return { success: false, message: data.message || "Failed to delete demo session." };
+      return { success: false, message: data.message || "Failed to delete L&D session." };
     } catch (e: any) {
       return { success: false, message: e.message || "An unexpected error occurred." };
     }
@@ -1752,7 +1752,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await refreshData();
         return { success: true, message: data.message || "Reschedule request sent to Learning and Development for approval." };
       }
-      return { success: false, message: data.message || "Failed to reschedule demo." };
+      return { success: false, message: data.message || "Failed to reschedule L&D session." };
     } catch (e: any) {
       return { success: false, message: e.message || "An unexpected error occurred." };
     }

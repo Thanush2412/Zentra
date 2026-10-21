@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     if (demoSessionId) {
       const demo = await db.get("SELECT * FROM demo_sessions WHERE id = ?", [demoSessionId]);
       if (!demo) {
-        return NextResponse.json({ success: false, message: "Demo session not found" }, { status: 404 });
+        return NextResponse.json({ success: false, message: "L&D session not found" }, { status: 404 });
       }
 
       const collegeId = (demo as any).college_id || null;
@@ -241,10 +241,10 @@ export async function POST(request: Request) {
 
       const demo = await db.get("SELECT * FROM demo_sessions WHERE id = ?", [demoSessionId]);
       if (!demo) {
-        return NextResponse.json({ success: false, message: "Demo session not found" }, { status: 404 });
+        return NextResponse.json({ success: false, message: "L&D session not found" }, { status: 404 });
       }
       if ((demo as any).status === "completed" || (demo as any).status === "not_conducted") {
-        return NextResponse.json({ success: false, message: "Completed demos cannot be reallocated." }, { status: 400 });
+        return NextResponse.json({ success: false, message: "Completed L&D sessions cannot be reallocated." }, { status: 400 });
       }
 
       // Replace any existing pending reservation for this demo
@@ -286,12 +286,12 @@ export async function POST(request: Request) {
         const notifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
         await db.run(
           `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
-           VALUES (?, ?, ?, ?, 0, '/allocator', 'demo_reallocation_proposed', ?)`,
+           VALUES (?, ?, ?, ?, 0, '/l-and-d', 'demo_reallocation_proposed', ?)`,
           [
             notifId,
             demo.smeId,
-            "Demo Reallocation Proposed",
-            `${demo.mentorName} proposed moving the ${demo.subject} demo from ${demo.dateStr} (${demo.timeSlot}) to ${proposedDateStr} (${proposedTimeSlot}). Awaiting L&D approval.`,
+            "L&D Reallocation Proposed",
+            `${demo.mentorName} proposed moving the ${demo.subject} L&D session from ${demo.dateStr} (${demo.timeSlot}) to ${proposedDateStr} (${proposedTimeSlot}). Awaiting L&D approval.`,
             new Date().toISOString()
           ]
         ).catch(() => {});
@@ -304,7 +304,7 @@ export async function POST(request: Request) {
          VALUES (?, 'demo_reallocation_proposed', ?, ?, 'Mentor', ?)`,
         [
           auditId,
-          `Demo ${demoSessionId} (${demo.subject}) reallocation proposed: ${demo.dateStr} (${demo.timeSlot}) → ${proposedDateStr} (${proposedTimeSlot}). Slot reserved pending L&D approval.`,
+          `L&D session ${demoSessionId} (${demo.subject}) reallocation proposed: ${demo.dateStr} (${demo.timeSlot}) → ${proposedDateStr} (${proposedTimeSlot}). Slot reserved pending L&D approval.`,
           proposedBy || demo.mentorName,
           new Date().toISOString()
         ]
@@ -389,8 +389,8 @@ export async function POST(request: Request) {
         [
           notifId,
           req.mentor_id,
-          "Demo Reallocation Approved",
-          `Your ${req.subject} demo has been moved to ${req.proposed_date_str} (${req.proposed_time_slot}). SME: ${req.sme_name}.`,
+          "L&D Reallocation Approved",
+          `Your ${req.subject} L&D session has been moved to ${req.proposed_date_str} (${req.proposed_time_slot}). SME: ${req.sme_name}.`,
           new Date().toISOString()
         ]
       ).catch(() => {});
@@ -401,13 +401,13 @@ export async function POST(request: Request) {
          VALUES (?, 'demo_reallocation_resolved', ?, ?, 'L&D', ?)`,
         [
           auditId,
-          `Demo reallocation ${requestId} APPROVED by ${decidedBy || "L&D"}. Demo ${req.demo_session_id} (${req.subject}) moved ${req.original_date_str} (${req.original_time_slot}) → ${req.proposed_date_str} (${req.proposed_time_slot}). Original slot released.`,
+          `L&D reallocation ${requestId} APPROVED by ${decidedBy || "L&D"}. L&D session ${req.demo_session_id} (${req.subject}) moved ${req.original_date_str} (${req.original_time_slot}) → ${req.proposed_date_str} (${req.proposed_time_slot}). Original slot released.`,
           decidedBy || "L&D",
           new Date().toISOString()
         ]
       ).catch(() => {});
 
-      return NextResponse.json({ success: true, message: "Reallocation approved. Demo schedule updated across all views." });
+      return NextResponse.json({ success: true, message: "Reallocation approved. L&D schedule updated across all views." });
     }
 
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });

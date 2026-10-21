@@ -5599,10 +5599,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       ? "bg-teal-100 text-teal-800 border-teal-200"
                                       : (r.user_role || "").toLowerCase() === "cam"
                                       ? "bg-violet-100 text-violet-800 border-violet-200"
+                                      : normalizeRoleValue(r.user_role || "") === "L and D"
+                                      ? "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200"
                                       : "bg-gray-100 text-gray-800 border-gray-200"
                                   }`}
                                 >
-                                  {r.user_role || "User"}
+                                  {normalizeRoleValue(r.user_role || "") === "L and D" ? "L&D" : (r.user_role || "User")}
                                 </span>
                                 {r.register_number && r.register_number !== "—" && (
                                   <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-white border border-gray-200 text-[9px] font-mono font-bold text-gray-600">
@@ -5731,7 +5733,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs space-y-1">
                       <p className="font-bold text-gray-800 line-clamp-1">{resolvingReport.title}</p>
                       <p className="text-gray-500 text-[11px]">
-                        Raised by <span className="font-semibold text-gray-700">{resolvingReport.user_name || resolvingReport.user_id}</span> ({resolvingReport.user_role})
+                        Raised by <span className="font-semibold text-gray-700">{resolvingReport.user_name || resolvingReport.user_id}</span> ({normalizeRoleValue(resolvingReport.user_role || "") === "L and D" ? "L&D" : resolvingReport.user_role})
                         {resolvingReport.college_name ? ` • ${resolvingReport.college_name}` : ""}
                       </p>
                     </div>
@@ -6261,7 +6263,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             setUserForm({
                                               id: user.id,
                                               email: user.email,
-                                              role: user.role,
+                                              role: normalizeRoleValue(user.role),
                                               password: "",
                                               reference_id: user.reference_id || "",
                                               status: user.status || "Active"
@@ -6321,7 +6323,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <td className="p-4 font-mono font-semibold text-gray-650">{req.email}</td>
                               <td className="p-4">
                                 <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-150 text-[10px] font-bold text-indigo-700 uppercase">
-                                  {req.requested_role === "pending" ? "Pending Assignment" : req.requested_role}
+                                  {req.requested_role === "pending" ? "Pending Assignment" : normalizeRoleValue(req.requested_role) === "L and D" ? "L&D" : req.requested_role}
                                 </span>
                               </td>
                               <td className="p-4 text-gray-500 font-bold">{targetCol ? targetCol.name : "Unassigned"}</td>
@@ -6341,7 +6343,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     <button
                                       onClick={() => {
                                         setApprovingSignup(req);
-                                        setApprovingRole(req.requested_role || "student");
+                                        setApprovingRole(normalizeRoleValue(req.requested_role || "student"));
                                         setMappingCollegeId(req.college_id || "");
                                         setMappingType("create_new");
                                         setShowApprovalModal(true);
@@ -6720,7 +6722,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <div className="font-bold text-gray-900 font-mono">{matchedUser ? matchedUser.email : hist.user_id}</div>
                               {matchedUser && (
                                 <span className="text-[9px] font-black uppercase text-indigo-600 mt-0.5 block">
-                                  {matchedUser.role}
+                                  {normalizeRoleValue(matchedUser.role) === "L and D" ? "L&D" : matchedUser.role}
                                 </span>
                               )}
                             </td>

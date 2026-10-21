@@ -136,7 +136,7 @@ export async function POST(request: Request) {
         [mentorId, dateStr, timeSlot]
       );
       if (existingDemo) {
-        return NextResponse.json({ success: false, message: "A demo session is already booked for this mentor at this date/time." });
+        return NextResponse.json({ success: false, message: "An L&D session is already booked for this mentor at this date/time." });
       }
 
       // Phase A: booking must fall inside the SME's declared demo-availability window
@@ -174,10 +174,10 @@ export async function POST(request: Request) {
       await db.run(
         `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
          VALUES (?, 'booking', ?, 'System', 'Learning and Development', ?)`,
-        [auditId, `Demo allocated for ${mentorName} with SME ${smeName} on ${dateStr} at ${timeSlot}`, new Date().toISOString()]
+        [auditId, `L&D session allocated for ${mentorName} with SME ${smeName} on ${dateStr} at ${timeSlot}`, new Date().toISOString()]
       );
 
-      return NextResponse.json({ success: true, message: "Demo allocated successfully!" });
+      return NextResponse.json({ success: true, message: "L&D session allocated successfully!" });
 
     } else if (action === "bulk-book") {
       const sessions = body.sessions;
@@ -249,7 +249,7 @@ export async function POST(request: Request) {
           [dateStr, timeSlot, smeId, smeName, sessionId]
         );
       }
-      return NextResponse.json({ success: true, message: "Demo session updated successfully." });
+      return NextResponse.json({ success: true, message: "L&D session updated successfully." });
 
     } else if (action === "swap") {
       const { session1Id, session2Id } = body;
@@ -266,7 +266,7 @@ export async function POST(request: Request) {
 
       await db.run("UPDATE demo_sessions SET dateStr = ?, timeSlot = ? WHERE id = ?", [s2.dateStr, s2.timeSlot, s1.id]);
       await db.run("UPDATE demo_sessions SET dateStr = ?, timeSlot = ? WHERE id = ?", [s1.dateStr, s1.timeSlot, s2.id]);
-      return NextResponse.json({ success: true, message: "Demo sessions swapped successfully." });
+      return NextResponse.json({ success: true, message: "L&D sessions swapped successfully." });
 
     } else if (action === "evaluate") {
       const { sessionId, marks, comments, checklist } = body;
@@ -481,11 +481,11 @@ export async function POST(request: Request) {
 
       const session = await db.get("SELECT * FROM demo_sessions WHERE id = ?", [sessionId]);
       if (!session) {
-        return NextResponse.json({ success: false, message: "Demo session not found." }, { status: 404 });
+        return NextResponse.json({ success: false, message: "L&D session not found." }, { status: 404 });
       }
 
       if (session.mentorId !== mentorId) {
-        return NextResponse.json({ success: false, message: "Unauthorized: You can only reschedule your own demo session." }, { status: 403 });
+        return NextResponse.json({ success: false, message: "Unauthorized: You can only reschedule your own L&D session." }, { status: 403 });
       }
 
       // 1. Verify mentor is not on approved leave on newDateStr
@@ -578,12 +578,12 @@ export async function POST(request: Request) {
           const nId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
           await db.run(
             `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
-             VALUES (?, ?, ?, ?, 0, '/allocator', 'demo_reschedule_requested', ?)`,
+             VALUES (?, ?, ?, ?, 0, '/l-and-d', 'demo_reschedule_requested', ?)`,
             [
               nId,
               alloc.id,
-              "Demo Reschedule Awaiting Approval",
-              `${session.mentorName} requested moving the ${session.subject} demo from ${session.dateStr} (${session.timeSlot}) to ${newDateStr} (${newTimeSlot}).`,
+              "L&D Reschedule Awaiting Approval",
+              `${session.mentorName} requested moving the ${session.subject} L&D session from ${session.dateStr} (${session.timeSlot}) to ${newDateStr} (${newTimeSlot}).`,
               new Date().toISOString()
             ]
           ).catch(() => {});
@@ -630,7 +630,7 @@ export async function DELETE(request: Request) {
     }
 
     await db.run("DELETE FROM demo_sessions WHERE id = ?", [id]);
-    return NextResponse.json({ success: true, message: "Demo session deleted successfully." });
+    return NextResponse.json({ success: true, message: "L&D session deleted successfully." });
   } catch (error: any) {
     const authRes = apiAuthErrorResponse(error);
     if (authRes) return authRes;

@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
     params.push(limit, offset);
 
-    const users = await db.all(query, params);
+    const users = (await db.all(query, params)).map((u: any) => ({ ...u, role: normalizeRole(u.role) }));
     const totalRow = await db.get(countQuery, countParams);
     const total = totalRow?.count || 0;
 

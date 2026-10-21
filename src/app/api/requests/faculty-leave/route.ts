@@ -313,8 +313,8 @@ export async function POST(request: Request) {
                 [
                   smeNotifId,
                   demo.smeId,
-                  "Demo On Hold — Mentor on Leave",
-                  `Demo session for ${demo.subject} with ${reqRecord.mentorName} on ${demo.dateStr} (${demo.timeSlot}) is on hold due to approved mentor leave. Slot has been freed; mentor will reschedule.`,
+                  "L&D On Hold — Mentor on Leave",
+                  `L&D session for ${demo.subject} with ${reqRecord.mentorName} on ${demo.dateStr} (${demo.timeSlot}) is on hold due to approved mentor leave. Slot has been freed; mentor will reschedule.`,
                   "/sme/demo_list",
                   new Date().toISOString()
                 ]
@@ -330,8 +330,8 @@ export async function POST(request: Request) {
                 [
                   mentorNotifId,
                   reqRecord.mentor_id,
-                  "Demo Reschedule Required",
-                  `Your demo for ${demo.subject} on ${demo.dateStr} falls during your approved leave. Please open Demo Evaluations to pick a new date and time slot.`,
+                  "L&D Reschedule Required",
+                  `Your L&D session for ${demo.subject} on ${demo.dateStr} falls during your approved leave. Please open Demo Evaluations to pick a new date and time slot.`,
                   "/mentor/demo_evaluations",
                   new Date().toISOString()
                 ]
@@ -345,7 +345,7 @@ export async function POST(request: Request) {
                VALUES (?, 'demo_leave_hold', ?, ?, 'Campus Manager', ?)`,
               [
                 auditId,
-                `CAM approved leave for Mentor ${reqRecord.mentorName}. Demo session for ${demo.subject} on ${demo.dateStr} (${demo.timeSlot}) placed on hold (Reschedule Required). Evaluator SME ${demo.smeName} and Mentor notified.`,
+                `CAM approved leave for Mentor ${reqRecord.mentorName}. L&D session for ${demo.subject} on ${demo.dateStr} (${demo.timeSlot}) placed on hold (Reschedule Required). Evaluator SME ${demo.smeName} and Mentor notified.`,
                 approvedBy || "Campus Manager",
                 new Date().toISOString()
               ]

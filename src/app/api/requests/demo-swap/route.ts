@@ -91,7 +91,7 @@ export async function POST(request: Request) {
         [sessionId]
       );
       if (existingPending) {
-        return NextResponse.json({ success: false, message: "A swap request for this demo is already pending review." });
+        return NextResponse.json({ success: false, message: "A swap request for this L&D session is already pending review." });
       }
 
       const reqId = "dsr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
       const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
       const desc = swapType === "internal"
         ? `Internal swap proposal sent by Mentor ${mentorName} proposing replacement peer ${proposedMentorName}`
-        : `Demo swap requested by SME ${smeName} for mentor ${mentorName} (Reason: ${reason})`;
+        : `L&D swap requested by SME ${smeName} for mentor ${mentorName} (Reason: ${reason})`;
       
       await db.run(
         `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
@@ -164,8 +164,8 @@ export async function POST(request: Request) {
         const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
-           VALUES (?, 'swap_resolve', ?, 'System', 'Demo Ecosystem', ?)`,
-          [auditId, `Demo reallocation request ${requestId} rejected by SME. Session remains in reallocation_required.`, resolvedAt]
+           VALUES (?, 'swap_resolve', ?, 'System', 'L&D', ?)`,
+          [auditId, `L&D reallocation request ${requestId} rejected by SME. Session remains in reallocation_required.`, resolvedAt]
         );
 
         return NextResponse.json({ success: true, message: "Reallocation request rejected. Session remains in reallocation_required." });
@@ -216,15 +216,15 @@ export async function POST(request: Request) {
         const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
-           VALUES (?, 'swap_resolve', ?, 'System', 'Demo System', ?)`,
+           VALUES (?, 'swap_resolve', ?, 'System', 'L&D', ?)`,
           [
             auditId,
-            `Demo swap request approved. Session ${req.sessionId} updated to confirmed (Mentor: ${req.proposedMentorName || req.mentorName}, SME: ${req.proposedSmeName || req.smeName}, Date: ${req.proposedDateStr || req.dateStr}, Slot: ${req.proposedTimeSlot || req.timeSlot})`,
+            `L&D swap request approved. Session ${req.sessionId} updated to confirmed (Mentor: ${req.proposedMentorName || req.mentorName}, SME: ${req.proposedSmeName || req.smeName}, Date: ${req.proposedDateStr || req.dateStr}, Slot: ${req.proposedTimeSlot || req.timeSlot})`,
             resolvedAt
           ]
         );
 
-        return NextResponse.json({ success: true, message: "Swap request approved and demo confirmed!" });
+        return NextResponse.json({ success: true, message: "Swap request approved and L&D session confirmed!" });
       }
 
       return NextResponse.json({ success: false, message: "Invalid resolution status" }, { status: 400 });

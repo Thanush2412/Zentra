@@ -23,7 +23,7 @@ const ROLE_HOME_PATHS: Record<string, string> = {
   sme: "/sme",
   fee_manager: "/fee-manager",
   hr: "/hr",
-  "L and D": "/allocator"
+  "L and D": "/l-and-d"
 };
 
 /** Client-safe role normalization (mirrors authGuard.normalizeRole). */
@@ -33,7 +33,7 @@ export function normalizeRoleValue(role?: string | null): NormalizedRole {
   return (ROLE_ALIASES[raw] || raw) as NormalizedRole;
 }
 
-/** Canonical dashboard URL for a role — the L&D workspace lives at /allocator. */
+/** Canonical dashboard URL for a role — the L&D workspace lives at /l-and-d. */
 export function getRoleHomePath(role?: string | null): string {
   const normalized = normalizeRoleValue(role);
   return ROLE_HOME_PATHS[normalized] || `/${normalized}`;
