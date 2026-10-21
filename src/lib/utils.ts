@@ -13,6 +13,7 @@ const ROLE_ALIASES: Record<string, NormalizedRole> = {
   lnd: "L and D",
   "l&d": "L and D",
   ld: "L and D",
+  "l-d": "L and D",
   allocator: "L and D",
   "demo allocator": "L and D"
 };
@@ -26,7 +27,9 @@ const ROLE_HOME_PATHS: Record<string, string> = {
   sme: "/sme",
   fee_manager: "/fee-manager",
   hr: "/hr",
-  "L and D": "/l-and-d"
+  "L and D": "/l-and-d",
+  "l-d": "/l-and-d",
+  ld: "/l-and-d"
 };
 
 /** Client-safe role normalization (mirrors authGuard.normalizeRole). */

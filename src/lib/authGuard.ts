@@ -16,6 +16,7 @@ const LEGACY_ROLE_MAP: Record<string, string> = {
   lnd: "L and D",
   "l&d": "L and D",
   ld: "L and D",
+  "l-d": "L and D",
   allocator: "L and D",
   "demo allocator": "L and D"
 };

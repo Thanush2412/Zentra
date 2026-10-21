@@ -34,7 +34,7 @@ function getDynamicDevOrigins(): string[] {
 const nextConfig: NextConfig = {
   allowedDevOrigins: getDynamicDevOrigins(),
   // /cam and /cm are BOTH first-class routes — src/app/cam and src/app/cm render the
-  // same CM workspace, and /l-and-d, /ld and /allocator render the same L&D workspace.
+  // same CM workspace, and /l-and-d, /ld, /l-d and /allocator render the same L&D workspace.
   // Never redirect one onto the other: stored notification links, bookmarks and role
   // tokens from either era must keep resolving without a hop, and a permanent redirect
   // aimed at a route the running build lacks dead-ends the entire login flow.

@@ -96,7 +96,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     }
   };
 
-  const isAuthorized = isAuthenticated && (isSuperAdmin || normalizeRoleValue(currentRole) === requiredRole);
+  const isAuthorized = isAuthenticated && (isSuperAdmin || normalizeRoleValue(currentRole) === normalizeRoleValue(requiredRole));
 
   /* ─── Notifications Bell ─── */
   const [showNotifications, setShowNotifications] = useState(false);
@@ -610,7 +610,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
       const activeRole = currentRole || currentUser?.role;
 
-      if (!isSuperAdmin && activeRole && normalizeRoleValue(activeRole) !== requiredRole && !isLoading && !isDataLoading) {
+      if (!isSuperAdmin && activeRole && normalizeRoleValue(activeRole) !== normalizeRoleValue(requiredRole) && !isLoading && !isDataLoading) {
         const targetPath = getRoleHomePath(activeRole);
         router.replace(targetPath);
       }

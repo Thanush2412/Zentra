@@ -24,6 +24,8 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
   const {
     currentUser,
     currentRole,
+    isSuperAdmin,
+    setRole,
     currentMentor,
     currentHR,
     currentCAM,
@@ -239,6 +241,44 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
 
           {/* Actions List */}
           <div className="p-1.5 space-y-0.5">
+            {isSuperAdmin && (
+              <div className="pb-1 mb-1 border-b border-slate-100 dark:border-slate-700">
+                <span className="px-3 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 block">
+                  Switch Workspace
+                </span>
+                <div className="grid grid-cols-2 gap-1 px-1">
+                  {[
+                    { label: "Admin", role: "admin", path: "/admin" },
+                    { label: "CM", role: "cm", path: "/cm" },
+                    { label: "L&D", role: "L and D", path: "/l-d" },
+                    { label: "Faculty", role: "mentor", path: "/mentor" },
+                    { label: "KAM", role: "kam", path: "/kam" },
+                    { label: "Student", role: "student", path: "/student" },
+                    { label: "HR", role: "hr", path: "/hr" },
+                    { label: "Fee Mgr", role: "fee_manager", path: "/fee-manager" },
+                    { label: "SME", role: "sme", path: "/sme" },
+                  ].map(w => (
+                    <button
+                      key={w.path}
+                      type="button"
+                      onClick={() => {
+                        setRole(w.role as any, undefined, { isSuperAdmin: true });
+                        router.push(w.path);
+                        setIsOpen(false);
+                      }}
+                      className={`text-left px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer truncate ${
+                        normalizeRoleValue(currentRole) === normalizeRoleValue(w.role)
+                          ? "bg-indigo-50 text-indigo-700 font-black dark:bg-indigo-950/60 dark:text-indigo-300"
+                          : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      {w.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={handleOpenPasswordModal}
