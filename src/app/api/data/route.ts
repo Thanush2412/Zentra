@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   try {
     await ensureMigration("audit_logs_extended_columns").catch(() => {});
     await ensureMigration("cm_role_rename_tokens").catch(() => {});
+    await ensureMigration("lnd_role_rename_tokens").catch(() => {});
     const db = await getDb();
 
     const { searchParams } = new URL(request.url);

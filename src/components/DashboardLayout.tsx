@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { isSuperAdminSession } from "@/lib/superadmin";
-import { getRoleHomePath } from "@/lib/utils";
+import { getRoleHomePath, normalizeRoleValue } from "@/lib/utils";
 import { useApp, Role } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { UserProfileBar } from "./UserProfileBar";
@@ -670,15 +670,15 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
           <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-7 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
           <div className="hidden sm:block border-l border-slate-200 pl-3">
             <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block truncate">
-              {currentRole === "mentor" && "Faculty Workspace"}
-              {currentRole === "hr" && "HR Audit Portal"}
-              {currentRole === "cm" && "CM Dashboard"}
-              {currentRole === "kam" && "Key Account Manager"}
-              {currentRole === "admin" && "Super Admin Console"}
-              {currentRole === "student" && "Student Portal"}
-              {currentRole === "fee_manager" && "Fee Collections"}
-              {currentRole === "sme" && "SME Evaluation Hub"}
-              {currentRole === "L and D" && "Learning & Development (L&D)"}
+              {normalizeRoleValue(currentRole) === "mentor" && "Faculty Workspace"}
+              {normalizeRoleValue(currentRole) === "hr" && "HR Audit Portal"}
+              {normalizeRoleValue(currentRole) === "cm" && "CM Dashboard"}
+              {normalizeRoleValue(currentRole) === "kam" && "Key Account Manager"}
+              {normalizeRoleValue(currentRole) === "admin" && "Super Admin Console"}
+              {normalizeRoleValue(currentRole) === "student" && "Student Portal"}
+              {normalizeRoleValue(currentRole) === "fee_manager" && "Fee Collections"}
+              {normalizeRoleValue(currentRole) === "sme" && "SME Evaluation Hub"}
+              {normalizeRoleValue(currentRole) === "L and D" && "Learning & Development (L&D)"}
             </span>
           </div>
         </div>

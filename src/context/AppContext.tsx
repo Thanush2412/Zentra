@@ -1006,6 +1006,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ]);
         if (demosData?.success && Array.isArray(demosData.records)) setDemoSessions(demosData.records);
         if (availData?.success && Array.isArray(availData.availability)) setSmeAvailability(availData.availability);
+      } else if (role === "L and D") {
+        const demosData = await apiFetch("/api/demo-sessions").catch(() => ({}));
+        if (demosData?.success && Array.isArray(demosData.records)) setDemoSessions(demosData.records);
       }
     } catch (err) {
       console.warn("loadRoleWorkspace error:", err);
@@ -1063,7 +1066,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // 3. Restore session using authoritative server user immediately (< 50ms total boot)
-      const parsedRole: Role = (authUser.role as Role) || "mentor";
+      const parsedRole: Role = normalizeRoleValue(authUser.role);
       setCurrentRoleState(parsedRole);
       if (authUser.college_id) {
         setCurrentCampusScope(authUser.college_id);
@@ -1130,6 +1133,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           role: "sme"
         });
         setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null);
+      } else if (parsedRole === "L and D") {
+        setCurrentMentor(null); setCurrentHR(null); setCurrentCAM(null); setCurrentKAM(null); setCurrentAdmin(null); setCurrentStudent(null); setCurrentSME(null);
       }
 
       // Shell renders immediately

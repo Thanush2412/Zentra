@@ -643,6 +643,16 @@ const migrations: Migration[] = [
       await db.exec("UPDATE handover_requests SET status = 'needs_cm_allocation' WHERE status = 'needs_cam_allocation'").catch(() => {});
       await db.exec("UPDATE student_interviews SET status = 'pending_cm_acceptance' WHERE status = 'pending_cam_acceptance'").catch(() => {});
     }
+  },
+  {
+    // ROLE_RENAME allocator→L and D: migrate legacy data tokens once.
+    name: "lnd_role_rename_tokens",
+    run: async (db) => {
+      await db.exec("UPDATE users SET role = 'L and D' WHERE role IN ('allocator', 'demo allocator', 'l and d', 'ld', 'lnd')").catch(() => {});
+      await db.exec("UPDATE users SET email = 'lnd@zentra.edu' WHERE email = 'allocator@zentra.edu'").catch(() => {});
+      await db.exec("UPDATE users SET reference_id = 'lnd_1' WHERE reference_id = 'allocator_1'").catch(() => {});
+      await db.exec("UPDATE audit_logs SET actorRole = 'L and D' WHERE actorRole IN ('allocator', 'demo allocator', 'ld', 'lnd')").catch(() => {});
+    }
   }
 ];
 

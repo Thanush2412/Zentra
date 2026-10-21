@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation";
 import { useApp } from "@/context/AppContext";
 import { ChevronDown, KeyRound, LogOut, ShieldCheck, User } from "lucide-react";
+import { normalizeRoleValue, formatRoleLabel } from "@/lib/utils";
 
 interface UserProfileBarProps {
   onOpenChangePassword: () => void;
@@ -60,7 +61,9 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
     let roleLabel = "User";
     let shortRole: string = String(currentRole || "user");
 
-    switch (currentRole) {
+    const normalizedRole = normalizeRoleValue(currentRole);
+
+    switch (normalizedRole) {
       case "mentor":
         name = currentMentor?.name || name || "Faculty Mentor";
         email = currentMentor?.email || email;
@@ -116,8 +119,8 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
         break;
       default:
         name = name || "User";
-        roleLabel = "User";
-        shortRole = String(currentRole || "USER").toUpperCase();
+        roleLabel = formatRoleLabel(currentRole) || "User";
+        shortRole = formatRoleLabel(currentRole).toUpperCase();
         break;
     }
 
