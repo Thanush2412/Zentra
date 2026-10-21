@@ -463,6 +463,16 @@ interface AppContextProps {
   deleteSmeAvailabilityWindow: (id: string) => Promise<{ success: boolean; error?: string }>;
   createDemoRule: (subject: string, week: number, target: number) => Promise<{ success: boolean; message: string }>;
   deleteDemoRule: (id: string) => Promise<{ success: boolean; message: string }>;
+  // L&D Aliases (Phase 2 bridge)
+  lndSessions?: any[];
+  lndRules?: any[];
+  lndSwapRequests?: any[];
+  bookLndSession?: (mentorId: string, mentorName: string, smeId: string, smeName: string, dateStr: string, timeSlot: string, subject: string, stream: string, week: number) => Promise<{ success: boolean; message: string }>;
+  bulkBookLndSessions?: (sessions: Array<{ mentorId: string; mentorName: string; smeId: string; smeName: string; dateStr: string; timeSlot: string; subject: string; stream: string; week: number }>) => Promise<{ success: boolean; message: string }>;
+  evaluateLndSession?: (sessionId: string, marks: number, comments: string, checklist?: any[]) => Promise<{ success: boolean; message: string }>;
+  deleteLndSession?: (sessionId: string) => Promise<{ success: boolean; message: string }>;
+  createLndRule?: (subject: string, week: number, target: number) => Promise<{ success: boolean; message: string }>;
+  deleteLndRule?: (id: string) => Promise<{ success: boolean; message: string }>;
   generateTimetable: (
     classGroup: string, 
     shift: ShiftType, 
@@ -579,7 +589,16 @@ interface AppContextProps {
   deleteCampusIssue: (id: string) => Promise<{ success: boolean; message?: string }>;
   saveAcademicYear: (yearName: string) => Promise<{ success: boolean; message?: string }>;
   deleteAcademicYear: (yearName: string) => Promise<{ success: boolean; message?: string }>;
-  saveAcademicEvent: (event: any) => Promise<{ success: boolean; event?: any; message?: string }>;
+  saveAcademicEvent: (event: any) => Promise<{
+    success: boolean;
+    event?: any;
+    message?: string;
+    dayOrderSync?: {
+      synced: { dateStr: string; day_order: string }[];
+      protectedDates?: string[];
+      skipped?: string;
+    };
+  }>;
   deleteAcademicEvent: (id: string) => Promise<{ success: boolean; message?: string }>;
   saveFacultyConfig: (mentorId: string, maxHours: number, shift?: string) => Promise<{ success: boolean; message?: string }>;
   signupRequests: any[];
@@ -3479,7 +3498,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           return [...prev, savedEvent];
         });
-        return { success: true, event: savedEvent };
+        return { success: true, event: savedEvent, dayOrderSync: data.dayOrderSync };
       }
       return { success: false, message: data.message || "Failed to save event" };
     } catch (e: any) {
@@ -3713,6 +3732,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDemoSessions,
     requestDemoSwap,
     resolveDemoSwap,
+    // L&D Aliases (Phase 2 bridge)
+    lndSessions: demoSessions,
+    lndRules: demoRules,
+    lndSwapRequests: demoSwapRequests,
+    bookLndSession: bookDemoSession,
+    bulkBookLndSessions: bulkBookDemoSessions,
+    evaluateLndSession: evaluateDemoSession,
+    deleteLndSession: deleteDemoSession,
+    createLndRule: createDemoRule,
+    deleteLndRule: deleteDemoRule,
     generateTimetable,
     clearTimetable,
     createSubject,

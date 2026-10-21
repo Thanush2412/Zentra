@@ -8,6 +8,114 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { ensureMigration } from "@/lib/migrations";
 
+const DAY_ORDER_CYCLE = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
+
+function toYMD(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function eventDatesInRange(startDate: string, endDate?: string | null): string[] {
+  const [sY, sM, sD] = String(startDate).split("-").map(Number);
+  if (!sY || !sM || !sD) return [];
+  const [eY, eM, eD] = String(endDate || startDate).split("-").map(Number);
+  let cur = new Date(sY, sM - 1, sD);
+  const end = new Date(eY || sY, (eM || sM) - 1, eD || sD);
+  const dates: string[] = [];
+  while (cur <= end && dates.length < 60) {
+    dates.push(toYMD(cur));
+    cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
+  }
+  return dates;
+}
+
+// An event owns its dates in the timetable only through campus_daily_configs, so writing
+// academic_events alone leaves Day Order unchanged. Mirrors the exam auto-sync.
+async function syncEventDayOrder(
+  db: any,
+  collegeId: string,
+  startDate: string,
+  endDate: string | null | undefined,
+  eventName: string
+) {
+  const synced: { dateStr: string; day_order: string }[] = [];
+  const protectedDates: string[] = [];
+
+  for (const dStr of eventDatesInRange(startDate, endDate)) {
+    const existing: any = await db.get(
+      `SELECT day_type, day_order, session_mode FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?`,
+      [collegeId, dStr]
+    );
+
+    // A CM-declared holiday or an exam schedule owns this date; an event must not erase it.
+    if (existing && (existing.day_type === "holiday" || existing.day_type === "exam_day")) {
+      protectedDates.push(dStr);
+      continue;
+    }
+
+    let dayOrder = existing?.day_order && existing.day_order !== "None" ? existing.day_order : "";
+    if (!dayOrder) {
+      const prev: any = await db.get(
+        `SELECT day_order FROM campus_daily_configs
+         WHERE college_id = ? AND dateStr < ? AND day_order IS NOT NULL AND day_order != 'None'
+         ORDER BY dateStr DESC LIMIT 1`,
+        [collegeId, dStr]
+      );
+      const match = String(prev?.day_order || "").match(/Day\s+(\d+)/i);
+      dayOrder = match ? DAY_ORDER_CYCLE[parseInt(match[1], 10) % DAY_ORDER_CYCLE.length] : "Day 1";
+    }
+
+    await db.run(
+      `INSERT INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at)
+       VALUES (?, ?, ?, 'event', ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT (id) DO UPDATE SET
+         day_type = 'event',
+         day_order = EXCLUDED.day_order,
+         notes = EXCLUDED.notes,
+         updated_at = CURRENT_TIMESTAMP`,
+      [
+        `${collegeId}_${dStr}`,
+        collegeId,
+        dStr,
+        dayOrder,
+        existing?.session_mode || "Offline",
+        `Event: ${eventName}`
+      ]
+    );
+    synced.push({ dateStr: dStr, day_order: dayOrder });
+  }
+
+  return { synced, protectedDates };
+}
+
+// Reverts dates this sync stamped as 'event' once no event covers them any more.
+async function clearEventDayOrder(db: any, collegeId: string, dates: string[]) {
+  for (const dStr of dates) {
+    const cfg: any = await db.get(
+      `SELECT day_type FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?`,
+      [collegeId, dStr]
+    );
+    if (!cfg || cfg.day_type !== "event") continue;
+
+    const covering: any = await db.get(
+      `SELECT id FROM academic_events
+       WHERE college_id = ? AND date <= ? AND COALESCE(end_date, date) >= ?`,
+      [collegeId, dStr, dStr]
+    );
+    if (covering) continue;
+
+    await db.run(
+      `UPDATE campus_daily_configs SET day_type = 'working', notes = '', updated_at = CURRENT_TIMESTAMP
+       WHERE college_id = ? AND dateStr = ?`,
+      [collegeId, dStr]
+    );
+  }
+}
+
+function isConcreteCollege(collegeId: any): collegeId is string {
+  return typeof collegeId === "string" && collegeId.trim() !== "" && collegeId !== "all";
+}
+
+
 export async function GET(request: Request) {
   try {
     await ensureMigration("academic_calendar_tables");
@@ -73,6 +181,9 @@ export async function POST(request: Request) {
       }
       const eventId = id || "e_" + Date.now();
       const photosStr = typeof photos === "string" ? photos : (Array.isArray(photos) ? JSON.stringify(photos) : null);
+      const previousEvent: any = id
+        ? await db.get(`SELECT date, end_date, college_id FROM academic_events WHERE id = ?`, [id]).catch(() => null)
+        : null;
 
       if (isPg) {
         await db.run(
@@ -154,8 +265,25 @@ export async function POST(request: Request) {
         );
       }
 
+      // Auto-sync Day Order so the event actually appears on the campus calendar
+      let dayOrderSync: { synced: any[]; protectedDates?: string[]; skipped?: string } = { synced: [], skipped: "no_college" };
+      try {
+        if (isConcreteCollege(college_id)) {
+          const result = await syncEventDayOrder(db, college_id, date, end_date, name.trim());
+          dayOrderSync = { synced: result.synced, protectedDates: result.protectedDates };
+          if (isConcreteCollege(previousEvent?.college_id)) {
+            const staleDates = eventDatesInRange(previousEvent.date, previousEvent.end_date)
+              .filter((d: string) => !result.synced.some((s) => s.dateStr === d));
+            if (staleDates.length > 0) await clearEventDayOrder(db, previousEvent.college_id, staleDates);
+          }
+        }
+      } catch (cdcErr) {
+        console.warn("Could not auto-sync campus_daily_configs for event dates:", cdcErr);
+      }
+
       return NextResponse.json({ 
         success: true, 
+        dayOrderSync,
         event: { 
           id: eventId, name, date, end_date, desc, category, department, audience, 
           status, venue, college_id, photos: photosStr, coordinator, chief_guest, registration_link 
@@ -248,6 +376,13 @@ export async function POST(request: Request) {
             ]
           );
         }
+        if (isConcreteCollege(ev.college_id)) {
+          try {
+            await syncEventDayOrder(db, ev.college_id, ev.date, ev.end_date, String(ev.name).trim());
+          } catch (cdcErr) {
+            console.warn("Could not auto-sync campus_daily_configs for imported event dates:", cdcErr);
+          }
+        }
         count++;
       }
       return NextResponse.json({ success: true, count, message: `${count} events imported successfully` });
@@ -276,7 +411,26 @@ export async function DELETE(request: Request) {
       await db.run("DELETE FROM academic_years WHERE year_name = ?", [value]);
       return NextResponse.json({ success: true, message: "Academic year deleted" });
     } else if (type === "event") {
+      const deletedEvent: any = await db.get(
+        `SELECT date, end_date, college_id FROM academic_events WHERE id = ?`,
+        [value]
+      ).catch(() => null);
+
       await db.run("DELETE FROM academic_events WHERE id = ?", [value]);
+
+      // Release the Day Order rows this event had stamped, if nothing else covers those dates
+      if (deletedEvent && isConcreteCollege(deletedEvent.college_id)) {
+        try {
+          await clearEventDayOrder(
+            db,
+            deletedEvent.college_id,
+            eventDatesInRange(deletedEvent.date, deletedEvent.end_date)
+          );
+        } catch (cdcErr) {
+          console.warn("Could not release campus_daily_configs for deleted event dates:", cdcErr);
+        }
+      }
+
       return NextResponse.json({ success: true, message: "Academic event deleted" });
     }
 

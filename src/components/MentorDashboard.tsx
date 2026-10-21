@@ -731,7 +731,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
     // Leave cannot create an unhandled demo conflict: every impacted demo must
     // have a proposed alternative period (reserved + queued for L&D).
     if (unhandledImpactedDemos.length > 0) {
-      toast(`${unhandledImpactedDemos.length} demo session(s) during this leave still need an alternative period. Please complete the Demo Reallocation panel first.`, "warning");
+      toast(`${unhandledImpactedDemos.length} L&D session(s) during this leave still need an alternative period. Please complete the L&D Reallocation panel first.`, "warning");
       return;
     }
 
@@ -1209,7 +1209,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                             ? "bg-indigo-600 text-white shadow-2xs"
                             : "bg-slate-200 text-slate-600"
                         }`}>
-                          Step 2: Class Swap ({affectedSlots.length})
+                          Step 2: Class Cover ({affectedSlots.length})
                         </span>
                       </>
                     )}
@@ -1329,10 +1329,10 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                         <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
                         <div>
                           <div className="text-xs font-black text-amber-900">
-                            Demo Reallocation Required ({impactedDemos.length} scheduled session{impactedDemos.length > 1 ? "s" : ""} impacted)
+                            L&D Reallocation Required ({impactedDemos.length} scheduled session{impactedDemos.length > 1 ? "s" : ""} impacted)
                           </div>
                           <p className="text-[10.5px] text-amber-700 font-medium">
-                            Your leave overlaps scheduled demo(s). Pick an alternative free period for each — the chosen period is reserved and sent to L&amp;D for approval before your leave proceeds.
+                            Your leave overlaps scheduled L&D session(s). Pick an alternative free period for each — the chosen period is reserved and sent to L&amp;D for approval before your leave proceeds.
                           </p>
                         </div>
                       </div>
@@ -1497,7 +1497,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
               </div>
             )}
 
-            {/* Modal Body: STEP 2 (Class Cover & Swap Mapping) */}
+            {/* Modal Body: STEP 2 (Class Cover Mapping) */}
             {formStep === 2 && (
               <div className="p-5 space-y-3.5 bg-slate-50/40 max-h-[60vh] overflow-y-auto">
                 <div className="p-3 rounded-xl bg-indigo-50/80 border border-indigo-200 text-indigo-950 text-xs flex items-center justify-between gap-2.5 flex-wrap">
@@ -4106,7 +4106,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         day: queryDay,
         time: demo.timeSlot,
         course: demo.subject,
-        classGroup: demo.stream || "Demo Presentation Cohort",
+        classGroup: demo.stream || "L&D Presentation Cohort",
         location: "SME Presentation Hall",
         shift: "general"
       };
@@ -4116,7 +4116,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         isHandedOver: false,
         pendingHandover: null,
         hasAttendance: false,
-        roleLabel: `Demo Presentation (SME: ${demo.smeName})`,
+        roleLabel: `L&D Presentation (SME: ${demo.smeName})`,
         demoSession: demo
       };
     });
@@ -4212,7 +4212,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         day: queryDay,
         time: demoForSlot.timeSlot,
         course: demoForSlot.subject,
-        classGroup: demoForSlot.stream || "Demo Cohort",
+        classGroup: demoForSlot.stream || "L&D Cohort",
         location: "SME Presentation Room",
         shift: "general"
       };
@@ -4450,7 +4450,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         // 3. Demo slot
         const demo = demoByDateSlot.get(`${date.dateStr}|${time}`);
         if (demo) {
-          const demoSlot = { id: `demo_${demo.id}`, mentorId: demo.mentorId, college_id: currentMentor.college_id || "", day: queryDay, time: demo.timeSlot, course: demo.subject, classGroup: demo.stream || "Demo Cohort", location: "SME Presentation Room", shift: "general" };
+          const demoSlot = { id: `demo_${demo.id}`, mentorId: demo.mentorId, college_id: currentMentor.college_id || "", day: queryDay, time: demo.timeSlot, course: demo.subject, classGroup: demo.stream || "L&D Cohort", location: "L&D Presentation Room", shift: "general" };
           map.set(`${date.dateStr}|${time}`, { slot: demoSlot, type: "demo", cellStatus: "active", hasAttendance: false, pendingReq: null, approvedReq: null, demoSession: demo });
           return;
         }
@@ -5003,7 +5003,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   { id: "home", label: "Home", icon: Home },
                   { id: "timetable", label: "My Schedule", icon: Calendar },
                   { id: "interviews", label: "Interview Module", icon: Award },
-                  { id: "demo_evaluations", label: "My Demo", icon: Sparkles },
+                  { id: "demo_evaluations", label: "My L&D", icon: Sparkles },
                   { id: "attendance", label: "Student Attendance", icon: ClipboardList },
                   { id: "exams", label: "Exam Marks Entry", icon: FileText },
                   { id: "academic_tracker", label: "Academic Tracker", icon: BookOpen },
@@ -5163,8 +5163,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <Sparkles className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="block text-xs font-bold text-slate-800">My Demo</span>
-                  <span className="text-[10px] text-slate-400 font-medium">Grade candidate presentations</span>
+                  <span className="block text-xs font-bold text-slate-800">My L&D</span>
+                  <span className="text-[10px] text-slate-400 font-medium">L&D sessions and review scorecards</span>
                 </div>
               </button>
 
@@ -5369,7 +5369,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-2">
-                                      <h4 className="font-extrabold text-xs text-pink-900">Demo Presentation: {demoSession.subject}</h4>
+                                      <h4 className="font-extrabold text-xs text-pink-900">L&D Presentation: {demoSession.subject}</h4>
                                       <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${demoSession.status === "completed" ? "bg-emerald-100 text-emerald-800" :
                                           demoSession.status === "reallocation_required" ? "bg-amber-100 text-amber-800" :
                                             "bg-pink-100 text-pink-700"
@@ -5721,7 +5721,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <div className="flex items-center justify-between border-b border-pink-100/50 pb-2">
                         <div className="flex items-center gap-2">
                           <Sparkles className="h-4.5 w-4.5 text-pink-500" />
-                          <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest">Upcoming Demo Reviews</h3>
+                          <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest">Upcoming L&D Reviews</h3>
                         </div>
                         <span className="px-2 py-0.5 bg-pink-50 border border-pink-150 text-pink-600 text-[8px] font-black uppercase rounded-lg">
                           {upcomingDemos.length} Scheduled
@@ -11716,7 +11716,7 @@ Request Reschedule →
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-400 italic text-center py-6">No upcoming demo reviews scheduled.</p>
+                      <p className="text-xs text-slate-400 italic text-center py-6">No upcoming L&D reviews scheduled.</p>
                     )}
 
                     {/* Received Proposals */}

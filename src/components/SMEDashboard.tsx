@@ -377,7 +377,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   // Notification Counts for 5 Primary SME Sidebar Items
   const sidebarNavItems = [
     { id: "overview", label: "Dashboard", icon: Sparkles, count: 0 },
-    { id: "demo_list", label: "My Demos", icon: ClipboardList, count: totalAssigned },
+    { id: "demo_list", label: "My L&D Sessions", icon: ClipboardList, count: totalAssigned },
     { id: "weekly_plans", label: "Weekly Plans", icon: CalendarRange, count: 0 },
     { id: "skill_approvals", label: "Skill Approvals", icon: GraduationCap, count: 0 },
     { id: "eval_criteria", label: "Evaluation Criteria", icon: SlidersHorizontal, count: 0 },
@@ -462,7 +462,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `SME_Demos_${currentSME.name.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `SME_LND_Sessions_${currentSME.name.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -602,7 +602,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
     };
     try {
       const res = await requestDemoSwap(payload);
-      if (res.success) { setSuccessMsg("Demo reallocation proposal submitted successfully!"); setSwapModalSession(null); }
+      if (res.success) { setSuccessMsg("L&D session reallocation proposal submitted successfully!"); setSwapModalSession(null); }
       else { setErrorMsg(res.message); }
     } catch (e: any) { setErrorMsg(e.message || "Failed to submit reallocation request."); }
     finally { setSubmitting(false); }
@@ -816,7 +816,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 <div onClick={() => { setFilterStatus("All"); handleTabChange("demo_list"); }} className="cursor-pointer hover:scale-[1.02] transition-transform">
                   <Card
-                    label="Today's Demos"
+                    label="Today's L&D Sessions"
                     value={todayDemos.length}
                     icon={<Calendar className="h-4 w-4 text-blue-600" />}
                   />
@@ -872,7 +872,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                         onClick={() => handleTabChange("reallocation")}
                         className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-extrabold flex items-center gap-1 hover:bg-amber-700 cursor-pointer shadow-2xs"
                       >
-                        Resolve {affectedCount} Demos Requiring Reallocation <ChevronRight className="h-3 w-3" />
+                        Resolve {affectedCount} L&D Sessions Requiring Reallocation <ChevronRight className="h-3 w-3" />
                       </button>
                     )}
                   </div>
@@ -904,7 +904,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                             </button>
                           ) : (
                             <button onClick={() => handleOpenEvaluate(demo)} className="px-3 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-[10px] font-extrabold cursor-pointer shadow-2xs flex items-center gap-1">
-                              <CheckSquare className="h-3 w-3" /> Evaluate Demo
+                              <CheckSquare className="h-3 w-3" /> Evaluate Session
                             </button>
                           )}
                         </div>
@@ -923,14 +923,14 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
           {/* ═══════════════ TAB 1: MY DEMOS ═══════════════ */}
           {activeTab === "demo_list" && (
             <Panel
-              title="MY DEMOS"
-              subtitle="View and manage faculty demo sessions assigned to your subject stream"
+              title="MY L&D SESSIONS"
+              subtitle="View and manage faculty L&D sessions assigned to your subject stream"
             >
               <div className="space-y-5">
                 {/* Sub-tab Status Filters */}
                 <div className="flex items-center gap-2 border-b border-slate-200/80 dark:border-slate-800 pb-3 overflow-x-auto">
                   {[
-                    { label: "All Demos", value: "All" },
+                    { label: "All L&D Sessions", value: "All" },
                     { label: "Confirmed", value: "Confirmed" },
                     { label: "Reallocation Required", value: "Reallocation Required" },
                     { label: "Pending Approval", value: "Pending Approval" },
@@ -1003,7 +1003,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                             <span className="text-[9px] text-slate-400 font-semibold truncate block">Head: {currentSME.name}</span>
                           </div>
                           <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
-                            <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">Demo Time</span>
+                            <span className="text-[8.5px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">L&D Session Time</span>
                             <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block font-mono">{demo.dateStr}</span>
                             <span className="text-[9px] text-slate-500 font-medium block">{demo.timeSlot}</span>
                           </div>
@@ -1032,7 +1032,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                             ) : demo.status === "confirmed" ? (
                               <>
                                 <button onClick={() => handleOpenEvaluate(demo)} className="px-3.5 py-1.5 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-xs font-extrabold transition-all cursor-pointer shadow-2xs flex items-center gap-1">
-                                  <CheckSquare className="h-3.5 w-3.5" /> Evaluate Demo
+                                  <CheckSquare className="h-3.5 w-3.5" /> Evaluate Session
                                 </button>
                                 <button onClick={() => handleOpenSwapModal(demo)} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1">
                                   <RefreshCw className="h-3.5 w-3.5" /> Reallocate
@@ -1049,7 +1049,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     ))
                   ) : (
                     <div className="p-10 text-center text-slate-400 text-xs font-bold italic bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl">
-                      No demo sessions found matching your filters.
+                      No L&D sessions found matching your filters.
                     </div>
                   )}
                 </div>
@@ -1149,16 +1149,16 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               {/* Central Dynamic Matrix Grid */}
               <Panel
                 title="SME AVAILABILITY & TIMETABLE MATRIX"
-                subtitle="Live central calendar displaying Demo Evaluation slots, Training slots, Confirmed Bookings, and Leaves"
+                subtitle="Live central calendar displaying L&D Evaluation slots, Training slots, Confirmed Bookings, and Leaves"
               >
                 <div className="space-y-6">
                   {/* Legend & Action Bar */}
                   <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs font-bold">
                     <div className="flex flex-wrap items-center gap-2.5">
                       <span className="text-[10px] font-black uppercase text-slate-400">Legend:</span>
-                      <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-md text-[10px] font-bold">Free Demo Slot</span>
+                      <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-md text-[10px] font-bold">Free L&D Slot</span>
                       <span className="px-2.5 py-1 bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 border border-violet-200 dark:border-violet-800 rounded-md text-[10px] font-bold">Training / Workshop Time</span>
-                      <span className="px-2.5 py-1 bg-pink-100 text-pink-800 dark:bg-pink-950/40 dark:text-pink-300 border border-pink-200 dark:border-pink-800 rounded-md text-[10px] font-bold">Confirmed Demo (Booked)</span>
+                      <span className="px-2.5 py-1 bg-pink-100 text-pink-800 dark:bg-pink-950/40 dark:text-pink-300 border border-pink-200 dark:border-pink-800 rounded-md text-[10px] font-bold">Confirmed L&D (Booked)</span>
                       <span className="px-2.5 py-1 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-md text-[10px] font-bold">Class / Duty</span>
                       <span className="px-2.5 py-1 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-md text-[10px] font-bold">Leave</span>
                     </div>
@@ -1348,11 +1348,11 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   )}
                 </div>
 
-                {/* Section 2: Demos Requiring Reallocation */}
+                {/* Section 2: L&D Sessions Requiring Reallocation */}
                 <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    Demos Requiring Reallocation ({affectedLeaveDemos.length})
+                    L&D Sessions Requiring Reallocation ({affectedLeaveDemos.length})
                   </h3>
 
                   {affectedLeaveDemos.length > 0 ? (
@@ -1379,7 +1379,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     </div>
                   ) : (
                     <div className="py-8 text-center text-slate-400 text-xs font-bold italic bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl">
-                      No demos currently affected by approved faculty leave.
+                      No L&D sessions currently affected by approved faculty leave.
                     </div>
                   )}
                 </div>
@@ -1391,7 +1391,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
           {activeTab === "history" && (
             <Panel
               title="EVALUATION HISTORY LOG"
-              subtitle="Completed demo evaluations, 100-mark scorecards, and recorded feedback"
+              subtitle="Completed L&D evaluations, 100-mark scorecards, and recorded feedback"
             >
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -1404,7 +1404,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     type="button"
                     onClick={handleExportHistoryCSV}
                     className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-black border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
-                    title="Export completed demo evaluations and scorecards"
+                    title="Export completed L&D evaluations and scorecards"
                   >
                     <Download className="h-3.5 w-3.5" /> Export Evaluation History
                   </button>
@@ -1471,7 +1471,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                     <RefreshCw className="h-4.5 w-4.5 text-indigo-500" />
-                    Reallocate Demo Session
+                    Reallocate L&D Session
                   </h3>
                   <button onClick={() => setSwapModalSession(null)} className="text-slate-400 hover:text-slate-700 text-xs font-bold cursor-pointer">Close</button>
                 </div>
@@ -1548,7 +1548,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                 <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
-                    SME Demo Evaluation Form
+                    SME L&D Evaluation Form
                   </h3>
                   <button onClick={() => setEvaluationModalSession(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer">Close</button>
                 </div>
@@ -1842,8 +1842,8 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                                 }}
                                 className="text-xs font-extrabold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 cursor-pointer shadow-xs"
                               >
-                                <option value="demo">Demo Evaluation Slot (For Timetable)</option>
-                                <option value="training">Faculty Training / Workshop (Excluded from Demos)</option>
+                                <option value="demo">L&D Evaluation Slot (For Timetable)</option>
+                                <option value="training">Faculty Training / Workshop (Excluded from L&D)</option>
                               </select>
                             </div>
 

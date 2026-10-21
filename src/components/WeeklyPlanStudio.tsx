@@ -1333,7 +1333,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                 <div className="text-xs text-slate-600">
                   <span className="font-bold">Skill Development Verdict: </span>
                   <span className="font-bold text-slate-700 uppercase">Pending SME Review</span>
-                  <span className="text-slate-400 font-medium"> — your demo outcome and SME sign-off will appear here.</span>
+                  <span className="text-slate-400 font-medium"> — your L&D outcome and SME sign-off will appear here.</span>
                 </div>
               </div>
             );
@@ -2362,9 +2362,9 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
               </div>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
                 {isSME
-                  ? "Review mentor weekly plans, cross-check planned topics against conducted periods and demo completions, and verify."
+                  ? "Review mentor weekly plans, cross-check planned topics against conducted periods and L&D completions, and verify."
                   : role === "kam"
-                  ? "Monitor weekly plans, planned vs completed topics, demo completion, and SME verification status across your assigned colleges."
+                  ? "Monitor weekly plans, planned vs completed topics, L&D completion, and SME verification status across your assigned colleges."
                   : "View mentor weekly teaching plans, topic completion progress, and SME verification status for your campus."}
               </p>
             </div>

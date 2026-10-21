@@ -187,6 +187,25 @@ export async function GET(request: Request) {
                 cur.setDate(cur.getDate() + 1);
               }
             } catch (_) {}
+
+            try {
+              const autoNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+              const autoDateSpan = rec.end_date && rec.end_date !== rec.start_date
+                ? `${rec.start_date} to ${rec.end_date}`
+                : rec.start_date;
+              await db.run(
+                `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
+                 VALUES (?, ?, ?, ?, 0, ?, 'leave_decision', ?)`,
+                [
+                  autoNotifId,
+                  rec.mentor_id,
+                  `${rec.request_type} Request Approved`,
+                  `Your ${rec.request_type} application for ${autoDateSpan} was auto-approved because every assigned class cover was accepted${coverNames ? ` (covered by ${coverNames})` : ""}.`,
+                  "/mentor/leaves",
+                  new Date().toISOString()
+                ]
+              );
+            } catch (_) {}
           }
         }
       } catch (_) {}
@@ -409,6 +428,30 @@ export async function POST(request: Request) {
           });
         } catch (mailErr) {
           console.error("Failed to send leave decision email to mentor:", mailErr);
+        }
+      }
+
+      // In-app notification to mentor (bell) so the decision is visible without email
+      if (reqRecord.mentor_id) {
+        try {
+          const decisionNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+          const dateSpan = reqRecord.end_date && reqRecord.end_date !== reqRecord.start_date
+            ? `${reqRecord.start_date} to ${reqRecord.end_date}`
+            : reqRecord.start_date;
+          await db.run(
+            `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
+             VALUES (?, ?, ?, ?, 0, ?, 'leave_decision', ?)`,
+            [
+              decisionNotifId,
+              reqRecord.mentor_id,
+              `${reqRecord.request_type} Request ${newStatus === "approved" ? "Approved" : "Rejected"}`,
+              `Your ${reqRecord.request_type} application for ${dateSpan} has been ${newStatus} by ${approvedBy || "Campus Manager"}.${rejectionReason ? ` Remarks: ${rejectionReason}` : ""}`,
+              "/mentor/leaves",
+              new Date().toISOString()
+            ]
+          );
+        } catch (notifErr) {
+          console.error("Failed to write leave decision notification for mentor:", notifErr);
         }
       }
 

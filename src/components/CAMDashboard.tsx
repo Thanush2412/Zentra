@@ -101,15 +101,48 @@ const RevealSensitiveId: React.FC<{ value?: string | null; mask: (v?: string | n
   );
 };
 
+const SEMESTER_TO_ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
+const ROMAN_TO_SEMESTER: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8 };
+
+const getSemesterNumber = (semester: string): number =>
+  parseInt((semester || "").replace(/\D/g, ""), 10) || 99;
+
+const formatSemesterChip = (semester: string): string => {
+  const n = getSemesterNumber(semester);
+  return n <= 8 ? `SEM ${SEMESTER_TO_ROMAN[n - 1]}` : "—";
+};
+
+/**
+ * Canonical "Semester N" for a class group ("III BCA" -> Semester 5,
+ * "SEM VII" -> Semester 7). Empty string when the label carries no semester
+ * or year clue, so unresolved cohorts are never filed under a real semester.
+ */
 const getSemesterFromClassGroup = (cg: string): string => {
-  const lower = cg.toLowerCase();
-  if (lower.includes("sem vi") || lower.includes("semester vi") || lower.includes("sem 6") || lower.includes("semester 6")) return "Semester 6";
-  if (lower.includes("sem v") || lower.includes("semester v") || lower.includes("sem 5") || lower.includes("semester 5") || lower.startsWith("iii ") || lower.includes(" 3rd ") || lower.includes("year 3") || lower.includes("3rd year")) return "Semester 5";
-  if (lower.includes("sem iv") || lower.includes("semester iv") || lower.includes("sem 4") || lower.includes("semester 4")) return "Semester 4";
-  if (lower.includes("sem iii") || lower.includes("semester iii") || lower.includes("sem 3") || lower.includes("semester 3") || lower.startsWith("ii ") || lower.includes(" 2nd ") || lower.includes("year 2") || lower.includes("2nd year")) return "Semester 3";
-  if (lower.includes("sem ii") || lower.includes("semester ii") || lower.includes("sem 2") || lower.includes("semester 2")) return "Semester 2";
-  if (lower.includes("sem i") || lower.includes("semester i") || lower.includes("sem 1") || lower.includes("semester 1") || lower.startsWith("i ") || lower.includes(" 1st ") || lower.includes("year 1") || lower.includes("1st year")) return "Semester 1";
-  return "All Semesters";
+  const raw = (cg || "").trim();
+  const toSem = (token: string): number =>
+    /^\d/.test(token) ? parseInt(token, 10) : ROMAN_TO_SEMESTER[token.toLowerCase()] || 0;
+
+  const explicitSem = raw.match(/sem(?:ester)?[\s\-_]*(\d{1,2}|viii|vii|vi|v|iv|iii|ii|i)(?![a-z\d])/i);
+  if (explicitSem) {
+    const n = toSem(explicitSem[1]);
+    if (n >= 1 && n <= 8) return `Semester ${n}`;
+  }
+
+  const yearWord =
+    raw.match(/(?:year|yr)[\s\-_]*(iv|iii|ii|vi|v|i|\d{1,2})(?![a-z\d])/i) ||
+    raw.match(/(\d)(?:st|nd|rd|th)[\s\-_]*year/i);
+  if (yearWord) {
+    const n = toSem(yearWord[1]);
+    if (n >= 1 && n <= 4) return `Semester ${n * 2 - 1}`;
+  }
+
+  const leadingYear = raw.match(/^(iv|iii|ii|vi|v|i)[\s\-_]+[a-z]/i);
+  if (leadingYear) {
+    const n = ROMAN_TO_SEMESTER[leadingYear[1].toLowerCase()] || 0;
+    if (n >= 1 && n <= 4) return `Semester ${n * 2 - 1}`;
+  }
+
+  return "";
 };
 
 const formatYearWiseRooms = (defaultRoomStr?: string) => {
@@ -12162,8 +12195,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     try {
       const res = await saveAcademicEvent(payload);
       if (res.success) {
-        toast(editingEventObj ? "Campus event updated successfully." : "Campus event created successfully.", "success");
+        const synced = res.dayOrderSync?.synced || [];
+        const protectedDates = res.dayOrderSync?.protectedDates || [];
+        const action = editingEventObj ? "updated" : "created";
+        if (synced.length > 0) {
+          toast(
+            `Campus event ${action}. Day Order set to Event for ${synced.map((s: any) => `${s.dateStr} (${s.day_order})`).join(", ")}.`,
+            "success"
+          );
+        } else if (res.dayOrderSync?.skipped) {
+          toast(`Campus event ${action}. Open a specific campus to sync its Day Order.`, "warning");
+        } else if (protectedDates.length > 0) {
+          toast(`Campus event ${action}. Day Order left as Holiday/Exam for ${protectedDates.join(", ")}.`, "warning");
+        } else {
+          toast(`Campus event ${action}.`, "success");
+        }
         setShowEventModal(false);
+        if (synced.length > 0) await fetchDailyConfigs();
       } else {
         toast(res.message || "Failed to save event", "error");
       }
@@ -12575,8 +12623,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       });
       const resData = await res.json();
       if (resData.success) {
-        toast(`${formattedEvents.length} events imported successfully!`, "success");
+        const scopedToCampus = !!activeCollegeId && activeCollegeId !== "all";
+        toast(
+          `${formattedEvents.length} events imported.` +
+          (scopedToCampus ? " Day Order synced for their dates." : " Open a specific campus to sync Day Order."),
+          "success"
+        );
         await refreshData();
+        if (scopedToCampus) await fetchDailyConfigs();
       } else {
         toast(resData.message || "Failed to import events.", "error");
       }
@@ -20562,16 +20616,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     ...(collegeStudents || []).map(st => st.classGroup)
                   ].filter(Boolean))).sort();
 
-                  const availableSemesters = [
-                    "Semester 1",
-                    "Semester 2",
-                    "Semester 3",
-                    "Semester 4",
-                    "Semester 5",
-                    "Semester 6",
-                    "Semester 7",
-                    "Semester 8"
-                  ];
+                  const availableSemesters = Array.from(new Set([
+                    ...campusLogs.map(l => getSemesterFromClassGroup(l.class_group || "")),
+                    ...(subjectsList || [])
+                      .filter(s => !activeCollegeId || activeCollegeId === "all" || !s.college_id || s.college_id === activeCollegeId)
+                      .map(s => getSemesterFromClassGroup(s.semester || ""))
+                  ].filter(Boolean))).sort((a, b) => getSemesterNumber(a) - getSemesterNumber(b));
 
                   const availableFaculty = collegeMentors.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -20710,7 +20760,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       if (!matchTopic && !matchRemarks && !matchMentor && !matchSubject && !matchClass) return false;
                     }
                     return true;
-                  }).sort((a, b) => b.date.localeCompare(a.date));
+                  }).sort((a, b) => {
+                    const semA = getSemesterNumber(getSemesterFromClassGroup(a.class_group || ""));
+                    const semB = getSemesterNumber(getSemesterFromClassGroup(b.class_group || ""));
+                    if (semA !== semB) return semA - semB;
+                    if (a.date !== b.date) return b.date.localeCompare(a.date);
+                    return (a.period_slot || "").localeCompare(b.period_slot || "");
+                  });
 
                   // KPIs
                   const totalLogged = campusLogs.length;
@@ -21005,6 +21061,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <th className="p-3 w-12 text-center">#</th>
                                   <th className="p-3">Date &amp; Slot</th>
                                   <th className="p-3">Class Group</th>
+                                  <th className="p-3 w-[88px] text-center">Semester</th>
                                   <th className="p-3">Academic Subject</th>
                                   <th className="p-3">Faculty Member</th>
                                   <th className="p-3">Unit</th>
@@ -21016,6 +21073,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <tbody className="divide-y divide-slate-100">
                                 {paginatedLogs.map((log, idx) => {
                                   const mentorObj = collegeMentors.find(m => m.id === log.mentor_id);
+                                  const logSemester = getSemesterFromClassGroup(log.class_group || "");
                                   const rowNum = (camAcadPage - 1) * camAcadPageSize + idx + 1;
                                   return (
                                     <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
@@ -21026,6 +21084,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       </td>
                                       <td className="p-3 font-bold text-slate-700 whitespace-nowrap">
                                         {log.class_group}
+                                      </td>
+                                      <td className="p-3 text-center whitespace-nowrap">
+                                        <span className="px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase border bg-sky-50 text-sky-700 border-sky-200">
+                                          {formatSemesterChip(logSemester)}
+                                        </span>
                                       </td>
                                       <td className="p-3">
                                         <div className="font-black text-slate-900">{log.subject}</div>
@@ -22724,50 +22787,31 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             <div className="space-y-6 animate-fadeIn pb-12">
               {/* Top Summary KPI Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Campus Events</span>
-                    <h3 className="text-xl font-black text-slate-900 mt-1">{filteredEvents.length}</h3>
-                  </div>
-                  <div className="h-10 w-10 rounded-xl bg-pink-50 text-[#D528A2] flex items-center justify-center font-bold">
-                    <Calendar className="h-5 w-5" />
-                  </div>
+                <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Campus Events</span>
+                  <span className="text-2xl font-black text-slate-800">{filteredEvents.length}</span>
+                  <span className="text-[10px] font-semibold text-slate-400 block mt-1">Configured for this campus</span>
                 </div>
-
-                <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">Upcoming Fests</span>
-                    <h3 className="text-xl font-black text-indigo-900 mt-1">
-                      {filteredEvents.filter(e => (e.status || "Upcoming") === "Upcoming").length}
-                    </h3>
-                  </div>
-                  <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs">
-                    <Clock className="h-5 w-5" />
-                  </div>
+                <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Upcoming Fests</span>
+                  <span className="text-2xl font-black text-indigo-600">
+                    {filteredEvents.filter(e => (e.status || "Upcoming") === "Upcoming").length}
+                  </span>
+                  <span className="text-[10px] font-semibold text-indigo-600 block mt-1">Yet to begin</span>
                 </div>
-
-                <div className="p-4 rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Live &amp; Ongoing</span>
-                    <h3 className="text-xl font-black text-emerald-900 mt-1">
-                      {filteredEvents.filter(e => e.status === "Ongoing").length}
-                    </h3>
-                  </div>
-                  <div className="h-10 w-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
-                    <Sparkles className="h-5 w-5" />
-                  </div>
+                <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Live &amp; Ongoing</span>
+                  <span className="text-2xl font-black text-emerald-600">
+                    {filteredEvents.filter(e => e.status === "Ongoing").length}
+                  </span>
+                  <span className="text-[10px] font-semibold text-emerald-600 block mt-1">Running right now</span>
                 </div>
-
-                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 shadow-xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Completed &amp; Memories</span>
-                    <h3 className="text-xl font-black text-slate-800 mt-1">
-                      {filteredEvents.filter(e => e.status === "Completed").length}
-                    </h3>
-                  </div>
-                  <div className="h-10 w-10 rounded-xl bg-slate-200 text-slate-700 flex items-center justify-center font-bold">
-                    <CheckCircle2 className="h-5 w-5" />
-                  </div>
+                <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Completed &amp; Memories</span>
+                  <span className="text-2xl font-black text-amber-600">
+                    {filteredEvents.filter(e => e.status === "Completed").length}
+                  </span>
+                  <span className="text-[10px] font-semibold text-amber-600 block mt-1">Wrapped up with photos</span>
                 </div>
               </div>
 
@@ -22779,7 +22823,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     onClick={() => setEventSubTab("events")}
                     className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
                       eventSubTab === "events"
-                        ? "bg-[#D528A2] text-white shadow-md shadow-[#D528A2]/20"
+                        ? "btn-gradient"
                         : "bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
                     }`}
                   >
@@ -22797,7 +22841,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     onClick={() => setEventSubTab("achievements")}
                     className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
                       eventSubTab === "achievements"
-                        ? "bg-[#D528A2] text-white shadow-md shadow-[#D528A2]/20"
+                        ? "btn-gradient"
                         : "bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
                     }`}
                   >
@@ -22850,7 +22894,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={handleExportEventsExcel}
-                          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                         >
                           <FileSpreadsheet className="h-3.5 w-3.5" />
                           <span>Export Report</span>
@@ -22860,7 +22904,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <button
                             type="button"
                             onClick={handleOpenCreateEventModal}
-                            className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 hover:opacity-95 transition-all cursor-pointer flex items-center gap-1.5"
+                            className="px-4 py-1.5 rounded-xl btn-gradient text-xs cursor-pointer flex items-center gap-1.5"
                           >
                             <Plus className="h-4 w-4" />
                             <span>+ Create Event</span>
@@ -22879,7 +22923,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       placeholder="Search fest title, speaker, coordinator or venue..."
                       value={eventSearchQuery}
                       onChange={e => setEventSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                      className="w-full pl-9 pr-3 py-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2] outline-none font-semibold"
                     />
                   </div>
 
@@ -22958,7 +23002,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         type="button"
                         onClick={handleOpenCreateEventModal}
                         disabled={readOnly}
-                        className={`px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition-all inline-flex items-center gap-1.5 shadow-sm ${readOnly ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+                        className={`px-4 py-2 rounded-xl btn-gradient text-xs inline-flex items-center gap-1.5 ${readOnly ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
                       >
                         <Plus className="h-4 w-4" />
                         + Create Event
@@ -23261,7 +23305,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="relative pl-6 border-l-2 border-indigo-200 space-y-8 my-4">
                     {filteredEvents.map(ev => (
                       <div key={ev.id} className="relative group">
-                        <div className="absolute -left-[31px] top-1.5 h-4 w-4 rounded-full bg-indigo-600 ring-4 ring-indigo-100 border-2 border-white shadow-xs" />
+                        <div className="absolute -left-[31px] top-1.5 h-4 w-4 rounded-full bg-[#D528A2] ring-4 ring-[#D528A2]/15 border-2 border-white shadow-xs" />
                         <div className="bg-slate-50/70 border border-slate-200 p-4 rounded-xl space-y-2 hover:bg-white transition-all shadow-2xs">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <span className="text-xs font-mono font-black text-indigo-600">{ev.date}{ev.end_date ? ` → ${ev.end_date}` : ""}</span>
@@ -23373,7 +23417,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => handleOpenCreateAchievementModal()}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white font-extrabold text-xs shadow-md shadow-[#D528A2]/20 hover:opacity-95 transition-all cursor-pointer flex items-center gap-1.5"
+                      className="px-4 py-2 rounded-xl btn-gradient text-xs cursor-pointer flex items-center gap-1.5"
                     >
                       <Plus className="h-4 w-4" />
                       <span>Record Achievement</span>
@@ -23390,7 +23434,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       placeholder="Search achievements by topic, student name, team, or event..."
                       value={achSearchQuery}
                       onChange={(e) => setAchSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                      className="w-full pl-9 pr-3 py-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2] outline-none font-semibold"
                     />
                   </div>
 
@@ -23419,7 +23463,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => handleOpenCreateAchievementModal()}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#D528A2] to-pink-600 text-white text-xs font-extrabold transition-all inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                      className="px-4 py-2 rounded-xl btn-gradient text-xs inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="h-4 w-4" />
                       <span>Record Achievement</span>
@@ -23640,7 +23684,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           placeholder="e.g. CodeCraft 2026 - 24hr Campus Hackathon"
                           value={evFormName}
                           onChange={e => setEvFormName(e.target.value)}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2] text-sm"
                         />
                       </div>
 
@@ -23807,7 +23851,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             </label>
                             <p className="text-[10px] text-slate-400">Upload photos taken during or at the end of the event/fest.</p>
                           </div>
-                          <label className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold cursor-pointer transition-all flex items-center gap-1">
+                          <label className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-extrabold cursor-pointer transition-all flex items-center gap-1">
                             <Upload className="h-3.5 w-3.5" />
                             <span>+ Add Photo</span>
                             <input type="file" accept="image/*" onChange={handleAddEventPhotoFile} className="hidden" />
@@ -23842,7 +23886,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <Button type="button" variant="secondary" onClick={() => setShowEventModal(false)}>Cancel</Button>
                         <LoadingButton
                           type="submit"
-                          variant="primary"
+                          variant="gradient"
                           isLoading={isSubmittingEvent}
                           loadingText={editingEventObj ? "Saving Changes..." : "Creating Event..."}
                         >
@@ -23889,7 +23933,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             onClick={() => setAchFormParticipationType("individual")}
                             className={`p-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 border ${
                               achFormParticipationType === "individual"
-                                ? "bg-[#D528A2] text-white border-[#D528A2] shadow-sm"
+                                ? "btn-gradient border-none"
                                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                             }`}
                           >
@@ -23901,7 +23945,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             onClick={() => setAchFormParticipationType("team")}
                             className={`p-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center justify-center gap-2 border ${
                               achFormParticipationType === "team"
-                                ? "bg-[#D528A2] text-white border-[#D528A2] shadow-sm"
+                                ? "btn-gradient border-none"
                                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                             }`}
                           >
@@ -23920,7 +23964,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               placeholder="e.g. Team ByteCrafters, RoboKnights, AgriTech Innovators"
                               value={achFormTeamName}
                               onChange={e => setAchFormTeamName(e.target.value)}
-                              className="w-full p-2.5 border border-indigo-200 rounded-xl bg-white font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white font-bold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                             />
                           </div>
                         )}
@@ -23938,7 +23982,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="e.g. 1st Place Winner - AI Track, Gold Medalist, Best Paper Award"
                             value={achFormTitle}
                             onChange={e => setAchFormTitle(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           />
                         </div>
 
@@ -23951,7 +23995,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="e.g. Autonomous Crop Health Drone with Edge AI, Quantum Encryption Protocol"
                             value={achFormTopic}
                             onChange={e => setAchFormTopic(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           />
                         </div>
                       </div>
@@ -23967,7 +24011,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="e.g. Smart India Hackathon 2026, State Athletics Meet"
                             value={achFormEventName}
                             onChange={e => setAchFormEventName(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           />
                         </div>
 
@@ -23980,7 +24024,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="e.g. Ministry of Education & AICTE, IIT Bombay, IEEE"
                             value={achFormOrganizer}
                             onChange={e => setAchFormOrganizer(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           />
                         </div>
                       </div>
@@ -23992,7 +24036,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <select
                             value={achFormBadge}
                             onChange={e => setAchFormBadge(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           >
                             <option value="1st Place / Winner">1st Place / Winner</option>
                             <option value="1st Runner Up">1st Runner Up (2nd Place)</option>
@@ -24014,7 +24058,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <select
                             value={achFormLevel}
                             onChange={e => setAchFormLevel(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           >
                             <option value="College / Intra-Campus">College / Intra-Campus Level</option>
                             <option value="Zonal / University">Zonal / University Level</option>
@@ -24040,7 +24084,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 setAchFormCategory(e.target.value);
                               }
                             }}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           >
                             {standardAchCategories.map(cat => (
                               <option key={cat} value={cat}>{cat}</option>
@@ -24055,7 +24099,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             type="date"
                             value={achFormDateStr}
                             onChange={e => setAchFormDateStr(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           />
                         </div>
                       </div>
@@ -24087,7 +24131,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="e.g. ₹50,000 Cash Prize + Shield + Job Offer"
                             value={achFormRewardPrize}
                             onChange={e => setAchFormRewardPrize(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           />
                         </div>
 
@@ -24100,7 +24144,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="https://drive.google.com/... or verification link"
                             value={achFormProofLink}
                             onChange={e => setAchFormProofLink(e.target.value)}
-                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                           />
                         </div>
                       </div>
@@ -24201,7 +24245,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           setAchFormSelectedStudentIds(prev => [...prev, st.id]);
                                         }
                                       }}
-                                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                                      className="rounded text-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/20"
                                     />
                                     <span className="text-xs text-slate-800">{st.name}</span>
                                     {(st.register_number || (st as any).roll_number) && (
@@ -24229,7 +24273,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           placeholder="Brief description of how they achieved it, project problem solved, rounds cleared..."
                           value={achFormDescription}
                           onChange={e => setAchFormDescription(e.target.value)}
-                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
                         />
                       </div>
 
@@ -24282,7 +24326,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </Button>
                         <LoadingButton
                           type="submit"
-                          variant="primary"
+                          variant="gradient"
                           isLoading={isSubmittingAchievement}
                           loadingText={editingAchievement ? "Saving Changes..." : "Recording..."}
                         >
@@ -24417,7 +24461,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           href={viewingAchievement.proof_link}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors inline-flex items-center gap-1"
+                          className="px-3 py-1 btn-gradient text-xs rounded-lg inline-flex items-center gap-1"
                         >
                           <span>Open Link</span>
                           <ExternalLink className="h-3 w-3" />
@@ -24470,7 +24514,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             setViewingAchievement(null);
                             handleOpenEditAchievementModal(achToEdit);
                           }}
-                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors shadow-sm"
+                          className="px-4 py-2 rounded-xl btn-gradient text-xs cursor-pointer flex items-center gap-1.5"
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                           <span>Edit Achievement</span>
