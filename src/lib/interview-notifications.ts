@@ -150,7 +150,7 @@ export async function dispatchExternalInterviewNotifications(
       try {
         const u = await db.get("SELECT role FROM users WHERE id = ?", userId);
         const role = u?.role || "cm";
-        const link = role === "student" ? "/student/interviews" : role === "mentor" ? "/mentor/interviews" : role === "kam" ? "/kam/analytics" : "/cam/interviews";
+        const link = role === "student" ? "/student/interviews" : role === "mentor" ? "/mentor/interviews" : role === "kam" ? "/kam/analytics" : "/cm/interviews";
         await db.run(
           `INSERT INTO notifications (id, user_id, title, message, is_read, link, created_at)
            VALUES (?, ?, ?, ?, 0, ?, ?)`,

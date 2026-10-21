@@ -2508,7 +2508,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           remind_by_email: currentMentor.email,
           title: `Day Order Not Configured — ${dateFormatted}`,
           message: `${currentMentor.name || "A Mentor"} needs the Day Order / Day Type configured for ${dateFormatted} so they can mark attendance.`,
-          link: `/cam/daily-configs?date=${dateStr}`,
+          link: `/cm/daily-configs?date=${dateStr}`,
           type: "reminder",
         }),
       });
