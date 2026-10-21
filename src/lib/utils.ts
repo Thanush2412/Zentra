@@ -8,10 +8,13 @@ const ROLE_ALIASES: Record<string, NormalizedRole> = {
   cam: "cm",
   campus_manager: "cm",
   "l and d": "L and D",
+  "learning and development": "L and D",
+  "learning & development": "L and D",
   lnd: "L and D",
   "l&d": "L and D",
   ld: "L and D",
-  allocator: "L and D"
+  allocator: "L and D",
+  "demo allocator": "L and D"
 };
 
 const ROLE_HOME_PATHS: Record<string, string> = {
@@ -31,6 +34,12 @@ export function normalizeRoleValue(role?: string | null): NormalizedRole {
   const raw = String(role || "").toLowerCase().trim();
   if (!raw) return "student";
   return (ROLE_ALIASES[raw] || raw) as NormalizedRole;
+}
+
+/** UI label for a role value — all legacy allocator spellings render as L&D. */
+export function formatRoleLabel(role?: string | null): string {
+  const raw = String(role || "").trim();
+  return normalizeRoleValue(raw) === "L and D" ? "L&D" : raw;
 }
 
 /** Canonical dashboard URL for a role — the L&D workspace lives at /l-and-d. */

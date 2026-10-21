@@ -185,7 +185,7 @@ export function LndAllocationDashboard() {
 
   // Left Sidebar & Tab Navigation States
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [allocatorTab, setAllocatorTab] = useState<"matrix" | "rules" | "queue">("matrix");
+  const [activeTab, setActiveTab] = useState<"matrix" | "rules" | "queue">("matrix");
   const [rulesSelectedGroup, setRulesSelectedGroup] = useState<string>("All");
 
   // Per-Mentor Custom Weekly L&D Targets state
@@ -2507,8 +2507,8 @@ export function LndAllocationDashboard() {
           {/* Navigation Tabs */}
           <nav className="py-4 space-y-1.5">
             <button
-              onClick={() => setAllocatorTab("matrix")}
-              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${allocatorTab === "matrix"
+              onClick={() => setActiveTab("matrix")}
+              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "matrix"
                 ? "sidebar-active-item font-black border-none"
                 : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
                 }`}
@@ -2518,8 +2518,8 @@ export function LndAllocationDashboard() {
             </button>
 
             <button
-              onClick={() => setAllocatorTab("rules")}
-              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${allocatorTab === "rules"
+              onClick={() => setActiveTab("rules")}
+              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTab === "rules"
                 ? "sidebar-active-item font-black border-none"
                 : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
                 }`}
@@ -2529,8 +2529,8 @@ export function LndAllocationDashboard() {
             </button>
 
             <button
-              onClick={() => setAllocatorTab("queue")}
-              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${allocatorTab === "queue"
+              onClick={() => setActiveTab("queue")}
+              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${activeTab === "queue"
                 ? "sidebar-active-item font-black border-none"
                 : "text-slate-600 hover:text-[#D528A2] hover:bg-[#D528A2]/5 dark:text-slate-400 dark:hover:bg-white/5"
                 }`}
@@ -2635,7 +2635,7 @@ export function LndAllocationDashboard() {
         </div>
 
         {/* TAB 1: ALLOCATION MATRIX */}
-        {allocatorTab === "matrix" && (
+        {activeTab === "matrix" && (
           <div className="space-y-6">
 
 
@@ -2970,7 +2970,7 @@ export function LndAllocationDashboard() {
         )}
 
         {/* TAB 2: AUTO-SCHEDULER ENGINE & DEPARTMENT RULES */}
-        {allocatorTab === "rules" && (
+        {activeTab === "rules" && (
           <Panel
             title="DEPARTMENT L&D TARGET RULES & HEAD SMES"
             subtitle="Configure target L&D quotas per week for each department group and manage Head SME priority assignments for the Excel Engine."
@@ -3159,7 +3159,7 @@ export function LndAllocationDashboard() {
         )}
 
         {/* TAB 3: REALLOCATION QUEUE & DIAGNOSTICS */}
-        {allocatorTab === "queue" && (
+        {activeTab === "queue" && (
           <Panel
             title="REALLOCATION QUEUE & SCHEDULING DIAGNOSTICS"
             subtitle="Review pending SME & mentor swap proposals and inspect automated scheduling exceptions."

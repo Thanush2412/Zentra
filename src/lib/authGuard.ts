@@ -11,15 +11,18 @@ const LEGACY_ROLE_MAP: Record<string, string> = {
   cam: "cm",           // pre-rename Campus Manager token
   campus_manager: "cm",
   "l and d": "L and D", // lowercase DB storage → canonical mixed-case token
+  "learning and development": "L and D",
+  "learning & development": "L and D",
   lnd: "L and D",
   "l&d": "L and D",
   ld: "L and D",
-  allocator: "L and D"
+  allocator: "L and D",
+  "demo allocator": "L and D"
 };
 
 /** Normalizes a raw DB role string (including legacy tokens) to the current Role. */
 export function normalizeRole(role: string): Role {
-  const raw = (role || "student").toLowerCase();
+  const raw = (role || "student").toLowerCase().trim();
   return ((LEGACY_ROLE_MAP as Record<string, string>)[raw] || raw) as Role;
 }
 

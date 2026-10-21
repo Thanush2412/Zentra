@@ -432,7 +432,7 @@ export async function POST(request: Request) {
       // Array of { slotId, dateStr, coverMentorId } — one per affected class
       coverSelections,
       // Leave-driven demo reallocation request ids proposed by the mentor
-      // (each was already reserved and queued for Allocator approval in the UI)
+      // (each was already reserved and queued for L&D approval in the UI)
       demoReallocationIds
     } = body;
 

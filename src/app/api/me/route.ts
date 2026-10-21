@@ -21,7 +21,6 @@ const PROFILE_TABLES: Record<string, string> = {
   sme: "sme_users",
   fee_manager: "users",
   hr: "users",
-  allocator: "users",
   "L and D": "users"
 };
 

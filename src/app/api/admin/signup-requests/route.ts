@@ -5,6 +5,8 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
+import { normalizeRole } from "@/lib/authGuard";
+import { formatRoleLabel } from "@/lib/utils";
 
 export async function GET() {
   try {
@@ -44,7 +46,7 @@ export async function PATCH(request: Request) {
     }
 
     if (action === "approve") {
-      const targetRole = role || req.requested_role;
+      const targetRole = normalizeRole(role || req.requested_role || "student");
       let referenceId = null;
 
       if (mappingType === "link_existing") {
@@ -54,7 +56,8 @@ export async function PATCH(request: Request) {
         referenceId = selectedReferenceId;
       } else {
         // Create new profile dynamically
-        const newId = targetRole + "_" + Date.now();
+        const idPrefix = targetRole === "L and D" ? "lnd" : targetRole;
+        const newId = idPrefix + "_" + Date.now();
         referenceId = newId;
 
         if (targetRole === "mentor") {
@@ -92,7 +95,7 @@ export async function PATCH(request: Request) {
               req.password_hash
             ]
           );
-        } else if (targetRole === "cm" || targetRole === "cam") {
+        } else if (targetRole === "cm") {
           if (!collegeId) {
             return NextResponse.json({ success: false, message: "A college must be assigned to create a Campus Manager profile." }, { status: 400 });
           }
@@ -138,10 +141,10 @@ export async function PATCH(request: Request) {
       const logId = "l_" + Date.now();
       await db.run(
         "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'signup_approval', ?, 'Admin', 'Super Admin', ?)",
-        [logId, `Signup request for ${req.name} (${req.email}) was APPROVED as ${targetRole.toUpperCase()} by Admin`, new Date().toISOString()]
+        [logId, `Signup request for ${req.name} (${req.email}) was APPROVED as ${formatRoleLabel(targetRole).toUpperCase()} by Admin`, new Date().toISOString()]
       );
 
-      return NextResponse.json({ success: true, message: `Request approved and mapped as ${targetRole}!` });
+      return NextResponse.json({ success: true, message: `Request approved and mapped as ${formatRoleLabel(targetRole)}!` });
     }
 
     return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });

@@ -151,7 +151,7 @@ export async function POST(request: Request) {
       if (status === "rejected") {
         await db.run("UPDATE demo_swap_requests SET status = 'rejected' WHERE id = ?", [requestId]);
 
-        // Keep the demo session in 'reallocation_required' state so allocator/system can find another valid SME or slot
+        // Keep the demo session in 'reallocation_required' state so L&D/system can find another valid SME or slot
         const session = await db.get("SELECT * FROM demo_sessions WHERE id = ?", [req.sessionId]);
         if (session && session.status !== "completed") {
           await db.run(

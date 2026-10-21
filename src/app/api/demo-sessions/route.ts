@@ -571,10 +571,10 @@ export async function POST(request: Request) {
         ]
       );
 
-      // Notify allocator-view users (campus_managers) and write an audit log
+      // Notify L&D-view users (campus_managers) and write an audit log
       try {
-        const allocators: any[] = await db.all("SELECT id FROM campus_managers").catch(() => []);
-        for (const alloc of allocators) {
+        const lndViewers: any[] = await db.all("SELECT id FROM campus_managers").catch(() => []);
+        for (const alloc of lndViewers) {
           const nId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
           await db.run(
             `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)

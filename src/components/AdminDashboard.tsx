@@ -65,7 +65,7 @@ import {
   User,
   CornerDownRight
 } from "lucide-react";
-import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester, normalizeRoleValue } from "@/lib/utils";
+import { formatDate, formatTimeLabel, isMentorInProgram, getDeptFromClassGroup, calculateShiftSchedule, parseTimeToMinutes, formatMinutesToTime, ScheduleItem, ShiftParams, ShiftBreak, isDeptSubjectMatch, isSameYear, isSameSemester, normalizeRoleValue, formatRoleLabel } from "@/lib/utils";
 import { MentorProfileModal } from "./MentorProfileModal";
 import { CourseInfoButton } from "./CourseInfoModal";
 import { CourseModal } from "./CourseModal";
@@ -2961,7 +2961,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const filteredLogs = auditLogs.filter(log => {
     return log.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.actorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.actorRole.toLowerCase().includes(searchQuery.toLowerCase());
+      formatRoleLabel(log.actorRole).toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   // Filter mentors
@@ -3520,7 +3520,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <tr key={log.id} className="hover:bg-gray-55/30 transition-colors">
                           <td className="px-3 py-2 text-gray-450 whitespace-nowrap font-semibold">{formatDate(log.timestamp)}</td>
                           <td className="px-3 py-2 font-bold text-gray-900">{log.actorName}</td>
-                          <td className="px-3 py-2 font-extrabold text-indigo-700 uppercase text-[9px] tracking-wider">{log.actorRole}</td>
+                          <td className="px-3 py-2 font-extrabold text-indigo-700 uppercase text-[9px] tracking-wider">{formatRoleLabel(log.actorRole)}</td>
                           <td className="px-3 py-2 text-gray-600 font-semibold">{log.description}</td>
                         </tr>
                       ))}
@@ -5604,7 +5604,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       : "bg-gray-100 text-gray-800 border-gray-200"
                                   }`}
                                 >
-                                  {normalizeRoleValue(r.user_role || "") === "L and D" ? "L&D" : (r.user_role || "User")}
+                                  {formatRoleLabel(r.user_role) || "User"}
                                 </span>
                                 {r.register_number && r.register_number !== "—" && (
                                   <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-white border border-gray-200 text-[9px] font-mono font-bold text-gray-600">
@@ -5733,7 +5733,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs space-y-1">
                       <p className="font-bold text-gray-800 line-clamp-1">{resolvingReport.title}</p>
                       <p className="text-gray-500 text-[11px]">
-                        Raised by <span className="font-semibold text-gray-700">{resolvingReport.user_name || resolvingReport.user_id}</span> ({normalizeRoleValue(resolvingReport.user_role || "") === "L and D" ? "L&D" : resolvingReport.user_role})
+                        Raised by <span className="font-semibold text-gray-700">{resolvingReport.user_name || resolvingReport.user_id}</span> ({formatRoleLabel(resolvingReport.user_role) || "User"})
                         {resolvingReport.college_name ? ` • ${resolvingReport.college_name}` : ""}
                       </p>
                     </div>
@@ -5844,7 +5844,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <tr key={log.id} className="hover:bg-gray-55/30 transition-colors">
                             <td className="p-3">
                               <div className="font-bold text-gray-900">{log.actorName}</div>
-                              <div className="text-[9px] font-black uppercase text-indigo-600 mt-0.5">{log.actorRole}</div>
+                              <div className="text-[9px] font-black uppercase text-indigo-600 mt-0.5">{formatRoleLabel(log.actorRole)}</div>
                             </td>
                             <td className="p-3">
                               <div className="text-gray-700 font-medium leading-snug">{log.description}</div>
@@ -6190,7 +6190,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </td>
                                     <td className="p-3">
                                       <span className={`px-2.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider ${roleColor}`}>
-                                        {userRole === "L and D" ? "L&D" : userRole}
+                                        {formatRoleLabel(userRole)}
                                       </span>
                                     </td>
                                     <td className="p-3 font-mono text-[10.5px] text-gray-600 font-semibold">
@@ -6323,7 +6323,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <td className="p-4 font-mono font-semibold text-gray-650">{req.email}</td>
                               <td className="p-4">
                                 <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-150 text-[10px] font-bold text-indigo-700 uppercase">
-                                  {req.requested_role === "pending" ? "Pending Assignment" : normalizeRoleValue(req.requested_role) === "L and D" ? "L&D" : req.requested_role}
+                                  {req.requested_role === "pending" ? "Pending Assignment" : formatRoleLabel(req.requested_role)}
                                 </span>
                               </td>
                               <td className="p-4 text-gray-500 font-bold">{targetCol ? targetCol.name : "Unassigned"}</td>
@@ -6722,7 +6722,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <div className="font-bold text-gray-900 font-mono">{matchedUser ? matchedUser.email : hist.user_id}</div>
                               {matchedUser && (
                                 <span className="text-[9px] font-black uppercase text-indigo-600 mt-0.5 block">
-                                  {normalizeRoleValue(matchedUser.role) === "L and D" ? "L&D" : matchedUser.role}
+                                  {formatRoleLabel(matchedUser.role)}
                                 </span>
                               )}
                             </td>

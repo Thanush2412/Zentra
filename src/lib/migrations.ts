@@ -439,7 +439,7 @@ const migrations: Migration[] = [
   {
     // Leave-driven Demo Reallocation: when a mentor's leave overlaps a scheduled
     // demo, the mentor proposes a new period which is RESERVED (pending) until the
-    // Allocator approves. Pending reservations block booking/reschedule of other
+    // L&D approves. Pending reservations block booking/reschedule of other
     // demos into the same (mentor, SME, date, slot). On approval, the demo_sessions
     // row is moved and the reservation is consumed.
     name: "demo_reallocation_requests",

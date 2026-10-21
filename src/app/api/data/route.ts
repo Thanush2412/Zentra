@@ -162,8 +162,8 @@ export async function GET(request: Request) {
     }
 
     const isSME = role === "sme";
-    const isAllocator = role === "L and D";
-    const needsDemo = isAdmin || isSME || isAllocator || isCM || isMentor;
+    const isLnd = role === "L and D";
+    const needsDemo = isAdmin || isSME || isLnd || isCM || isMentor;
 
     // Leave requests scoping
     let leaveSql: string;

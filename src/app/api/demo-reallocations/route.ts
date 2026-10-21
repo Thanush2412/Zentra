@@ -11,10 +11,10 @@ import { requireRole, requireSession, apiAuthErrorResponse } from "@/lib/api-aut
 /**
  * Leave-driven Demo Reallocation flow:
  *  - GET  ?demoSessionId=            → demo details + mentor-free periods × SME availability matrix
- *  - GET  ?leaveRequestId= / ?status=pending → list reallocation requests (Allocator queue)
+ *  - GET  ?leaveRequestId= / ?status=pending → list reallocation requests (L&D queue)
  *  - POST { action: "propose" }      → mentor picks an alternative period; a PENDING
  *                                      reservation is created that blocks the slot.
- *  - POST { action: "resolve" }      → Allocator approves (demo moved, original slot
+ *  - POST { action: "resolve" }      → L&D approves (demo moved, original slot
  *                                      released) or rejects (reservation released).
  *
  * Pending reservations are respected by /api/demo-sessions (book / reschedule).
@@ -195,7 +195,7 @@ export async function GET(request: Request) {
       });
     }
 
-    // ── List mode (allocator queue / mentor history) ───────────────────
+    // ── List mode (L&D queue / mentor history) ─────────────────────────
     let query = "SELECT * FROM demo_reallocation_requests WHERE 1=1";
     const params: any[] = [];
     if (leaveRequestId) {
@@ -280,7 +280,7 @@ export async function POST(request: Request) {
         ]
       );
 
-      // Notify the Allocator (in-app: users with allocator role get a queue view;
+      // Notify L&D (in-app: L&D users get a queue view;
       // we notify the SME too since their availability is impacted)
       if (demo.smeId) {
         const notifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
