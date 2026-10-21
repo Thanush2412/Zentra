@@ -9,6 +9,7 @@ import { verifyPassword, hashPassword, needsRehash } from "@/lib/auth";
 import { SUPER_ADMIN_ROLE, roleGrantsSuperAdmin } from "@/lib/superadmin";
 import { createUserSession, revokeSession, buildSessionCookie, buildCsrfCookie, buildClearSessionCookies } from "@/lib/session";
 import { extractSessionToken, normalizeRole } from "@/lib/authGuard";
+import { ensureMigration } from "@/lib/migrations";
 
 /** Profile tables that hold a display name for each role (whitelisted — never user input). */
 const ROLE_PROFILE_TABLES: Record<string, string> = {
@@ -99,6 +100,9 @@ async function resolveDisplayName(db: PostgresDbAdapter, user: LoginUser): Promi
 
 export async function POST(request: Request) {
   try {
+    // Normalize legacy DB role tokens before any user lookup.
+    await ensureMigration("cm_role_rename_tokens").catch(() => {});
+    await ensureMigration("lnd_role_rename_tokens").catch(() => {});
     const db = await getDb();
     const body = await request.json();
 

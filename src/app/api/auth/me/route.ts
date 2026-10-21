@@ -6,6 +6,7 @@ export const revalidate = 0;
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/authGuard";
 import { buildCsrfCookie } from "@/lib/session";
+import { ensureMigration } from "@/lib/migrations";
 
 const noCacheHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -14,6 +15,9 @@ const noCacheHeaders = {
 };
 
 export async function GET(request: Request) {
+  // Ensure legacy allocator→L and D DB rename runs before the role is read.
+  await ensureMigration("cm_role_rename_tokens").catch(() => {});
+  await ensureMigration("lnd_role_rename_tokens").catch(() => {});
   const { auth, errorResponse } = await requireAuth(request, { checkCsrf: false });
   if (errorResponse || !auth) {
     return errorResponse || NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401, headers: noCacheHeaders });
