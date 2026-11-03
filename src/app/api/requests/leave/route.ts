@@ -1,13 +1,24 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
-import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { sendMail, renderEmailShell } from "@/lib/mail";
+import { NextResponse, after } from "next/server";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
+import { renderEmailShell } from "@/lib/mail";
+import { dispatchMail } from "@/lib/mailAsync";
+import { generateId } from "@/lib/id";
+
+// No screen calls this route today, but it writes student leave rows and mails
+// parents-style notices, so it is guarded rather than left anonymous.
+const STUDENT_LEAVE_ROLES: Role[] = ["student", "mentor", "cm", "kam", "admin"];
 
 // GET /api/requests/leave?college_id=...&mentor_id=...&class_group=...
 export async function GET(request: Request) {
+  const { errorResponse } = await requireAuth(request, {
+    allowedRoles: STUDENT_LEAVE_ROLES,
+    checkCsrf: false
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
@@ -50,20 +61,7 @@ export async function GET(request: Request) {
 
     query += " ORDER BY lr.timestamp DESC LIMIT 200";
 
-    let requests = await db.all(query, ...params);
-
-    // Fallback: If collegeId filter returned 0 rows but leave requests exist, return all so mentor never misses them
-    if ((!requests || requests.length === 0) && collegeId) {
-      const allReqs = await db.all(`
-        SELECT lr.*, s.email as studentEmail, s.name as studentDbName, s.id as studentRollNo, s.college_id as studentCollegeId
-        FROM leave_requests lr
-        LEFT JOIN students s ON (lr.studentId = s.id OR LOWER(TRIM(lr.studentName)) = LOWER(TRIM(s.name)))
-        ORDER BY lr.timestamp DESC LIMIT 100
-      `);
-      if (allReqs && allReqs.length > 0) {
-        requests = allReqs;
-      }
-    }
+    const requests = await db.all(query, ...params);
 
     const normalizedRequests = (requests || []).map((r: any) => ({
       ...r,
@@ -85,6 +83,9 @@ export async function GET(request: Request) {
 
 // POST to create a new leave/OD request by student
 export async function POST(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: STUDENT_LEAVE_ROLES });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const body = await request.json();
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    const newId = "lr_" + Date.now();
+    const newId = generateId("lr");
     const nowIso = new Date().toISOString();
 
     await db.run(
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
     );
 
     // Add to audit logs
-    const logId = "l_" + Date.now();
+    const logId = generateId("l");
     const logDesc = `Student ${studentName} (${classGroup}) submitted a ${type.toUpperCase()} request for ${dateStr}`;
     await db.run(
       "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'leave_request', ?, ?, 'Student', ?)",
@@ -122,70 +123,83 @@ export async function POST(request: Request) {
       nowIso
     );
 
-    // Send notification email to Class Teacher & Campus Managers
-    try {
-      let collegeId = body.college_id || body.collegeId;
-      if (!collegeId) {
-        const student = await db.get("SELECT college_id FROM students WHERE id = ? OR LOWER(TRIM(name)) = LOWER(TRIM(?))", [studentId, studentName]);
-        collegeId = student?.college_id;
-      }
-
-      if (collegeId) {
-        const cms = await db.all("SELECT email, name FROM campus_managers WHERE college_id = ?", [collegeId]);
-        const cmEmails = cms.map((cm: any) => cm.email).filter(Boolean);
-
-        // Fetch assigned Class Teacher for this classGroup
-        const assignedClassTeacher = await db.get(
-          `SELECT m.email, m.name
-           FROM class_mentor_assignments cma
-           JOIN mentors m ON cma.mentor_id = m.id
-           WHERE cma.college_id = ? AND LOWER(cma.classGroup) = LOWER(?)`,
-          [collegeId, classGroup]
-        );
-
-        let targetEmails: string[] = [];
-        if (assignedClassTeacher?.email) {
-          targetEmails.push(assignedClassTeacher.email);
-        } else {
-          // Fallback to all mentors of college
-          const mentors = await db.all("SELECT email FROM mentors WHERE college_id = ?", [collegeId]);
-          targetEmails.push(...mentors.map((m: any) => m.email).filter(Boolean));
+    // Notification moves behind the response: three lookups plus a relay leg that
+    // can burn 12s must not stretch the students submission into a timeout.
+    after(async () => {
+      try {
+        let collegeId = body.college_id || body.collegeId;
+        if (!collegeId) {
+          const student = await db.get("SELECT college_id FROM students WHERE id = ? OR LOWER(TRIM(name)) = LOWER(TRIM(?))", [studentId, studentName]);
+          collegeId = student?.college_id;
         }
-
-        // Combine unique email addresses (Class Teacher / Mentors + CMs)
-        const allRecipientEmails = Array.from(new Set([...targetEmails, ...cmEmails].filter(Boolean)));
-
-        if (allRecipientEmails.length > 0) {
-          await sendMail({
-            to: allRecipientEmails.join(", "),
-            subject: `[Student ${type.toUpperCase()} Request] ${studentName} (${classGroup}) — ${dateStr}`,
-            htmlBody: renderEmailShell({
-              title: `New Student ${type.toUpperCase()} Application`,
-              badgeText: `${type.toUpperCase()} Pending Class Teacher Review`,
-              badgeColor: "amber",
-              description: `Student <strong>${studentName}</strong> from cohort <strong>${classGroup}</strong> has submitted a new ${type.toUpperCase()} request for <strong>${dateStr}</strong>. ${assignedClassTeacher?.name ? `Class Teacher: <strong>${assignedClassTeacher.name}</strong>` : ""}`,
-              details: [
-                { label: "Student Name", value: studentName, highlight: true },
-                { label: "Class Group", value: classGroup },
-                { label: "Class Teacher", value: assignedClassTeacher?.name || "Unassigned (All Mentors)" },
-                { label: "Request Type", value: type.toUpperCase() },
-                { label: "Leave Date", value: dateStr, highlight: true },
-                { label: "Reason", value: reason },
-                { label: "Submitted At", value: new Date(nowIso).toLocaleString() },
-              ],
-              ctaText: "Open Portal Console to Review & Approve →",
-            }),
-          });
+  
+        if (collegeId) {
+          // The campus managers and the assigned class teacher both key off
+          // collegeId/classGroup, so they leave as one group. Mail-only inputs, so a
+          // failed slice degrades to "no recipient" instead of failing the response.
+          const audienceFailures: QueryFailure[] = [];
+          const [cms, classTeacherRows] = await db.multiQuery([
+            { sql: "SELECT email, name FROM campus_managers WHERE college_id = ?", params: [collegeId] },
+            {
+              sql: `SELECT m.email, m.name
+             FROM class_mentor_assignments cma
+             JOIN mentors m ON cma.mentor_id = m.id
+             WHERE cma.college_id = ? AND LOWER(cma.classGroup) = LOWER(?)`,
+              params: [collegeId, classGroup],
+            },
+          ], audienceFailures);
+          if (audienceFailures.length > 0) {
+            console.warn("[requests/leave] recipient lookup incomplete:", audienceFailures.map(f => f.error).join("; "));
+          }
+          const cmEmails = cms.map((cm: any) => cm.email).filter(Boolean);
+  
+          // Assigned Class Teacher for this classGroup
+          const assignedClassTeacher = classTeacherRows[0];
+  
+          let targetEmails: string[] = [];
+          if (assignedClassTeacher?.email) {
+            targetEmails.push(assignedClassTeacher.email);
+          }
+          // No class teacher assigned: escalate to the campus managers only. Broadcasting to
+          // every mentor on a campus mailed leave requests for students they never teach.
+          const hasClassTeacher = Boolean(assignedClassTeacher?.email);
+  
+          // Combine unique email addresses (Class Teacher + CMs)
+          const allRecipientEmails = Array.from(new Set([...targetEmails, ...cmEmails].filter(Boolean)));
+  
+          if (allRecipientEmails.length > 0) {
+            await dispatchMail({
+              to: allRecipientEmails,
+              subject: `[Student ${type.toUpperCase()} Request] ${studentName} (${classGroup}) — ${dateStr}`,
+              htmlBody: renderEmailShell({
+                title: `New Student ${type.toUpperCase()} Application`,
+                badgeText: `${type.toUpperCase()} Pending Class Teacher Review`,
+                badgeColor: "amber",
+                description: `Student <strong>${studentName}</strong> from cohort <strong>${classGroup}</strong> has submitted a new ${type.toUpperCase()} request for <strong>${dateStr}</strong>. ${assignedClassTeacher?.name ? `Class Teacher: <strong>${assignedClassTeacher.name}</strong>` : "No class teacher is assigned to this cohort, so the campus managers are reviewing it."}`,
+                details: [
+                  { label: "Student Name", value: studentName, highlight: true },
+                  { label: "Class Group", value: classGroup },
+                  { label: "Class Teacher", value: hasClassTeacher ? assignedClassTeacher.name : "Unassigned (Campus Manager to review)" },
+                  { label: "Request Type", value: type.toUpperCase() },
+                  { label: "Leave Date", value: dateStr, highlight: true },
+                  { label: "Reason", value: reason },
+                  { label: "Submitted At", value: new Date(nowIso).toLocaleString() },
+                ],
+                ctaText: "Open Portal Console to Review & Approve →",
+              }),
+              context: "student-leave-created",
+            });
+          }
         }
+      } catch (mailErr) {
+        console.warn("Failed to send student leave request email to Mentor/CM:", mailErr);
       }
-    } catch (mailErr) {
-      console.warn("Failed to send student leave request email to Mentor/CM:", mailErr);
-    }
+    });
 
     return NextResponse.json({ 
       success: true, 
       requestId: newId,
-      message: "Leave request submitted successfully & Class Teacher / CM notified via email." 
+      message: "Leave request submitted successfully. The Class Teacher / CM are being notified by email."
     });
   } catch (error: any) {
     console.error("API POST Leave error:", error);
@@ -195,10 +209,13 @@ export async function POST(request: Request) {
 
 // PUT to approve/reject a leave request by CM / Mentor
 export async function PUT(request: Request) {
+  const { auth, errorResponse } = await requireAuth(request, { allowedRoles: STUDENT_LEAVE_ROLES });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const body = await request.json();
-    const { requestId, status, approvedBy } = body;
+    const { requestId, status } = body;
 
     if (!requestId || !status) {
       return NextResponse.json({ success: false, message: "Missing requestId or status" }, { status: 400 });
@@ -209,7 +226,9 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: "Leave request not found" }, { status: 404 });
     }
 
-    const resolverName = approvedBy || "Class Teacher / CAM";
+    // Body-supplied "approvedBy" was persisted verbatim, so any caller could sign a
+    // resolution as "Principal". Record whoever the session actually belongs to.
+    const resolverName = auth?.user?.name || "Class Teacher / CM";
 
     await db.run(
       "UPDATE leave_requests SET status = ?, approvedBy = ? WHERE id = ?",
@@ -274,7 +293,7 @@ export async function PUT(request: Request) {
     }
 
     // Add to audit logs
-    const logId = "l_" + Date.now();
+    const logId = generateId("l");
     const logDesc = `CAM/Mentor resolved ${leaveReq.studentName}'s ${leaveReq.type.toUpperCase()} request as ${status.toUpperCase()}`;
     await db.run(
       "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'leave_resolution', ?, ?, 'Class Teacher / CM', ?)",
@@ -284,41 +303,45 @@ export async function PUT(request: Request) {
       new Date().toISOString()
     );
 
-    // Send decision notification email to Student
-    try {
-      const student = await db.get("SELECT email FROM students WHERE id = ?", [leaveReq.studentId]);
-      const studentEmail = student?.email;
-
-      if (studentEmail) {
-        const isApproved = status === "approved";
-        await sendMail({
-          to: studentEmail,
-          subject: `[Leave Request ${status.toUpperCase()}] Your ${leaveReq.type.toUpperCase()} for ${leaveReq.dateStr}`,
-          htmlBody: renderEmailShell({
-            title: `Your ${leaveReq.type.toUpperCase()} Request Has Been ${isApproved ? "Approved" : "Rejected"}`,
-            badgeText: `Status: ${status.toUpperCase()}`,
-            badgeColor: isApproved ? "emerald" : "rose",
-            description: `Dear <strong>${leaveReq.studentName}</strong>, your ${leaveReq.type.toUpperCase()} request for <strong>${leaveReq.dateStr}</strong> has been reviewed and <strong>${status.toUpperCase()}</strong> by <strong>${resolverName}</strong>.`,
-            details: [
-              { label: "Student Name", value: leaveReq.studentName },
-              { label: "Class Group", value: leaveReq.classGroup },
-              { label: "Request Type", value: leaveReq.type.toUpperCase() },
-              { label: "Leave Date", value: leaveReq.dateStr, highlight: true },
-              { label: "Status Decision", value: status.toUpperCase(), highlight: true },
-              { label: "Reviewed By", value: resolverName },
-              ...(isApproved ? [{ label: "Attendance Action", value: "Class periods on this date automatically excused as Present / OD." }] : []),
-            ],
-            ctaText: "Open Student Dashboard →",
-          }),
-        });
+    // Deferred for the same reason: the decision is recorded, the student is told
+    // once the response is already on the wire.
+    after(async () => {
+      try {
+        const student = await db.get("SELECT email FROM students WHERE id = ?", [leaveReq.studentId]);
+        const studentEmail = student?.email;
+  
+        if (studentEmail) {
+          const isApproved = status === "approved";
+          await dispatchMail({
+            to: studentEmail,
+            subject: `[Leave Request ${status.toUpperCase()}] Your ${leaveReq.type.toUpperCase()} for ${leaveReq.dateStr}`,
+            htmlBody: renderEmailShell({
+              title: `Your ${leaveReq.type.toUpperCase()} Request Has Been ${isApproved ? "Approved" : "Rejected"}`,
+              badgeText: `Status: ${status.toUpperCase()}`,
+              badgeColor: isApproved ? "emerald" : "rose",
+              description: `Dear <strong>${leaveReq.studentName}</strong>, your ${leaveReq.type.toUpperCase()} request for <strong>${leaveReq.dateStr}</strong> has been reviewed and <strong>${status.toUpperCase()}</strong> by <strong>${resolverName}</strong>.`,
+              details: [
+                { label: "Student Name", value: leaveReq.studentName },
+                { label: "Class Group", value: leaveReq.classGroup },
+                { label: "Request Type", value: leaveReq.type.toUpperCase() },
+                { label: "Leave Date", value: leaveReq.dateStr, highlight: true },
+                { label: "Status Decision", value: status.toUpperCase(), highlight: true },
+                { label: "Reviewed By", value: resolverName },
+                ...(isApproved ? [{ label: "Attendance Action", value: "Class periods on this date automatically excused as Present / OD." }] : []),
+              ],
+              ctaText: "Open Student Dashboard →",
+            }),
+            context: "student-leave-resolved",
+          });
+        }
+      } catch (mailErr) {
+        console.warn("Failed to send leave decision email to student:", mailErr);
       }
-    } catch (mailErr) {
-      console.warn("Failed to send leave decision email to student:", mailErr);
-    }
+    });
 
     return NextResponse.json({
       success: true,
-      message: `Leave request status updated to ${status}. Notification email dispatched.`
+      message: `Leave request status updated to ${status}. The student is being notified by email.`
     });
   } catch (error: any) {
     console.error("API PUT Leave error:", error);

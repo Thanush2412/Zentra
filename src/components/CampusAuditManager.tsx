@@ -1,9 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/queryKeys";
 import { useToast } from "@/context/ToastContext";
 import { useApp } from "@/context/AppContext";
 import { LoadingButton } from "./ui/LoadingButton";
+import { Dialog } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/apiFetch";
 import {
   ShieldCheck,
@@ -257,7 +260,8 @@ export const ClassObservationView: React.FC<{
   setSaving: (v: boolean) => void;
   detail: any | null;
   setDetail: (v: any | null) => void;
-}> = ({ collegeName, userName, observations, loading, error, onRefresh, showForm, setShowForm, saving, setSaving, detail, setDetail }) => {
+  readOnly?: boolean;
+}> = ({ collegeName, userName, observations, loading, error, onRefresh, showForm, setShowForm, saving, setSaving, detail, setDetail, readOnly = false }) => {
   const { toast } = useToast();
   const [fTeacher, setFTeacher] = useState("");
   const [fDept, setFDept] = useState("");
@@ -279,6 +283,7 @@ export const ClassObservationView: React.FC<{
   const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
   const handleSubmit = async () => {
+    if (readOnly) { toast("Read-only portfolio view — observations cannot be logged.", "warning"); return; }
     if (!fTeacher.trim()) { toast("Enter the mentor / teacher observed.", "warning"); return; }
     if (fSatisfaction === "not_satisfied" && wordCount(fRemarks) < 20) {
       toast("For 'Not Satisfied', remarks must be at least 20 words explaining the concerns.", "warning");
@@ -379,9 +384,10 @@ export const ClassObservationView: React.FC<{
             <button
               type="button"
               onClick={() => setShowForm(!showForm)}
+              disabled={readOnly}
               className={`px-4 py-2 text-xs font-extrabold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
                 showForm ? "bg-slate-200 text-slate-700 hover:bg-slate-300" : "bg-orange-600 hover:bg-orange-700 text-white"
-              }`}
+              } ${readOnly ? "opacity-40 cursor-not-allowed" : ""}`}
             >
               <Camera className="h-4 w-4" />
               <span>{showForm ? "Close Form" : "Log Observation"}</span>
@@ -413,11 +419,11 @@ export const ClassObservationView: React.FC<{
       </div>
 
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">{error}</div>
+        <div role="alert" className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">{error}</div>
       )}
 
       {/* Entry form */}
-      {showForm && (
+      {showForm && !readOnly && (
         <div className="bg-white border-2 border-orange-200 rounded-2xl p-5 shadow-xs space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <Sparkles className="h-4 w-4 text-orange-500" />
@@ -427,22 +433,22 @@ export const ClassObservationView: React.FC<{
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Mentor / Teacher *</label>
-              <input value={fTeacher} onChange={(e) => setFTeacher(e.target.value)} placeholder="Faculty observed"
+              <input value={fTeacher} onChange={(e) => setFTeacher(e.target.value)} placeholder="Faculty observed" aria-label="Mentor / Teacher"
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Class / Department</label>
-              <input value={fDept} onChange={(e) => setFDept(e.target.value)} placeholder="e.g. B.Sc CS — Sem 3"
+              <input value={fDept} onChange={(e) => setFDept(e.target.value)} placeholder="e.g. B.Sc CS — Sem 3" aria-label="Class / Department"
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Subject / Course</label>
-              <input value={fSubject} onChange={(e) => setFSubject(e.target.value)} placeholder="Subject taught"
+              <input value={fSubject} onChange={(e) => setFSubject(e.target.value)} placeholder="Subject taught" aria-label="Subject / Course"
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Observation Date</label>
-              <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)}
+              <input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} aria-label="Observation Date"
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-orange-500" />
             </div>
           </div>
@@ -472,7 +478,7 @@ export const ClassObservationView: React.FC<{
               <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block mb-2">Overall Rating *</span>
               <div className="flex items-center gap-2">
                 {[1, 2, 3, 4, 5].map(n => (
-                  <button key={n} type="button" onClick={() => setFOverall(n)}
+                  <button key={n} type="button" onClick={() => setFOverall(n)} aria-label={`Rate ${n} out of 5`}
                     className={`p-1 cursor-pointer transition-transform hover:scale-110 ${n <= fOverall ? "text-amber-400" : "text-slate-300"}`}>
                     <Star className={`h-7 w-7 ${n <= fOverall ? "fill-amber-400" : ""}`} />
                   </button>
@@ -521,6 +527,7 @@ export const ClassObservationView: React.FC<{
                 <img src={fPhotoPreview} alt="preview" className="h-28 rounded-xl border border-slate-200 object-cover" />
                 <button type="button"
                   onClick={() => { setFPhoto(null); setFPhotoPreview(""); }}
+                  aria-label="Remove photo"
                   className="absolute -top-2 -right-2 h-6 w-6 bg-rose-600 text-white rounded-full text-xs font-black cursor-pointer shadow-md">
                   ×
                 </button>
@@ -607,9 +614,13 @@ export const ClassObservationView: React.FC<{
       </div>
         {/* Detail modal */}
         {detail && (
-          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDetail(null)}>
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto p-6 space-y-4"
-              onClick={(e) => e.stopPropagation()}>
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setDetail(null); }}
+            ariaLabel="Classroom Observation Details"
+            overlayClassName="bg-slate-950/70 backdrop-blur-sm p-4"
+            panelClassName="max-w-lg max-h-[85vh] overflow-y-auto p-6 space-y-4 rounded-2xl"
+          >
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-base font-black text-slate-900">
@@ -619,7 +630,7 @@ export const ClassObservationView: React.FC<{
                     {detail.department || detail.class_name || "—"} · {detail.observation_date ? new Date(detail.observation_date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : ""}
                   </p>
                 </div>
-                <button type="button" onClick={() => setDetail(null)} className="text-slate-400 hover:text-slate-700 text-xl font-black cursor-pointer">×</button>
+                <button type="button" onClick={() => setDetail(null)} aria-label="Close" className="text-slate-400 hover:text-slate-700 text-xl font-black cursor-pointer">×</button>
               </div>
 
               {detail.photo_url && (
@@ -672,8 +683,7 @@ export const ClassObservationView: React.FC<{
               {detail.manager_name && (
                 <p className="text-[10px] text-slate-400 font-medium">Logged by {detail.manager_name}</p>
               )}
-            </div>
-          </div>
+          </Dialog>
         )}
     </div>
   );
@@ -689,6 +699,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
   userName = "Campus Manager"
 }) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { mentors = [], subjectsList = [] } = useApp();
 
@@ -716,55 +727,46 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
   const [auditSubmittedSuccess, setAuditSubmittedSuccess] = useState(false);
 
   // Database-driven Audits and KAM Cluster States
-  const [assignedAudits, setAssignedAudits] = useState<CampusAuditDbRecord[]>([]);
-  const [submittedAudits, setSubmittedAudits] = useState<CampusAuditDbRecord[]>([]);
-  const [loadingAudits, setLoadingAudits] = useState(false);
   const [isSubmittingAudit, setIsSubmittingAudit] = useState(false);
   const [isSigningOffAudit, setIsSigningOffAudit] = useState(false);
-  const [dynamicKAMInfo, setDynamicKAMInfo] = useState<DynamicActiveKAMInfo>({
-    kam: "General Cluster",
-    kamId: "",
-    campuses: []
-  });
 
-  const fetchCampusAudits = useCallback(async (silent: boolean = false) => {
-    if (!silent) setLoadingAudits(true);
-    try {
+  const auditCollegeScope = `${collegeId || ""}|${collegeName || ""}`;
+  const campusAuditsQuery = useQuery({
+    queryKey: qk.campusAudits(auditCollegeScope),
+    queryFn: async () => {
       const data = await apiFetch(
         `/api/audit/campus-audits?collegeId=${encodeURIComponent(collegeId || "")}&collegeName=${encodeURIComponent(collegeName || "")}`
       );
-      if (data.success) {
-        setAssignedAudits(data.assignedAudits || []);
-        setSubmittedAudits(data.submittedAudits || []);
-        if (data.activeKAMInfo) {
-          setDynamicKAMInfo(data.activeKAMInfo);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch campus audits:", err);
-    } finally {
-      if (!silent) setLoadingAudits(false);
-    }
-  }, [collegeId, collegeName]);
+      return data?.success
+        ? {
+            assignedAudits: (data.assignedAudits || []) as CampusAuditDbRecord[],
+            submittedAudits: (data.submittedAudits || []) as CampusAuditDbRecord[],
+            activeKAMInfo: data.activeKAMInfo as DynamicActiveKAMInfo | undefined
+          }
+        : null;
+    },
+  });
+  const assignedAudits = campusAuditsQuery.data?.assignedAudits || [];
+  const submittedAudits = campusAuditsQuery.data?.submittedAudits || [];
+  const loadingAudits = campusAuditsQuery.isFetching;
+  const dynamicKAMInfo: DynamicActiveKAMInfo = campusAuditsQuery.data?.activeKAMInfo || {
+    kam: "General Cluster",
+    kamId: "",
+    campuses: []
+  };
 
-  useEffect(() => {
-    fetchCampusAudits();
-  }, [fetchCampusAudits]);
-
-  // Real-time synchronization: listen for audit update events and window focus
+  // Real-time synchronization: invalidate when audits are recorded elsewhere.
   useEffect(() => {
     const handleSync = () => {
-      fetchCampusAudits(true);
+      queryClient.invalidateQueries({ queryKey: ["campus-audits"] });
     };
 
     window.addEventListener("fp_audits_updated", handleSync);
-    window.addEventListener("focus", handleSync);
 
     return () => {
       window.removeEventListener("fp_audits_updated", handleSync);
-      window.removeEventListener("focus", handleSync);
     };
-  }, [fetchCampusAudits]);
+  }, [queryClient]);
 
   // --------------------------------------------------------------------------
   // RECORD AUDIT WIZARD FORM STATE (Clean, no hardcoded defaults)
@@ -895,7 +897,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
       });
       if (data.success) {
         toast(data.message || "Audit recorded and dispatched to peer reviewer.", "success");
-        await fetchCampusAudits();
+        await queryClient.invalidateQueries({ queryKey: ["campus-audits"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_audits_updated"));
         }
@@ -966,7 +968,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
         toast(`Official Peer Review signed off for ${selectedPeerAuditForReview.campus}!`, "success");
         setSelectedPeerAuditForReview(null);
         setSignOffNotes("");
-        await fetchCampusAudits();
+        await queryClient.invalidateQueries({ queryKey: ["campus-audits"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_audits_updated"));
         }
@@ -1020,7 +1022,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => fetchCampusAudits()}
+              onClick={() => campusAuditsQuery.refetch()}
               disabled={loadingAudits}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer shadow-xs"
               title="Refresh audits list"
@@ -1226,6 +1228,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                           </label>
                           <textarea
                             rows={2}
+                            aria-label="Reviewer Sign-Off Inspection Notes"
                             value={selectedPeerAuditForReview?.id === audit.id ? signOffNotes : ""}
                             onChange={(e) => {
                               setSelectedPeerAuditForReview(audit);
@@ -1515,6 +1518,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <input
                     type="text"
                     disabled
+                    aria-label="Audited Campus"
                     value={wizCampus}
                     className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 cursor-not-allowed"
                   />
@@ -1541,6 +1545,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
 
                   {wizMentorMode === "select" && collegeMentors.length > 0 ? (
                     <select
+                      aria-label="Mentor Name"
                       value={wizMentorId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -1571,6 +1576,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   ) : (
                     <input
                       type="text"
+                      aria-label="Mentor Name"
                       value={wizMentor}
                       onChange={(e) => setWizMentor(e.target.value)}
                       placeholder="Enter mentor's full name"
@@ -1583,6 +1589,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Department / Course *</label>
                   {collegeDepartments.length > 0 ? (
                     <select
+                      aria-label="Department / Course"
                       value={wizDeptName}
                       onChange={(e) => {
                         setWizDeptName(e.target.value);
@@ -1600,6 +1607,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   ) : (
                     <input
                       type="text"
+                      aria-label="Department / Course"
                       value={wizDeptName}
                       onChange={(e) => {
                         setWizDeptName(e.target.value);
@@ -1615,6 +1623,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Skill / Academic Subject *</label>
                   <input
                     type="text"
+                    aria-label="Skill / Academic Subject"
                     value={wizSubject}
                     onChange={(e) => setWizSubject(e.target.value)}
                     placeholder="Enter subject or course module"
@@ -1626,6 +1635,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Audit Conducted Date</label>
                   <input
                     type="date"
+                    aria-label="Audit Conducted Date"
                     value={wizDate}
                     onChange={(e) => setWizDate(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
@@ -1697,6 +1707,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 <label className="block text-xs font-bold text-slate-700 mb-1">Student Work / GitHub Proof Link</label>
                 <input
                   type="url"
+                  aria-label="Student Work / GitHub Proof Link"
                   value={wizSkillProofLink}
                   onChange={(e) => setWizSkillProofLink(e.target.value)}
                   placeholder="https://github.com/... or Google Drive folder"
@@ -1709,6 +1720,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Tasks Assigned</label>
                   <input
                     type="number"
+                    aria-label="Tasks Assigned"
                     value={wizSkillAssigned}
                     onChange={(e) => setWizSkillAssigned(parseInt(e.target.value) || 0)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
@@ -1718,6 +1730,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   <label className="block text-xs font-bold text-slate-700 mb-1">Tasks Completed</label>
                   <input
                     type="number"
+                    aria-label="Tasks Completed"
                     value={wizSkillCompleted}
                     onChange={(e) => setWizSkillCompleted(parseInt(e.target.value) || 0)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
@@ -1782,6 +1795,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 <label className="block text-xs font-bold text-slate-700 mb-1">Coursework Auditor Notes</label>
                 <textarea
                   rows={2}
+                  aria-label="Coursework Auditor Notes"
                   value={wizAcadRemarks}
                   onChange={(e) => setWizAcadRemarks(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-emerald-500"
@@ -1847,6 +1861,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                 </label>
                 <input
                   type="number"
+                  aria-label="Count of Students Below 75% Attendance Threshold"
                   value={wizAttBelow75}
                   onChange={(e) => setWizAttBelow75(parseInt(e.target.value) || 0)}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"

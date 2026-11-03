@@ -1,12 +1,14 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { generateId } from "@/lib/id";
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
 
@@ -26,21 +28,44 @@ export async function POST(request: Request) {
       );
     }
 
-    const interview = await db.get("SELECT * FROM student_interviews WHERE id = ?", [interview_id]);
+    // Interview, college and the existing response are three independent reads of body
+    // keys, and the third decides between UPDATE and INSERT — so they share one round
+    // trip, and a failed slice refuses the write instead of duplicating the response row.
+    const responseFailures: QueryFailure[] = [];
+    const [interviewRows, collegeRows, existingRows] = await db.multiQuery(
+      [
+        { sql: "SELECT * FROM student_interviews WHERE id = ?", params: [interview_id] },
+        { sql: "SELECT * FROM colleges WHERE id = ?", params: [college_id] },
+        { sql: "SELECT * FROM cam_capacity_responses WHERE interview_id = ? AND college_id = ?", params: [interview_id, college_id] },
+      ],
+      responseFailures
+    );
+    if (responseFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not verify this capacity response. Please try again." }, { status: 500 });
+    }
+
+    const interview = interviewRows[0];
     if (!interview) {
       return NextResponse.json({ success: false, message: "Interview request not found" }, { status: 404 });
     }
 
-    const college = await db.get("SELECT * FROM colleges WHERE id = ?", [college_id]);
+    // Once the origin CM sends the split for final confirmation, campus capacities are
+    // frozen — a late response would recalculate and reopen a finalised allocation.
+    const FINALISED_STATUSES = new Set(["pending_final_confirmation", "assigned", "pending_verification", "completed", "declined"]);
+    if (FINALISED_STATUSES.has(String(interview.status || ""))) {
+      return NextResponse.json(
+        { success: false, message: `This interview is already ${String(interview.status).replace(/_/g, " ")}. Capacity can no longer be changed.` },
+        { status: 409 }
+      );
+    }
+
+    const college = collegeRows[0];
     const collegeName = college?.name || "Campus";
     const now = new Date().toISOString();
     const acceptedCount = action === "decline" ? 0 : Math.max(0, Number(accepted_student_capacity) || 0);
 
     // Save or update CAM capacity response
-    const existing = await db.get(
-      "SELECT * FROM cam_capacity_responses WHERE interview_id = ? AND college_id = ?",
-      [interview_id, college_id]
-    );
+    const existing = existingRows[0];
 
     if (existing) {
       await db.run(
@@ -57,7 +82,7 @@ export async function POST(request: Request) {
         ]
       );
     } else {
-      const respId = `cap_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const respId = generateId("cap");
       await db.run(
         `INSERT INTO cam_capacity_responses (
           id, interview_id, college_id, college_name, cam_id, cam_name,

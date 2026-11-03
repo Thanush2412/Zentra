@@ -62,6 +62,16 @@ export function verifyPassword(password: string, storedHash: string): boolean {
   return false;
 }
 
+/** True when a value stored on a row really is a credential we can verify against. */
+export function looksLikeStoredCredential(stored: unknown): boolean {
+  const value = String(stored ?? "");
+  if (!value) return false;
+  if (value.startsWith("pbkdf2$")) return true;
+  // Legacy v1 shape is `salt:hash` — both halves are long hex, so a colon inside a
+  // short string ("a:b") is a plaintext value, not a hash.
+  return value.includes(":") && value.length > 20;
+}
+
 function pbkdf2Equal(password: string, salt: string, originalHash: string, iterations: number, keyLength: number): boolean {
   const hash = crypto.pbkdf2Sync(password, salt, iterations, keyLength, DIGEST).toString("hex");
   try {

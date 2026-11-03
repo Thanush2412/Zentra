@@ -1,18 +1,77 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getDb } from "@/lib/db";
-import { sendMail, formatZentraEmail } from "@/lib/mail";
+import { renderEmailShell, BRAND } from "@/lib/mail";
+import { dispatchMail } from "@/lib/mailAsync";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr, parseLocalDate } from "@/lib/localDate";
 
 const noCacheHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
   "Pragma": "no-cache",
   "Expires": "0",
 };
+
+/** Widest date range one request may configure; keeps the fan-out bounded. */
+const MAX_CONFIG_DATES = 92;
+const NOTIFY_CHUNK = 200;
+const CONFIG_CHUNK = 100;
+
+function chunkBy<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
+ * One statement per chunk instead of one per row. A campus of 1,500 students and
+ * mentors over a 7-day range used to be 10,500 sequential INSERT round trips.
+ */
+async function bulkUpsertDailyConfigs(db: any, rows: any[][]) {
+  for (const chunk of chunkBy(rows, CONFIG_CHUNK)) {
+    const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)").join(", ");
+    const params = chunk.flat();
+    await db.run(
+      `INSERT INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at)
+       VALUES ${values}
+       ON CONFLICT (id) DO UPDATE SET
+         college_id = EXCLUDED.college_id,
+         dateStr = EXCLUDED.dateStr,
+         day_type = EXCLUDED.day_type,
+         day_order = EXCLUDED.day_order,
+         session_mode = EXCLUDED.session_mode,
+         notes = EXCLUDED.notes,
+         updated_at = CURRENT_TIMESTAMP`,
+      params
+    );
+  }
+}
+
+/** rows: [id, user_id, title, message, type, link] */
+async function bulkInsertNotifications(db: any, rows: any[][], nowStr: string) {
+  for (const chunk of chunkBy(rows, NOTIFY_CHUNK)) {
+    const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, 0, ?)").join(", ");
+    const params = chunk.flatMap(r => [...r, nowStr]);
+    await db.run(
+      `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
+       VALUES ${values}`,
+      params
+    );
+  }
+}
+
+async function loadCampusAudience(db: any, collegeId: string) {
+  return db.all(
+    `SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
+     UNION
+     SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
+    collegeId, collegeId
+  );
+}
 
 async function handleAutoAdaptNextWeek(db: any, body: any) {
   const { college_id, reference_date, skip_sundays = false } = body;
@@ -36,7 +95,7 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
   for (let i = 0; i < 7; i++) {
     const d = new Date(refMonday);
     d.setDate(refMonday.getDate() + i);
-    refDates.push(d.toISOString().split("T")[0]);
+    refDates.push(getInstitutionDateStr(d));
   }
 
   const refConfigs = await db.all(
@@ -74,11 +133,12 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
   for (let i = 0; i < 7; i++) {
     const d = new Date(nextMonday);
     d.setDate(nextMonday.getDate() + i);
-    nextDates.push(d.toISOString().split("T")[0]);
+    nextDates.push(getInstitutionDateStr(d));
   }
 
   let dayOrderCounter = lastDayOrderIndex + 1;
   const insertedConfigs: any[] = [];
+  const configRows: any[][] = [];
 
   for (let i = 0; i < nextDates.length; i++) {
     const nextDateStr = nextDates[i];
@@ -103,59 +163,53 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
       dayOrderCounter++;
     }
 
-    await db.run(
-      `INSERT INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-       ON CONFLICT (id) DO UPDATE SET
-         day_type = EXCLUDED.day_type,
-         day_order = EXCLUDED.day_order,
-         session_mode = EXCLUDED.session_mode,
-         notes = EXCLUDED.notes,
-         updated_at = NOW()`,
-      id, college_id, nextDateStr, dayType, dayOrder, sessionMode, notesVal
-    );
-
+    configRows.push([id, college_id, nextDateStr, dayType, dayOrder, sessionMode, notesVal]);
     insertedConfigs.push({ dateStr: nextDateStr, dayType, dayOrder });
   }
 
+  await bulkUpsertDailyConfigs(db, configRows);
+
   // Insert notifications for all students & mentors
   try {
-    const users = await db.all(
-      `SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
-       UNION
-       SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
-      college_id, college_id
-    );
+    const users = await loadCampusAudience(db, college_id);
+    const title = "Next Week Schedule Auto-Configured";
+    const message = `The campus schedule for next week (${nextDates[0]} to ${nextDates[6]}) has been automatically configured based on the current week's pattern. Please review your timetable.`;
+    const nowStr = new Date().toISOString();
 
-    for (const u of users) {
-      const notifId = "n_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
-      const link = u.role === "mentor" ? `/mentor/schedule?week=${nextDates[0]}` : `/student/schedule?week=${nextDates[0]}`;
-      await db.run(
-        `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, NOW()::text)`,
-        notifId,
-        u.id,
-        `Next Week Schedule Auto-Configured`,
-        `The campus schedule for next week (${nextDates[0]} to ${nextDates[6]}) has been automatically configured based on the current week's pattern. Please review your timetable.`,
-        "info",
-        link
-      );
-    }
+    const notifRows = users.map((u: any) => [
+      generateId("n"),
+      u.id,
+      title,
+      message,
+      "info",
+      u.role === "mentor" ? `/mentor/schedule?week=${nextDates[0]}` : `/student/schedule?week=${nextDates[0]}`
+    ]);
+
+    await bulkInsertNotifications(db, notifRows, nowStr);
   } catch (errNotif) {
     console.error("Failed to write auto-adapt notifications:", errNotif);
   }
 
-  // Send email notifications to mentors
-  try {
-    const collegeMentors = await db.all("SELECT id, name, email FROM mentors WHERE college_id = ?", college_id);
-    
-    for (const m of collegeMentors) {
-      if (m.email) {
-        const emailHtml = formatZentraEmail({
+  // MAIL-C05 & MAIL-M08 Fix: Send batch email instead of per-mentor sequential emails
+  // The roster read and the send both move behind the response: configuring a week
+  // is not something the caller should wait on a relay leg for.
+  after(async () => {
+    try {
+      const collegeMentors = await db.all("SELECT id, name, email FROM mentors WHERE college_id = ?", college_id);
+      
+      const validMentorEmails = collegeMentors
+        .filter((m: any) => m.email && m.email.includes("@"))
+        .map((m: any) => m.email);
+      
+      // Remove duplicates
+      const uniqueEmails = Array.from(new Set(validMentorEmails as string[]));
+  
+      if (uniqueEmails.length > 0) {
+        const emailHtml = renderEmailShell({
           title: "Next Week Schedule Auto-Configured",
           badgeText: "AUTO-ADAPT",
           badgeColor: "indigo",
-          description: `Dear ${m.name}, the campus schedule for next week has been automatically configured based on the current week's pattern.`,
+          description: `The campus schedule for next week has been automatically configured based on the current week's pattern.`,
           details: [
             { label: "Week Start", value: nextDates[0] },
             { label: "Week End", value: nextDates[6] },
@@ -163,17 +217,19 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
             { label: "Configuration", value: "Auto-adapted from reference week" }
           ]
         });
-
-        await sendMail({
-          to: m.email,
-          subject: `[FACE Prep E-Campus] Next Week Schedule Auto-Configured`,
-          htmlBody: emailHtml
+  
+        // One send for the whole campus, audience hidden (MAIL-C05)
+        await dispatchMail({
+          bcc: uniqueEmails,
+          subject: `${BRAND.emailPrefix} Next Week Schedule Auto-Configured`,
+          htmlBody: emailHtml,
+          context: "auto-adapt-week"
         });
       }
+    } catch (errEmail) {
+      console.error("Failed to send auto-adapt email notifications:", errEmail);
     }
-  } catch (errEmail) {
-    console.error("Failed to send auto-adapt email notifications:", errEmail);
-  }
+  });
 
   return NextResponse.json({ 
     success: true, 
@@ -186,17 +242,28 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
 
 export async function GET(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request);
+    if (errorResponse || !auth) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("college_id");
+    const requestedCollegeId = searchParams.get("college_id");
     const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : 200;
     const search = searchParams.get("search");
 
-    if (!collegeId) {
+    if (!requestedCollegeId) {
       return NextResponse.json({ success: false, message: "college_id is required" }, { status: 400, headers: noCacheHeaders });
     }
 
+    // Role-based campus isolation: A CM may only view their assigned college
+    const isSuper = auth.user.isSuperAdmin || auth.user.role === "admin";
+    let collegeId = requestedCollegeId;
+    if (!isSuper && auth.user.role === "cm" && auth.user.college_id) {
+      collegeId = auth.user.college_id;
+    }
+
     let query = "SELECT * FROM campus_daily_configs WHERE college_id = ?";
+
     let params: any[] = [collegeId];
 
     if (search) {
@@ -217,6 +284,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // MAIL-H02 Fix: Add authentication check
+  const { auth, errorResponse } = await requireAuth(request, {
+    allowedRoles: ["admin", "cm", "kam"],
+    checkCsrf: true
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const body = await request.json();
@@ -236,11 +310,17 @@ export async function POST(request: Request) {
     // Build array of dates to process
     const datesToProcess: string[] = [];
     if (startDate && endDate) {
-      let cur = new Date(startDate);
-      const end = new Date(endDate);
-      while (cur <= end) {
-        datesToProcess.push(cur.toISOString().split("T")[0]);
+      let cur = parseLocalDate(startDate);
+      const end = parseLocalDate(endDate);
+      while (cur <= end && datesToProcess.length <= MAX_CONFIG_DATES) {
+        datesToProcess.push(getInstitutionDateStr(cur));
         cur.setDate(cur.getDate() + 1);
+      }
+      if (cur <= end) {
+        return NextResponse.json({
+          success: false,
+          message: `Date range too large: configure at most ${MAX_CONFIG_DATES} days in one request.`
+        }, { status: 400 });
       }
     } else if (dateStr) {
       datesToProcess.push(dateStr);
@@ -251,6 +331,11 @@ export async function POST(request: Request) {
     let initialIndex = dayOrders.indexOf(effectiveDayOrder);
 
     let dayOrderCounter = initialIndex !== -1 ? initialIndex : 0;
+
+    const sessionModeVal = session_mode || "Offline";
+    const notesVal = notes || "";
+    const configRows: any[][] = [];
+    const dayPlans: { dStr: string; dayType: string; dayOrder: string }[] = [];
 
     for (let i = 0; i < datesToProcess.length; i++) {
       const dStr = datesToProcess[i];
@@ -276,60 +361,60 @@ export async function POST(request: Request) {
         dayOrderCounter++;
       }
 
-      await db.run(
-        `INSERT INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-         ON CONFLICT (id) DO UPDATE SET
-           college_id = EXCLUDED.college_id,
-           dateStr = EXCLUDED.dateStr,
-           day_type = EXCLUDED.day_type,
-           day_order = EXCLUDED.day_order,
-           session_mode = EXCLUDED.session_mode,
-           notes = EXCLUDED.notes,
-           updated_at = NOW()`,
-        id, college_id, dStr, currentDayType, currentDayOrder, session_mode || "Offline", notes || ""
-      );
+      configRows.push([id, college_id, dStr, currentDayType, currentDayOrder, sessionModeVal, notesVal]);
+      dayPlans.push({ dStr, dayType: currentDayType, dayOrder: currentDayOrder });
+    }
 
-      // 1. Insert Database Notifications for all Students & Mentors of this college
-      try {
-        const users = await db.all(
-          `SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM mentors WHERE college_id = ?)
-           UNION
-           SELECT id, role FROM users WHERE reference_id IN (SELECT id FROM students WHERE college_id = ?)`,
-          college_id, college_id
-        );
+    await bulkUpsertDailyConfigs(db, configRows);
+
+    // 1. Insert Database Notifications for all Students & Mentors of this college
+    try {
+      const users = await loadCampusAudience(db, college_id);
+      const nowStr = new Date().toISOString();
+      const notifRows: any[][] = [];
+
+      for (const plan of dayPlans) {
+        const displayType = plan.dayType === "holiday" ? "Holiday" : plan.dayType === "event" ? "Event" : plan.dayType === "exam_day" ? "Exam Day" : "Working Day";
+        const title = `Campus Schedule Update: ${plan.dStr}`;
+        const message = `The calendar schedule for ${plan.dStr} has been configured as a ${displayType} (${plan.dayOrder === "None" ? "No Day Order" : plan.dayOrder}) operating in ${sessionModeVal} mode. Notes: ${notesVal || "None"}`;
+        const notifType = plan.dayType === "holiday" ? "warning" : "info";
 
         for (const u of users) {
-          const notifId = "n_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5);
-          const displayType = currentDayType === "holiday" ? "Holiday" : currentDayType === "event" ? "Event" : currentDayType === "exam_day" ? "Exam Day" : "Working Day";
-          const link = u.role === "mentor" ? `/mentor/schedule?date=${dStr}` : `/student/schedule?date=${dStr}`;
-          await db.run(
-            `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, 0, NOW()::text)`,
-            notifId,
+          notifRows.push([
+            generateId("n"),
             u.id,
-            `Campus Schedule Update: ${dStr}`,
-            `The calendar schedule for ${dStr} has been configured as a ${displayType} (${currentDayOrder === "None" ? "No Day Order" : currentDayOrder}) operating in ${session_mode || "Offline"} mode. Notes: ${notes || "None"}`,
-            currentDayType === "holiday" ? "warning" : "info",
-            link
-          );
+            title,
+            message,
+            notifType,
+            u.role === "mentor" ? `/mentor/schedule?date=${plan.dStr}` : `/student/schedule?date=${plan.dStr}`
+          ]);
         }
-      } catch (errNotif) {
-        console.error("Failed to write daily-config db notifications:", errNotif);
       }
+
+      await bulkInsertNotifications(db, notifRows, nowStr);
+    } catch (errNotif) {
+      console.error("Failed to write daily-config db notifications:", errNotif);
     }
 
     // 2. Dispatch Email Notifications to all Mentors of this college
-    try {
-      const collegeMentors = await db.all("SELECT id, name, email FROM mentors WHERE college_id = ?", college_id);
-      
-      for (const m of collegeMentors) {
-        if (m.email) {
-          const emailHtml = formatZentraEmail({
+    // MAIL-C05 & MAIL-M08 Fix: Send batch email instead of per-mentor sequential emails
+    after(async () => {
+      try {
+        const collegeMentors = await db.all("SELECT id, name, email FROM mentors WHERE college_id = ?", college_id);
+        
+        const validMentorEmails = collegeMentors
+          .filter((m: any) => m.email && m.email.includes("@"))
+          .map((m: any) => m.email);
+        
+        // Remove duplicates
+        const uniqueEmails = Array.from(new Set(validMentorEmails as string[]));
+  
+        if (uniqueEmails.length > 0) {
+          const emailHtml = renderEmailShell({
             title: "Campus Schedule Update",
             badgeText: day_type.replace("_", " ").toUpperCase(),
             badgeColor: day_type === "holiday" ? "rose" : day_type === "event" ? "amber" : "indigo",
-            description: `Dear ${m.name}, this is an official campus update regarding the daily schedule configuration.`,
+            description: `This is an official campus update regarding the daily schedule configuration.`,
             details: [
               { label: "Date Range", value: datesToProcess.length > 1 ? `${startDate} to ${endDate}` : (dateStr || startDate) },
               { label: "Day Type", value: day_type.replace("_", " ").toUpperCase() },
@@ -338,17 +423,19 @@ export async function POST(request: Request) {
               { label: "Campus Notes", value: notes || "No operational notes provided." }
             ]
           });
-
-          await sendMail({
-            to: m.email,
-            subject: `[FACE Prep E-Campus] Campus Schedule Update - ${startDate || dateStr}`,
-            htmlBody: emailHtml
+  
+          // Send once for the whole campus with the roster hidden (MAIL-C05)
+          await dispatchMail({
+            bcc: uniqueEmails,
+            subject: `${BRAND.emailPrefix} Campus Schedule Update - ${startDate || dateStr}`,
+            htmlBody: emailHtml,
+            context: "daily-config-update"
           });
         }
+      } catch (errEmail) {
+        console.error("Failed to send daily-config email notifications:", errEmail);
       }
-    } catch (errEmail) {
-      console.error("Failed to send daily-config email notifications:", errEmail);
-    }
+    });
 
     return NextResponse.json({ success: true, message: "Daily configuration saved successfully" });
   } catch (error: any) {
@@ -358,10 +445,18 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm", "kam"] });
+    if (errorResponse || !auth) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
-    const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
+    const requestedCollegeId = searchParams.get("college_id") || searchParams.get("collegeId");
+    const isSuper = auth.user.isSuperAdmin || auth.user.role === "admin";
+    const collegeId = (!isSuper && auth.user.role === "cm" && auth.user.college_id)
+      ? auth.user.college_id
+      : requestedCollegeId;
+
     const dateStr = searchParams.get("dateStr");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");

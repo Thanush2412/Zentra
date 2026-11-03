@@ -1,36 +1,36 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Code, CheckCircle2, AlertCircle, Clock, Users, ArrowUpRight, Search, TrendingUp } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { Code, CheckCircle2, AlertCircle, Clock, Search, ArrowUpDown } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
+import { Badge } from "@/components/ui/badge";
 
 export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: string }> = ({ selectedCollegeId = "all", kamId }) => {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
-        if (kamId) params.set("kamId", kamId);
-        const query = params.toString() ? `?${params.toString()}` : "";
-        const res = await fetch(`/api/kam/practical-skills${query}`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setData(json);
-        }
-      } catch (err) {
-        console.error("Failed to load practical skills data:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    loadData();
-    return () => { isMounted = false; };
-  }, [selectedCollegeId, kamId]);
+  const params = new URLSearchParams();
+  if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
+  if (kamId) params.set("kamId", kamId);
+  const queryString = params.toString();
 
+  const skillsQuery = useQuery({
+    queryKey: qk.kamPanel("practical-skills", selectedCollegeId, queryString),
+    queryFn: async () => {
+      const json = await apiFetch<any>(`/api/kam/practical-skills${queryString ? `?${queryString}` : ""}`);
+      return json?.success ? json : null;
+    },
+  });
+  const data = skillsQuery.data ?? null;
+  const loading = skillsQuery.isPending;
 
   const summary = data?.summary || {
     totalWeeklyTasks: 0,
@@ -45,57 +45,105 @@ export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: 
   const mentorBacklogs: any[] = data?.mentorBacklogs || [];
   const subjectProgress: any[] = data?.subjectProgress || [];
 
+  const filteredMentors = useMemo(() => {
+    if (!search.trim()) return mentorBacklogs;
+    const q = search.toLowerCase().trim();
+    return mentorBacklogs.filter(m =>
+      (m.mentorName && m.mentorName.toLowerCase().includes(q)) ||
+      (m.department && m.department.toLowerCase().includes(q))
+    );
+  }, [mentorBacklogs, search]);
+
+  const sortedMentors = useMemo(() => {
+    if (!sortKey) return filteredMentors;
+    return [...filteredMentors].sort((a, b) => {
+      const valA = a[sortKey];
+      const valB = b[sortKey];
+      if (valA === valB) return 0;
+      if (valA === null || valA === undefined) return 1;
+      if (valB === null || valB === undefined) return -1;
+      if (typeof valA === "number" && typeof valB === "number") {
+        return sortDirection === "asc" ? valA - valB : valB - valA;
+      }
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+    });
+  }, [filteredMentors, sortKey, sortDirection]);
+
+  const paginatedMentors = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedMentors.slice(start, start + pageSize);
+  }, [sortedMentors, currentPage, pageSize]);
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* ── 1. Top Summary Metric Cards ── */}
+      {/* ── 1. Top Summary Metric Cards with Shadcn Card ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Total Code Submissions</span>
-            <Code className="h-4 w-4 text-indigo-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{summary.totalSubmissions.toLocaleString()}</span>
-            <span className="text-xs font-bold text-slate-400">Repositories</span>
-          </div>
-          <p className="text-[10px] font-bold text-emerald-600 mt-1">{summary.completionRate}% Portfolio Submission Rate</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Total Code Submissions</span>
+              <Code className="h-4 w-4 text-indigo-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-slate-900">{summary.totalSubmissions.toLocaleString()}</span>
+              <span className="text-xs font-bold text-slate-400">Repositories</span>
+            </div>
+            <p className="text-[10px] font-bold text-emerald-600 mt-1">{summary.completionRate}% Portfolio Submission Rate</p>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Verified & Cleared</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-700">{summary.totalVerified.toLocaleString()}</span>
-            <span className="text-xs font-bold text-emerald-600">Passed</span>
-          </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-1">{summary.verificationThroughput}% Grading Throughput</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Verified & Cleared</span>
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-emerald-700">{summary.totalVerified.toLocaleString()}</span>
+              <span className="text-xs font-bold text-emerald-600">Passed</span>
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 mt-1">{summary.verificationThroughput}% Grading Throughput</p>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Pending Mentor Grading</span>
-            <Clock className="h-4 w-4 text-amber-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-amber-700">{summary.totalPending}</span>
-            <span className="text-xs font-bold text-amber-600">Submissions</span>
-          </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-1">Awaiting mentor code review</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Pending Mentor Grading</span>
+              <Clock className="h-4 w-4 text-amber-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-amber-700">{summary.totalPending}</span>
+              <span className="text-xs font-bold text-amber-600">Submissions</span>
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 mt-1">Awaiting mentor code review</p>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Rework Required</span>
-            <AlertCircle className="h-4 w-4 text-rose-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-rose-700">{summary.totalRework}</span>
-            <span className="text-xs font-bold text-rose-500">Returned</span>
-          </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-1">Returned for code improvements</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Rework Required</span>
+              <AlertCircle className="h-4 w-4 text-rose-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-rose-700">{summary.totalRework}</span>
+              <span className="text-xs font-bold text-rose-500">Returned</span>
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 mt-1">Returned for code improvements</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* ── 2. Subject-wise Lab Completion Progress ── */}
@@ -113,9 +161,9 @@ export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: 
               <div key={idx} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-800">{s.subject}</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700">
+                  <Badge variant="brand" className="text-[10px] font-black">
                     {s.completionPct}%
-                  </span>
+                  </Badge>
                 </div>
                 <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                   <div
@@ -137,61 +185,103 @@ export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: 
         )}
       </div>
 
-      {/* ── 3. Mentor Grading Backlog & Turnaround ── */}
+      {/* ── 3. Mentor Grading Backlog & Turnaround with Shadcn Table & Pagination ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-black text-slate-900">Mentor Lab Grading Turnaround & Backlog</h3>
             <p className="text-xs text-slate-400 font-medium">Tracking mentor code review velocity and outstanding unverified submissions</p>
+          </div>
+          <div className="relative">
+            <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search mentor or dept..."
+              value={search}
+              onChange={e => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none w-48"
+            />
           </div>
         </div>
 
         {loading ? (
           <div className="py-12 text-center text-xs font-bold text-slate-400">Loading mentor turnaround data...</div>
-        ) : mentorBacklogs.length === 0 ? (
+        ) : filteredMentors.length === 0 ? (
           <div className="py-12 text-center text-xs font-bold text-slate-400">No active mentor backlogs recorded.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                  <th className="py-3 px-3">Faculty / Mentor</th>
-                  <th className="py-3 px-3">Department</th>
-                  <th className="py-3 px-3 text-center">Tasks Created</th>
-                  <th className="py-3 px-3 text-center">Assigned Submissions</th>
-                  <th className="py-3 px-3 text-center">Verified</th>
-                  <th className="py-3 px-3 text-center">Pending Backlog</th>
-                  <th className="py-3 px-3 text-center">Review Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                {mentorBacklogs.map(m => (
-                  <tr key={m.mentorId} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-3 px-3 font-black text-slate-900">{m.mentorName}</td>
-                    <td className="py-3 px-3 font-bold text-slate-600">{m.department}</td>
-                    <td className="py-3 px-3 text-center font-bold">{m.tasksCreated}</td>
-                    <td className="py-3 px-3 text-center font-bold">{m.assignedSubmissions}</td>
-                    <td className="py-3 px-3 text-center font-black text-emerald-600">{m.verifiedSubmissions}</td>
-                    <td className="py-3 px-3 text-center font-black">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50 hover:bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
+                  <TableHead onClick={() => handleSort("mentorName")} className="cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center gap-1">Faculty / Mentor <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead onClick={() => handleSort("tasksCreated")} className="text-center cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center justify-center gap-1">Tasks Created <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort("assignedSubmissions")} className="text-center cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center justify-center gap-1">Assigned Submissions <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort("verifiedSubmissions")} className="text-center cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center justify-center gap-1">Verified <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort("pendingBacklog")} className="text-center cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center justify-center gap-1">Pending Backlog <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead className="text-center">Review Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                {paginatedMentors.map(m => (
+                  <TableRow key={m.mentorId} className="hover:bg-slate-50/60 transition-colors">
+                    <TableCell className="font-black text-slate-900">{m.mentorName}</TableCell>
+                    <TableCell className="font-bold text-slate-600">{m.department}</TableCell>
+                    <TableCell className="text-center font-bold">{m.tasksCreated}</TableCell>
+                    <TableCell className="text-center font-bold">{m.assignedSubmissions}</TableCell>
+                    <TableCell className="text-center font-black text-emerald-600">{m.verifiedSubmissions}</TableCell>
+                    <TableCell className="text-center font-black">
                       <span className={m.pendingBacklog > 10 ? "text-rose-600" : m.pendingBacklog > 0 ? "text-amber-600" : "text-emerald-600"}>
                         {m.pendingBacklog}
                       </span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                        m.turnaroundStatus === "Optimal"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : m.turnaroundStatus === "Moderate Delay"
-                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                          : "bg-rose-50 text-rose-700 border border-rose-200"
-                      }`}>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant={
+                          m.turnaroundStatus === "Optimal"
+                            ? "success"
+                            : m.turnaroundStatus === "Moderate Delay"
+                            ? "warning"
+                            : "destructive"
+                        }
+                        className="text-[10px] font-black"
+                      >
                         {m.turnaroundStatus}
-                      </span>
-                    </td>
-                  </tr>
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* Standardized Pagination Bar */}
+        {sortedMentors.length > 0 && (
+          <div className="pt-2">
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedMentors.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+            />
           </div>
         )}
       </div>

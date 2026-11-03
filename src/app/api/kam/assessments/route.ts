@@ -1,15 +1,20 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireKamScope, resolveScopeParams } from "@/lib/kamScope";
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("collegeId");
-    const kamId = searchParams.get("kamId");
+    const scoped = resolveScopeParams(scope!, searchParams.get("kamId"), searchParams.get("collegeId"));
+    if (scoped.errorResponse) return scoped.errorResponse;
+    const collegeId = scoped.collegeId;
+    const kamId = scoped.kamId;
     const department = searchParams.get("department");
 
     // Fetch colleges in scope
@@ -34,14 +39,16 @@ export async function GET(request: Request) {
 
     const inClause = `(${collegeIds.map(() => "?").join(",")})`;
 
-    // Query academic performance records scoped to colleges
+    // Query academic performance records scoped to colleges. A failed slice must
+    // fail the request: an empty list renders as "no exams recorded", which is a
+    // different claim from "the read broke".
     const [studentsList, examMarksList, examSchedulesList, tasksScores] = await Promise.all([
       db.all(`
         SELECT st.id, st.name, st.roll_number, st.department, st.classGroup, st.college_id, c.name as college_name
         FROM students st
         LEFT JOIN colleges c ON st.college_id = c.id
         WHERE st.college_id IN ${inClause}
-      `, ...collegeIds).catch(() => []),
+      `, ...collegeIds),
       db.all(`
         SELECT sem.*, s.college_id, s.department as student_dept, s.name as student_name, c.name as college_name,
                es.exam_type, es.subject_name
@@ -50,20 +57,20 @@ export async function GET(request: Request) {
         LEFT JOIN colleges c ON s.college_id = c.id
         LEFT JOIN exam_schedules es ON sem.exam_id = es.id
         WHERE s.college_id IN ${inClause}
-      `, ...collegeIds).catch(() => []),
+      `, ...collegeIds),
       db.all(`
         SELECT es.*, c.name as college_name
         FROM exam_schedules es
         LEFT JOIN colleges c ON es.college_id = c.id
         WHERE es.college_id IN ${inClause}
-      `, ...collegeIds).catch(() => []),
+      `, ...collegeIds),
       db.all(`
         SELECT st.*, s.college_id, s.department as student_dept, c.name as college_name
         FROM student_tracker st
         JOIN students s ON st.student_id = s.id
         LEFT JOIN colleges c ON s.college_id = c.id
         WHERE s.college_id IN ${inClause}
-      `, ...collegeIds).catch(() => [])
+      `, ...collegeIds)
     ]);
 
     // Aggregate by Department
@@ -172,7 +179,7 @@ export async function GET(request: Request) {
       const actualAvg = data.marksCount > 0 ? Math.round(data.totalPct / data.marksCount) : 0;
       return {
         assessmentType: type,
-        weightage: "25%",
+        weightage: null,
         targetAvg: 75,
         actualAvg,
         compliance: data.marksCount > 0 ? "🟢 Completed" : data.status === "Ongoing" ? "🟡 In-Progress" : "🔵 Scheduled"

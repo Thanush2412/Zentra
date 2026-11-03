@@ -1,13 +1,16 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, chunkList, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("collegeId");
@@ -36,8 +39,6 @@ export async function GET(request: Request) {
         taskParams.push(parseInt(weekNumber, 10));
       }
 
-      const tasks = await db.all(taskQuery, ...taskParams).catch(() => []);
-
       let marksQuery = "SELECT * FROM student_academic_tracker WHERE 1=1";
       const marksParams: any[] = [];
       if (subject && subject !== "all") {
@@ -53,7 +54,20 @@ export async function GET(request: Request) {
         marksParams.push(parseInt(weekNumber, 10));
       }
 
-      const tracker = await db.all(marksQuery, ...marksParams).catch(() => []);
+      // Tasks and marks filter on the same inputs and depend on nothing but the request,
+      // so one round trip serves the whole weekly view. Both tables only exist where
+      // their migration has run, so a failed slice still degrades to empty - just loudly.
+      const weeklyFailures: QueryFailure[] = [];
+      const [tasks, tracker] = await db.multiQuery(
+        [
+          { sql: taskQuery, params: taskParams },
+          { sql: marksQuery, params: marksParams },
+        ],
+        weeklyFailures
+      );
+      if (weeklyFailures.length > 0) {
+        console.warn("[/api/academic-tracker] weekly partial read:", weeklyFailures.map(f => f.sql.slice(0, 60)));
+      }
 
       return NextResponse.json({
         success: true,
@@ -130,6 +144,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     // Idempotent, runs once per process — adds weekly plan linkage columns before writes.
     await ensureMigration("academic_tracker_weekly_plan_link");
@@ -159,12 +175,10 @@ export async function POST(request: Request) {
         );
       }
 
-      // Ensure task_date column exists
-      try {
-        await db.run("ALTER TABLE weekly_academic_tasks ADD COLUMN task_date TEXT");
-      } catch (_) {}
+      // task_date is added once by the startup migration
+      // `weekly_academic_tasks_task_date`, not by DDL on every request.
 
-      const id = `acad_task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const id = generateId("acad_task");
       const now = new Date().toISOString();
       const effectiveTaskDate = (taskDate && String(taskDate).trim()) || now.slice(0, 10);
 
@@ -215,7 +229,9 @@ export async function POST(request: Request) {
       }
 
       const now = new Date().toISOString();
-      let updatedCount = 0;
+      // Deduplicated by the upsert's conflict key so a repeated row inside one upload
+      // resolves as last-entry-wins, exactly like the old sequential loop.
+      const markRows = new Map<string, any[]>();
 
       for (const rec of records) {
         const studentEmail = (rec.studentEmail || rec.email || "").trim().toLowerCase();
@@ -238,41 +254,48 @@ export async function POST(request: Request) {
         const attendanceStatus = rec.attendanceStatus || rec.attendance || "Present";
         const feedback = rec.feedback || rec.remarks || null;
         const gBy = rec.gradedBy || gradedBy || null;
-        const id = `st_acad_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-        await db.run(
-          `INSERT INTO student_academic_tracker (
-            id, student_email, student_id, class_group, subject, week_number, attendance_status, quiz_marks, assessment_marks, assignment_marks, total_marks, feedback, graded_by, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(student_email, class_group, subject, week_number) DO UPDATE SET
-            student_id = COALESCE(excluded.student_id, student_academic_tracker.student_id),
-            attendance_status = excluded.attendance_status,
-            quiz_marks = excluded.quiz_marks,
-            assessment_marks = excluded.assessment_marks,
-            assignment_marks = excluded.assignment_marks,
-            total_marks = excluded.total_marks,
-            feedback = excluded.feedback,
-            graded_by = excluded.graded_by,
-            updated_at = excluded.updated_at`,
-          [
-            id,
-            studentEmail,
-            studentId,
-            cGroup,
-            subj,
-            wk,
-            attendanceStatus,
-            qMarks,
-            asMarks,
-            agMarks,
-            totMarks,
-            feedback,
-            gBy,
-            now
-          ]
-        );
-        updatedCount++;
+        markRows.set(`${studentEmail}|${cGroup}|${subj}|${wk}`, [
+          generateId("st_acad"),
+          studentEmail,
+          studentId,
+          cGroup,
+          subj,
+          wk,
+          attendanceStatus,
+          qMarks,
+          asMarks,
+          agMarks,
+          totMarks,
+          feedback,
+          gBy,
+          now
+        ]);
       }
+
+      const rowsToWrite = Array.from(markRows.values());
+      await db.transaction(async (tx) => {
+        for (const chunk of chunkList(rowsToWrite, 100)) {
+          const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+          await tx.run(
+            `INSERT INTO student_academic_tracker (
+              id, student_email, student_id, class_group, subject, week_number, attendance_status, quiz_marks, assessment_marks, assignment_marks, total_marks, feedback, graded_by, updated_at
+            ) VALUES ${values}
+            ON CONFLICT(student_email, class_group, subject, week_number) DO UPDATE SET
+              student_id = COALESCE(excluded.student_id, student_academic_tracker.student_id),
+              attendance_status = excluded.attendance_status,
+              quiz_marks = excluded.quiz_marks,
+              assessment_marks = excluded.assessment_marks,
+              assignment_marks = excluded.assignment_marks,
+              total_marks = excluded.total_marks,
+              feedback = excluded.feedback,
+              graded_by = excluded.graded_by,
+              updated_at = excluded.updated_at`,
+            ...chunk.flat()
+          );
+        }
+      });
+      const updatedCount = rowsToWrite.length;
 
       // Fetch all updated entries for this classGroup and subject/week
       const updatedTracker = await db.all(
@@ -324,7 +347,7 @@ export async function POST(request: Request) {
         totMarks = (qMarks || 0) + (asMarks || 0) + (agMarks || 0);
       }
 
-      const id = `st_acad_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const id = generateId("st_acad");
       const now = new Date().toISOString();
 
       await db.run(
@@ -400,7 +423,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = getInstitutionDateStr();
     if (date.trim() !== todayStr) {
       return NextResponse.json(
         { success: false, message: "Period conduction can only be logged for today's active schedule. Past and future dates cannot be logged." },
@@ -408,7 +431,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const id = existingId || `acad_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const id = existingId || generateId("acad");
     const now = new Date().toISOString();
 
     let resolvedMentorName = mentorName;
@@ -503,6 +526,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     return POST(new Request(request.url, { method: "POST", headers: request.headers, body: JSON.stringify(body) }));
@@ -514,6 +539,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

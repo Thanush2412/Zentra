@@ -1,5 +1,3 @@
-// Pin to Mumbai (bom1) — co-located with Supabase DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";

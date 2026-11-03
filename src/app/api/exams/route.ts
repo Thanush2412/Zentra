@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// POST imports one row per exam. Without this the route ran on the platform
+// default and a 60s statement_timeout could outlive the function, killing the
+// import half-applied.
+export const maxDuration = 120;
 
 const noCacheHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -13,6 +19,8 @@ const noCacheHeaders = {
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("college_id");
     const department = searchParams.get("department");
@@ -92,24 +100,31 @@ export async function POST(request: Request) {
     const db = await getDb();
 
     // Check if bulk array or single object
-    const schedules = Array.isArray(body) ? body : (body.schedules ? body.schedules : [body]);
+    const schedules: any[] = Array.isArray(body) ? body : (body.schedules ? body.schedules : [body]);
 
     if (!schedules || schedules.length === 0) {
       return NextResponse.json({ success: false, message: "No exam data provided" }, { status: 400 });
     }
 
-    const inserted: any[] = [];
-    for (const item of schedules) {
-      const id = item.id || `exam_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const college_id = item.college_id || "Clg_c";
+    // Build every row first, then write in a handful of statements. Per-item
+    // autocommitted upserts meant a failure mid-import left half a timetable
+    // stored with no way to tell which rows made it, and cost two round trips
+    // per exam (~200ms each).
+    const rows = schedules.map((item: any) => {
+      const id = item.id || generateId("exam");
+      const college_id = item.college_id || "";
       const department = item.department || "General";
       const semester = item.semester || "Semester 1";
       const exam_type = (item.exam_type || item.exam_name || "CIA 1").trim();
       const subject_name = item.subject_name || "Subject";
       const subject_code = item.subject_code || null;
-      const exam_date = item.exam_date || new Date().toISOString().slice(0, 10);
-      const rawStart = item.start_time || (item.session_time ? item.session_time.split("-")[0]?.trim() : "") || "10:00 AM";
-      const rawEnd = item.end_time || (item.session_time ? item.session_time.split("-")[1]?.trim() : "") || "01:00 PM";
+      const exam_date = item.exam_date || getInstitutionDateStr();
+      // session_time is free text and usually reads "9.00 AM to 12.00 PM", so a
+      // hyphen-only split returned undefined and every imported exam silently
+      // fell back to the default window.
+      const sessionParts = (item.session_time || "").split(/\s*(?:to|–|—|-)\s*/i);
+      const rawStart = item.start_time || sessionParts[0]?.trim() || "10:00 AM";
+      const rawEnd = item.end_time || sessionParts[1]?.trim() || "01:00 PM";
       const start_time = formatToCanonicalTime12(rawStart);
       const end_time = formatToCanonicalTime12(rawEnd);
       const session_time = `${start_time} - ${end_time}`;
@@ -120,61 +135,108 @@ export async function POST(request: Request) {
       const created_by = item.created_by || "Campus Manager";
       const status = item.status || "Scheduled";
 
-      await db.run(
-        `INSERT INTO exam_schedules (
-          id, college_id, department, semester, exam_type, subject_name,
-          subject_code, exam_date, session_time, start_time, end_time, day_order,
-          hall_room, max_marks, passing_marks, created_by, status, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(id) DO UPDATE SET
-          department = excluded.department,
-          semester = excluded.semester,
-          exam_type = excluded.exam_type,
-          subject_name = excluded.subject_name,
-          subject_code = excluded.subject_code,
-          exam_date = excluded.exam_date,
-          session_time = excluded.session_time,
-          start_time = excluded.start_time,
-          end_time = excluded.end_time,
-          day_order = excluded.day_order,
-          hall_room = excluded.hall_room,
-          max_marks = excluded.max_marks,
-          passing_marks = excluded.passing_marks,
-          status = excluded.status,
-          updated_at = CURRENT_TIMESTAMP`,
-        [
+      return {
+        values: [
           id, college_id, department, semester, exam_type, subject_name,
           subject_code, exam_date, session_time, start_time, end_time, day_order,
           hall_room, max_marks, passing_marks, created_by, status
-        ]
-      );
+        ],
+        config: {
+          id: `${college_id}_${exam_date}`,
+          college_id,
+          exam_date,
+          day_order,
+          notes: `${exam_type} Examination`
+        },
+        inserted: { id, exam_type, subject_name, exam_date, session_time, start_time, end_time, day_order, department, semester }
+      };
+    });
 
-      // Auto-sync campus_daily_configs to recognize this date as an active exam day with the specified day_order
-      try {
-        const configId = `${college_id}_${exam_date}`;
+    // 17 bind parameters per row, so 500 rows keeps each statement well inside
+    // Postgres' 65,535-parameter ceiling.
+    const ROW_CHUNK = 500;
+
+    // A multi-row ON CONFLICT DO UPDATE rejects a target key it would update twice
+    // ("cannot affect row a second time"), which the old per-row loop tolerated.
+    // Collapse duplicates last-wins, exactly like sequential upserts did.
+    const dedupeById = (items: any[], keyOf: (item: any) => any) => {
+      const byKey = new Map<any, any>();
+      for (const item of items) byKey.set(keyOf(item), item);
+      return Array.from(byKey.values());
+    };
+    const examRows = dedupeById(rows, (r) => r.values[0]);
+    const configRows = dedupeById(rows, (r) => r.config.id);
+
+    await db.transaction(async (tx) => {
+      for (let i = 0; i < examRows.length; i += ROW_CHUNK) {
+        const chunk = examRows.slice(i, i + ROW_CHUNK);
+        const placeholders = chunk
+          .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)")
+          .join(", ");
+        const params = chunk.reduce<any[]>((acc, r) => acc.concat(r.values), []);
+
+        await tx.run(
+          `INSERT INTO exam_schedules (
+            id, college_id, department, semester, exam_type, subject_name,
+            subject_code, exam_date, session_time, start_time, end_time, day_order,
+            hall_room, max_marks, passing_marks, created_by, status, updated_at
+          ) VALUES ${placeholders}
+          ON CONFLICT(id) DO UPDATE SET
+            department = excluded.department,
+            semester = excluded.semester,
+            exam_type = excluded.exam_type,
+            subject_name = excluded.subject_name,
+            subject_code = excluded.subject_code,
+            exam_date = excluded.exam_date,
+            session_time = excluded.session_time,
+            start_time = excluded.start_time,
+            end_time = excluded.end_time,
+            day_order = excluded.day_order,
+            hall_room = excluded.hall_room,
+            max_marks = excluded.max_marks,
+            passing_marks = excluded.passing_marks,
+            status = excluded.status,
+            updated_at = CURRENT_TIMESTAMP`,
+          params
+        );
+      }
+    });
+
+    // Auto-sync campus_daily_configs to recognize each imported date as an active
+    // exam day with the specified day_order. Derived data, so it stays best-effort
+    // after the import commits — but the outcome is reported instead of discarded.
+    let dailyConfigSynced = true;
+    try {
+      for (let i = 0; i < configRows.length; i += ROW_CHUNK) {
+        const chunk = configRows.slice(i, i + ROW_CHUNK);
+        const placeholders = chunk.map(() => "(?, ?, ?, 'exam_day', ?, ?, 'Offline', CURRENT_TIMESTAMP)").join(", ");
+        const params = chunk.reduce<any[]>((acc, r) => acc.concat([r.config.id, r.config.college_id, r.config.exam_date, r.config.day_order, r.config.notes]), []);
+
         await db.run(
           `INSERT INTO campus_daily_configs (
             id, college_id, dateStr, day_type, day_order, notes, session_mode, updated_at
-          ) VALUES (?, ?, ?, 'exam_day', ?, ?, 'Offline', CURRENT_TIMESTAMP)
+          ) VALUES ${placeholders}
           ON CONFLICT(id) DO UPDATE SET
             day_type = 'exam_day',
             day_order = CASE WHEN excluded.day_order IS NOT NULL AND excluded.day_order != '' THEN excluded.day_order ELSE campus_daily_configs.day_order END,
             notes = excluded.notes,
             updated_at = CURRENT_TIMESTAMP
           WHERE campus_daily_configs.day_type != 'holiday'`,
-          [configId, college_id, exam_date, day_order, `${exam_type} Examination`]
+          params
         );
-      } catch (cdcErr) {
-        console.warn("Could not auto-sync campus_daily_configs for exam date:", cdcErr);
       }
-
-      inserted.push({ id, exam_type, subject_name, exam_date, session_time, start_time, end_time, day_order, department, semester });
+    } catch (cdcErr) {
+      dailyConfigSynced = false;
+      console.warn("Could not auto-sync campus_daily_configs for exam dates:", cdcErr);
     }
+
+    const inserted = rows.map(r => r.inserted);
 
     return NextResponse.json({
       success: true,
       message: `Successfully saved ${inserted.length} exam schedule(s)`,
-      inserted
+      inserted,
+      dailyConfigSynced
     });
   } catch (error: any) {
     console.error("Error saving exam schedule:", error);

@@ -1,16 +1,20 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const subject = searchParams.get("subject");
     const unit = searchParams.get("unit");
     const classGroup = searchParams.get("classGroup");
+    const collegeId = searchParams.get("collegeId");
 
     let query = "SELECT * FROM subject_materials WHERE 1=1";
     const params: any[] = [];
@@ -33,6 +37,11 @@ export async function GET(request: Request) {
       params.push(classGroup);
     }
 
+    if (collegeId) {
+      query += " AND (college_id IS NULL OR college_id = '' OR LOWER(college_id) = LOWER(?))";
+      params.push(collegeId);
+    }
+
     query += " ORDER BY unit_number ASC, created_at DESC";
 
     const materials = await db.all(query, ...params);
@@ -44,6 +53,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const {
@@ -69,12 +80,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const materialId = id || `mat_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const materialId = id || generateId("mat");
 
     await db.run(
       `INSERT INTO subject_materials (
         id, subject, unit_number, title, description, material_type, file_url, external_url, file_size, uploaded_by, mentor_id, class_group, college_id, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT (id) DO UPDATE SET
         subject = EXCLUDED.subject,
         unit_number = EXCLUDED.unit_number,
@@ -88,7 +99,7 @@ export async function POST(request: Request) {
         mentor_id = EXCLUDED.mentor_id,
         class_group = EXCLUDED.class_group,
         college_id = EXCLUDED.college_id,
-        updated_at = NOW()`,
+        updated_at = CURRENT_TIMESTAMP`,
       [
         materialId,
         subject,
@@ -115,6 +126,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

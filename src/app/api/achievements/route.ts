@@ -1,15 +1,18 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     await ensureMigration("student_achievements_table");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
@@ -53,6 +56,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "admin"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("student_achievements_table");
     const db = await getDb();
     const body = await request.json();
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
       topic = "",
       category = "Hackathon & Competitions",
       description = "",
-      dateStr = new Date().toISOString().split("T")[0],
+      dateStr = getInstitutionDateStr(),
       badge = "Winner",
       rewardPrize = "",
       eventName = "",
@@ -83,7 +88,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Achievement title is required" }, { status: 400 });
     }
 
-    const recordId = id || `ach_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const recordId = id || generateId("ach");
     const studentIdsStr = typeof studentIds === "string" ? studentIds : JSON.stringify(studentIds || []);
     const studentNamesStr = typeof studentNames === "string" ? studentNames : JSON.stringify(studentNames || []);
     const photosStr = photos ? (typeof photos === "string" ? photos : JSON.stringify(photos)) : null;
@@ -191,7 +196,7 @@ export async function POST(request: Request) {
     }
 
     // Log to audit_logs for campus e-audit traceability
-    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const auditId = generateId("audit");
     const studentCount = Array.isArray(studentIds) ? studentIds.length : 1;
     const auditDesc = `Student Achievement Recorded: "${title.trim()}" (${badge})${topic ? ` [Topic: ${topic.trim()}]` : ""} for ${studentCount} student(s) by ${addedBy}.`;
 
@@ -235,6 +240,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "admin"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("student_achievements_table");
     const db = await getDb();
     const { searchParams } = new URL(request.url);

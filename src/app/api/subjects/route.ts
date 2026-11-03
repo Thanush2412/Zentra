@@ -1,12 +1,25 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
+import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
+
+// Subjects and courses are campus configuration — read and written only by
+// admin / CM / KAM dashboards. Mentors and students receive them through the
+// role-scoped /api/data payload, never from these routes.
+const ACADEMIC_CONFIG_ROLES: Role[] = ["admin", "cm", "kam"];
+
+async function requireAcademicConfigAccess(request: Request) {
+  return requireAuth(request, { allowedRoles: ACADEMIC_CONFIG_ROLES });
+}
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAcademicConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("collegeId") || searchParams.get("college_id");
@@ -27,21 +40,23 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAcademicConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
+    await ensureMigration("schema_alignment_2026_10");
     const body = await request.json();
 
     // Check if bulk array is provided
     const rawList = Array.isArray(body) ? body : Array.isArray(body.subjects) ? body.subjects : null;
 
     if (rawList && rawList.length > 0) {
-      const createdSubjects: any[] = [];
-      let countRow = await db.get("SELECT COUNT(*) as count FROM subjects");
+      const countRow = await db.get("SELECT COUNT(*) as count FROM subjects");
       let currentCount = countRow?.count || 0;
 
-      for (let i = 0; i < rawList.length; i++) {
-        const item = rawList[i];
+      const rows = rawList.map((item: any, i: number) => {
         const { department, semester, name, type, college_id, year, weekly_hours, subject_group, shift } = item;
-        if (!department || !semester || !name) continue;
+        if (!department || !semester || !name) return null;
 
         let calculatedYear = year;
         if (!calculatedYear) {
@@ -52,17 +67,12 @@ export async function POST(request: Request) {
         }
 
         currentCount++;
-        const newId = `sub_${currentCount}_${Date.now()}_${i}`;
+        const newId = generateId("sub");
         const weeklyHoursVal = parseInt(weekly_hours, 10) || 4;
         const shiftVal = shift || "general";
         const subjectType = type || "SKILL";
 
-        await db.run(
-          `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours, subject_group, shift) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          newId, department, semester, name.trim(), subjectType, college_id || null, calculatedYear, weeklyHoursVal, subject_group || "General", shiftVal
-        );
-
-        createdSubjects.push({
+        return {
           id: newId,
           department,
           semester,
@@ -73,14 +83,26 @@ export async function POST(request: Request) {
           weekly_hours: weeklyHoursVal,
           subject_group: subject_group || "General",
           shift: shiftVal
-        });
-      }
+        };
+      }).filter(Boolean) as any[];
+
+      // One transaction: a row that violates a constraint partway through used to
+      // leave the earlier rows committed and the rest skipped — a silently
+      // half-imported subject list.
+      await db.transaction(async (tx) => {
+        for (const s of rows) {
+          await tx.run(
+            `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours, subject_group, shift) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            s.id, s.department, s.semester, s.name, s.type, s.college_id, s.year, s.weekly_hours, s.subject_group, s.shift
+          );
+        }
+      });
 
       return NextResponse.json({
         success: true,
-        count: createdSubjects.length,
-        subjects: createdSubjects,
-        message: `Successfully created ${createdSubjects.length} subjects.`
+        count: rows.length,
+        subjects: rows,
+        message: `Successfully created ${rows.length} subjects.`
       });
     }
 
@@ -100,7 +122,7 @@ export async function POST(request: Request) {
     }
 
     const countRow = await db.get("SELECT COUNT(*) as count FROM subjects");
-    const newId = `sub_${(countRow?.count || 0) + 1}_${Date.now()}`;
+    const newId = generateId("sub");
 
     const weeklyHoursVal = parseInt(weekly_hours, 10) || 4;
     const shiftVal = shift || "general";
@@ -134,7 +156,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAcademicConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
+    await ensureMigration("schema_alignment_2026_10");
     const body = await request.json();
     const { id, department, semester, name, type, college_id, year, weekly_hours, subject_group, shift } = body;
 
@@ -168,6 +194,9 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAcademicConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -176,26 +205,24 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "Missing id" }, { status: 400 });
     }
 
-    // Look up the subject first so we can cascade-delete related slots
+    // Look up the subject so the slot cascade can be expressed as a subquery.
+    // One transaction, and the attendance detach is no longer swallowed: the
+    // detach used to fail silently and the following DELETE then died on the
+    // foreign key, reporting a mysterious failure with attendance still referencing
+    // slots that were about to disappear.
     const subject = await db.get("SELECT name, department FROM subjects WHERE id = ?", id);
+    const subjectSlotIds =
+      `SELECT s.id FROM slots s WHERE LOWER(s.course) = LOWER(?) AND (LOWER(s.department) = LOWER(?) OR s.department IS NULL OR s.department = '')`;
 
-    if (subject) {
-      const slotsList = await db.all(
-        "SELECT id FROM slots WHERE LOWER(course) = LOWER(?) AND (LOWER(department) = LOWER(?) OR department IS NULL OR department = '')",
-        subject.name, subject.department
-      );
-      const slotIds = slotsList.map((s: any) => s.id);
-
-      if (slotIds.length > 0) {
-        const placeholders = slotIds.map(() => "?").join(",");
-        await db.run(`UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${placeholders})`, slotIds).catch(() => {});
-        await db.run(`DELETE FROM handover_requests WHERE slotId IN (${placeholders})`, slotIds);
-        await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${placeholders})`, slotIds);
-        await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, slotIds);
+    await db.transaction(async (tx) => {
+      if (subject) {
+        await tx.run(`UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${subjectSlotIds})`, subject.name, subject.department);
+        await tx.run(`DELETE FROM handover_requests WHERE slotId IN (${subjectSlotIds})`, subject.name, subject.department);
+        await tx.run(`DELETE FROM approved_handovers WHERE slotId IN (${subjectSlotIds})`, subject.name, subject.department);
+        await tx.run(`DELETE FROM slots WHERE id IN (${subjectSlotIds})`, subject.name, subject.department);
       }
-    }
-
-    await db.run(`DELETE FROM subjects WHERE id = ?`, id);
+      await tx.run(`DELETE FROM subjects WHERE id = ?`, id);
+    });
 
     return NextResponse.json({ success: true, message: "Subject and all associated slots deleted successfully." });
   } catch (error: any) {

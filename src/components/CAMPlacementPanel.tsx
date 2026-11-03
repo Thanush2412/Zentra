@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Briefcase,
   Search,
@@ -34,6 +35,11 @@ import {
   CartesianGrid
 } from "recharts";
 import { useToast } from "@/context/ToastContext";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { Dialog } from "@/components/ui/dialog";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
 
 export interface CAMPlacementPanelProps {
   activeCollegeName?: string;
@@ -43,10 +49,6 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
   activeCollegeName
 }) => {
   const { toast } = useToast();
-
-  const [placementData, setPlacementData] = useState<any | null>(null);
-  const [placementLoading, setPlacementLoading] = useState<boolean>(false);
-  const [placementError, setPlacementError] = useState<string>("");
 
   // Filters matching Attendance tab pattern
   const [selectedPassingYear, setSelectedPassingYear] = useState<string>("all");
@@ -58,50 +60,30 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
   const [selectedStudentForModal, setSelectedStudentForModal] = useState<any | null>(null);
 
   // Live Batch Coding Statistics (LeetCode & HackerRank)
-  const [batchCodingStats, setBatchCodingStats] = useState<any | null>(null);
+  const placementQuery = useQuery({
+    queryKey: qk.placement(activeCollegeName || "", selectedPassingYear, selectedDegree),
+    enabled: !!activeCollegeName,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/audit/placement?college=${encodeURIComponent(activeCollegeName!)}&passingYear=${encodeURIComponent(selectedPassingYear)}&degree=${encodeURIComponent(selectedDegree)}`);
+      if (!data?.success) throw new Error(data?.message || "Failed to load placement data");
+      return data;
+    },
+  });
+  const placementData = placementQuery.data ?? null;
+  const placementLoading = placementQuery.isFetching;
+  const placementError = placementQuery.isError
+    ? (placementQuery.error as Error)?.message || "Failed to load placement data"
+    : "";
 
-  const fetchPlacementData = async (
-    college = activeCollegeName,
-    year = selectedPassingYear,
-    degree = selectedDegree
-  ) => {
-    if (!college) return;
-    setPlacementLoading(true);
-    setPlacementError("");
-    try {
-      const q = `/api/audit/placement?college=${encodeURIComponent(college)}&passingYear=${encodeURIComponent(year)}&degree=${encodeURIComponent(degree)}`;
-      const res = await fetch(q);
-      const data = await res.json();
-      if (data.success) {
-        setPlacementData(data);
-      } else {
-        setPlacementError(data.message || "Failed to load placement data");
-      }
-    } catch (e: any) {
-      setPlacementError("Network error while loading placement data: " + e.message);
-    } finally {
-      setPlacementLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPlacementData();
-  }, [activeCollegeName]);
-
-  useEffect(() => {
-    if (!activeCollegeName) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/coding-stats?collegeName=${encodeURIComponent(activeCollegeName)}&batch=true`);
-        const data = await res.json();
-        if (!cancelled && data.success) {
-          setBatchCodingStats(data);
-        }
-      } catch (_) {}
-    })();
-    return () => { cancelled = true; };
-  }, [activeCollegeName]);
+  const batchCodingQuery = useQuery({
+    queryKey: qk.codingStats(activeCollegeName || ""),
+    enabled: !!activeCollegeName,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/coding-stats?collegeName=${encodeURIComponent(activeCollegeName!)}&batch=true`);
+      return data?.success ? data : null;
+    },
+  });
+  const batchCodingStats = batchCodingQuery.data ?? null;
 
   const getStudentCoding = (st: any) => {
     if (!batchCodingStats || !st) return { lc: null, hr: null };
@@ -162,6 +144,14 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
       return true;
     });
   }, [rawStudents, selectedPassingYear, selectedDegree, selectedStatusFilter, searchQuery]);
+
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+
+  const paginatedRoster = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRoster.slice(start, start + pageSize);
+  }, [filteredRoster, currentPage, pageSize]);
 
   // Export handlers matching Attendance tab
   const exportPlacementData = async (format: "csv" | "excel" | "pdf") => {
@@ -306,7 +296,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
 
       {/* Error Banner */}
       {placementError && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">
+        <div role="alert" className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">
           {placementError}
         </div>
       )}
@@ -430,6 +420,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
             Passing Year / Batch
           </label>
           <select
+            aria-label="Passing Year / Batch"
             value={selectedPassingYear}
             onChange={e => setSelectedPassingYear(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
@@ -449,6 +440,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
             Degree / Stream
           </label>
           <select
+            aria-label="Degree / Stream"
             value={selectedDegree}
             onChange={e => setSelectedDegree(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
@@ -468,6 +460,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
             Placement &amp; Arrear Filter
           </label>
           <select
+            aria-label="Placement & Arrear Filter"
             value={selectedStatusFilter}
             onChange={e => setSelectedStatusFilter(e.target.value)}
             className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
@@ -489,6 +482,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
             <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
+              aria-label="Search Student"
               placeholder="Roll no, name, degree..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -499,142 +493,165 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
       </div>
 
       {/* ──────────────────────── FULL INTERACTIVE TABLE (MATCHING ATTENDANCE TAB EXACTLY) ──────────────────────── */}
-      <div className="overflow-x-auto border border-slate-200 rounded-xl">
-        <table className="w-full text-left text-xs border-collapse">
-          <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-            <tr>
-              <th className="p-3 w-12 text-center">S.No</th>
-              <th className="p-3">Student Name</th>
-              <th className="p-3">Register No</th>
-              <th className="p-3">Department</th>
-              <th className="p-3 text-center">Batch</th>
-              <th className="p-3 text-center">CGPA</th>
-              <th className="p-3 text-center">Coding (LC/HR)</th>
-              <th className="p-3 text-center">Arrears</th>
-              <th className="p-3 text-center">Offers</th>
-              <th className="p-3 text-right">Placement Status</th>
-              <th className="p-3 text-center">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-medium">
-            {placementLoading && filteredRoster.length === 0 ? (
-              <tr>
-                <td colSpan={11} className="p-8 text-center text-slate-400 animate-pulse">
-                  Loading placement data...
-                </td>
-              </tr>
-            ) : filteredRoster.length === 0 ? (
-              <tr>
-                <td colSpan={11} className="p-8 text-center text-emerald-700 font-bold bg-emerald-50/30">
-                  <CheckCircle2 className="w-6 h-6 mx-auto mb-1.5 text-emerald-600" />
-                  No students found matching the selected placement criteria.
-                </td>
-              </tr>
-            ) : (
-              filteredRoster.map((s: any, idx: number) => {
-                const hasArrears = Number(s.current_arrears || 0) > 0;
-                const hasOffers = s.offers && s.offers.length > 0;
+      <div className="space-y-3">
+        <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+          <Table className="w-full text-left text-xs border-collapse">
+            <TableHeader className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider hover:bg-slate-50">
+              <TableRow>
+                <TableHead className="p-3 w-12 text-center">S.No</TableHead>
+                <TableHead className="p-3">Student Name</TableHead>
+                <TableHead className="p-3">Register No</TableHead>
+                <TableHead className="p-3">Department</TableHead>
+                <TableHead className="p-3 text-center">Batch</TableHead>
+                <TableHead className="p-3 text-center">CGPA</TableHead>
+                <TableHead className="p-3 text-center">Coding (LC/HR)</TableHead>
+                <TableHead className="p-3 text-center">Arrears</TableHead>
+                <TableHead className="p-3 text-center">Offers</TableHead>
+                <TableHead className="p-3 text-right">Placement Status</TableHead>
+                <TableHead className="p-3 text-center">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100 font-medium">
+              {placementLoading && filteredRoster.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={11} className="p-8 text-center text-slate-400 animate-pulse">
+                    Loading placement data...
+                  </TableCell>
+                </TableRow>
+              ) : filteredRoster.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={11} className="p-8 text-center text-emerald-700 font-bold bg-emerald-50/30">
+                    <CheckCircle2 className="w-6 h-6 mx-auto mb-1.5 text-emerald-600" />
+                    No students found matching the selected placement criteria.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedRoster.map((s: any, idx: number) => {
+                  const hasArrears = Number(s.current_arrears || 0) > 0;
+                  const hasOffers = s.offers && s.offers.length > 0;
+                  const itemIndex = (currentPage - 1) * pageSize + idx + 1;
 
-                return (
-                  <tr key={`${s.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="p-3 font-mono text-slate-400 text-center">{idx + 1}</td>
-                    <td className="p-3">
-                      <div className="font-bold text-slate-900">{s.full_name}</div>
-                      <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.email}</div>
-                    </td>
-                    <td className="p-3 font-mono text-slate-600 font-semibold">{s.roll_number || "—"}</td>
-                    <td className="p-3">
-                      <span className="font-bold text-slate-800">{s.degrees?.name || "—"}</span>
-                      {s.branches?.name && (
-                        <div className="text-[10px] text-slate-400">{s.branches.name}</div>
-                      )}
-                    </td>
-                    <td className="p-3 text-center font-bold text-slate-700">{s.passing_year || "—"}</td>
-                    <td className="p-3 text-center font-bold text-slate-800">
-                      {s.overall_cgpa != null ? s.overall_cgpa : "—"}
-                    </td>
-                    <td className="p-3 text-center">
-                      {(() => {
-                        const { lc, hr } = getStudentCoding(s);
-                        if (!lc && !hr) return <span className="text-[10px] text-slate-400 italic">Not Synced</span>;
-                        return (
-                          <div className="flex flex-col items-center gap-1">
-                            {lc && (
-                              <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[9px] font-black whitespace-nowrap">
-                                LC: {lc.solvedTotal} Solved
-                              </span>
-                            )}
-                            {hr && (
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-900 border border-emerald-200 text-[9px] font-black whitespace-nowrap">
-                                HR: {hr.rank ? `#${hr.rank}` : `${hr.solved} Solved`}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="p-3 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                          hasArrears ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                        }`}
-                      >
-                        {s.current_arrears ?? 0} {hasArrears ? "Arrears" : "Nil"}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      {hasOffers ? (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
-                          {s.offers.length} Offer{s.offers.length > 1 ? "s" : ""}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-xs">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-right">
-                      <div className="flex flex-col items-end gap-1">
+                  return (
+                    <TableRow key={`${s.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                      <TableCell className="p-3 font-mono text-slate-400 text-center">{itemIndex}</TableCell>
+                      <TableCell className="p-3">
+                        <div className="font-bold text-slate-900">{s.full_name}</div>
+                        <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.email}</div>
+                      </TableCell>
+                      <TableCell className="p-3 font-mono text-slate-600 font-semibold">{s.roll_number || "—"}</TableCell>
+                      <TableCell className="p-3">
+                        <span className="font-bold text-slate-800">{s.degrees?.name || "—"}</span>
+                        {s.branches?.name && (
+                          <div className="text-[10px] text-slate-400">{s.branches.name}</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="p-3 text-center font-bold text-slate-700">{s.passing_year || "—"}</TableCell>
+                      <TableCell className="p-3 text-center font-bold text-slate-800">
+                        {s.overall_cgpa != null ? s.overall_cgpa : "—"}
+                      </TableCell>
+                      <TableCell className="p-3 text-center">
+                        {(() => {
+                          const { lc, hr } = getStudentCoding(s);
+                          if (!lc && !hr) return <span className="text-[10px] text-slate-400 italic">Not Synced</span>;
+                          return (
+                            <div className="flex flex-col items-center gap-1">
+                              {lc && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[9px] font-black whitespace-nowrap">
+                                  LC: {lc.solvedTotal} Solved
+                                </span>
+                              )}
+                              {hr && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-900 border border-emerald-200 text-[9px] font-black whitespace-nowrap">
+                                  HR: {hr.rank ? `#${hr.rank}` : `${hr.solved} Solved`}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell className="p-3 text-center">
                         <span
-                          className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
-                            hasOffers
-                              ? "bg-purple-100 text-purple-800 border border-purple-200"
-                              : hasArrears
-                              ? "bg-amber-100 text-amber-800 border border-amber-200"
-                              : "bg-blue-100 text-blue-800 border border-blue-200"
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                            hasArrears ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-emerald-100 text-emerald-800 border border-emerald-200"
                           }`}
                         >
-                          {hasOffers ? "Placed" : hasArrears ? "At Risk" : "Drive Active"}
+                          {s.current_arrears ?? 0} {hasArrears ? "Arrears" : "Nil"}
                         </span>
-                        <span className="text-[9px] text-slate-500 font-medium whitespace-nowrap">
-                          {hasOffers
-                            ? (s.offers[0]?.company_name || "Placed")
-                            : hasArrears
-                            ? "Need Remedial Clear"
-                            : "Eligible for Drives"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedStudentForModal(s)}
-                        title="View Detailed Student Profile & Placement Record"
-                        className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      </TableCell>
+                      <TableCell className="p-3 text-center">
+                        {hasOffers ? (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">
+                            {s.offers.length} Offer{s.offers.length > 1 ? "s" : ""}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="p-3 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${
+                              hasOffers
+                                ? "bg-purple-100 text-purple-800 border border-purple-200"
+                                : hasArrears
+                                ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                : "bg-blue-100 text-blue-800 border border-blue-200"
+                            }`}
+                          >
+                            {hasOffers ? "Placed" : hasArrears ? "At Risk" : "Drive Active"}
+                          </span>
+                          <span className="text-[9px] text-slate-500 font-medium whitespace-nowrap">
+                            {hasOffers
+                              ? (s.offers[0]?.company_name || "Placed")
+                              : hasArrears
+                              ? "Need Remedial Clear"
+                              : "Eligible for Drives"}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="p-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStudentForModal(s)}
+                          title="View Detailed Student Profile & Placement Record"
+                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
+                        >
+                          View
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {filteredRoster.length > 0 && (
+          <div className="bg-white p-3 rounded-xl border border-slate-200">
+            <Pagination
+              currentPage={currentPage}
+              totalItems={filteredRoster.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* ──────────────────────── MODAL: STUDENT PROFILE & RECORD (MATCHING ATTENDANCE TAB MODAL EXACTLY) ──────────────────────── */}
       {selectedStudentForModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setSelectedStudentForModal(null); }}
+          ariaLabel="Student Profile and Placement Record"
+          overlayClassName="bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200"
+          panelClassName="max-w-lg max-h-[90vh] p-6 space-y-5 rounded-2xl animate-in zoom-in-95 duration-200"
+        >
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
@@ -651,6 +668,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedStudentForModal(null)}
+                aria-label="Close"
                 className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -830,8 +848,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

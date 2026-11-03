@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { prefetchRoleTab } from "@/lib/prefetch";
 import { Card } from "@/components/Card";
 import { Panel } from "@/components/Panel";
 import { Pagination } from "@/components/ui/Pagination";
+import { Dialog } from "@/components/ui/dialog";
 import {
   Sparkles,
   ClipboardList,
@@ -101,6 +104,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   } = useApp();
 
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Sidebar collapse state
   const sidebarRef = useRef<HTMLElement>(null);
@@ -680,6 +684,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 <button
                   key={item.id}
                   type="button"
+                  onMouseEnter={() => prefetchRoleTab(queryClient, "sme", item.id, {})}
                   onClick={() => handleTabChange(item.id as any)}
                   title={isCollapsed ? item.label : undefined}
                   className={`w-full flex items-center transition-all duration-150 cursor-pointer rounded-xl font-bold ${isCollapsed ? "justify-center px-0 py-3" : "justify-between px-3.5 py-2.5 text-xs"
@@ -953,17 +958,17 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 {/* Filter Toolbar */}
                 <div className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 p-3.5 rounded-xl">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <select value={filterCollege} onChange={e => { setFilterCollege(e.target.value); setPage(1); }}
+                    <select aria-label="College filter" value={filterCollege} onChange={e => { setFilterCollege(e.target.value); setPage(1); }}
                       className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
                       <option value="All">All Colleges</option>
                       {uniqueColleges.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
-                    <select value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setPage(1); }}
+                    <select aria-label="Subject filter" value={filterSubject} onChange={e => { setFilterSubject(e.target.value); setPage(1); }}
                       className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
                       <option value="All">All Subjects</option>
                       {uniqueSubjects.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    <select value={filterGroup} onChange={e => { setFilterGroup(e.target.value); setPage(1); }}
+                    <select aria-label="Mentor group filter" value={filterGroup} onChange={e => { setFilterGroup(e.target.value); setPage(1); }}
                       className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
                       <option value="All">All Groups</option>
                       {uniqueGroups.map(g => <option key={g} value={g}>{g}</option>)}
@@ -1466,8 +1471,15 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
 
           {/* ═══════════════ REALLOCATION MODAL (AVAILABILITY WIZARD) ═══════════════ */}
           {swapModalSession && (
-            <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <Dialog
+              open={Boolean(swapModalSession)}
+              onOpenChange={(next) => {
+                if (!next) setSwapModalSession(null);
+              }}
+              ariaLabel="Reallocate L&D session"
+              overlayClassName="bg-slate-950/45 backdrop-blur-sm"
+              panelClassName="max-w-lg rounded-xl p-6 space-y-5 max-h-[90vh] bg-white dark:bg-slate-900"
+            >
                 <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                     <RefreshCw className="h-4.5 w-4.5 text-indigo-500" />
@@ -1486,7 +1498,8 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     <div>
                       <label className="text-[9px] font-black uppercase text-slate-400 block mb-1.5">Reason for Reallocation</label>
                       <select value={swapReason} onChange={e => setSwapReason(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer">
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
+                        aria-label="Reason for Reallocation">
                         <option value="CM Approved Mentor Leave">CM Approved Mentor Leave</option>
                         <option value="SME Unavailable">SME Unavailable</option>
                         <option value="Timetable Conflict">Timetable Conflict</option>
@@ -1496,7 +1509,8 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     <div>
                       <label className="text-[9px] font-black uppercase text-slate-400 block mb-1.5">Remarks (Optional)</label>
                       <textarea rows={3} value={swapRemarks} onChange={e => setSwapRemarks(e.target.value)} placeholder="Provide context..."
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        aria-label="Remarks (Optional)" />
                     </div>
                     <div className="flex gap-3 pt-2">
                       <button type="button" onClick={() => setSwapModalSession(null)} className="flex-1 px-4 py-2.5 text-xs font-extrabold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer">Cancel</button>
@@ -1538,14 +1552,20 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
+            </Dialog>
           )}
 
           {/* ═══════════════ EVALUATION MODAL (100-MARK RUBRIC) ═══════════════ */}
           {evaluationModalSession && (
-            <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <Dialog
+              open={Boolean(evaluationModalSession)}
+              onOpenChange={(next) => {
+                if (!next) setEvaluationModalSession(null);
+              }}
+              ariaLabel="SME L&D evaluation form"
+              overlayClassName="bg-slate-950/45 backdrop-blur-sm"
+              panelClassName="max-w-lg rounded-xl p-6 space-y-5 max-h-[90vh] bg-white dark:bg-slate-900"
+            >
                 <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">
                     SME L&D Evaluation Form
@@ -1578,7 +1598,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                         <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 flex-1">
                           {crit.label} <span className="text-slate-400">(0-{crit.max})</span>
                         </label>
-                        <input
+                        <input aria-label={crit.label}
                           type="number"
                           min={0}
                           max={crit.max}
@@ -1613,6 +1633,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                       onChange={e => setComments(e.target.value)}
                       placeholder="Provide feedback on course knowledge, presentation delivery, confidence, student interaction..."
                       className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                      aria-label="Pedagogical Comments &amp; Feedback"
                     />
                   </div>
                 </div>
@@ -1627,14 +1648,20 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     {submitting ? "Submitting..." : "Submit Evaluation"}
                   </button>
                 </div>
-              </div>
-            </div>
+            </Dialog>
           )}
 
           {/* ═══════════════ VIEW EVALUATION (READ-ONLY) MODAL ═══════════════ */}
           {viewEvalSession && (
-            <div className="fixed inset-0 bg-slate-950/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-in zoom-in-95 duration-200">
+            <Dialog
+              open={Boolean(viewEvalSession)}
+              onOpenChange={(next) => {
+                if (!next) setViewEvalSession(null);
+              }}
+              ariaLabel="SME evaluation record"
+              overlayClassName="bg-slate-950/45 backdrop-blur-sm"
+              panelClassName="max-w-md rounded-xl p-6 space-y-5 max-h-[90vh] bg-white dark:bg-slate-900"
+            >
                 <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
                   <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                     <Lock className="h-4 w-4 text-emerald-500" />
@@ -1695,14 +1722,20 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 >
                   Close
                 </button>
-              </div>
-            </div>
+            </Dialog>
           )}
 
           {/* ═══════════════ AVAILABILITY CONFIGURATION MODAL ═══════════════ */}
           {showAvailModal && (
-            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150">
-              <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-2xl overflow-hidden my-8">
+            <Dialog
+              open={showAvailModal}
+              onOpenChange={(next) => {
+                if (!next) setShowAvailModal(false);
+              }}
+              ariaLabel="Configure working windows and slot timings"
+              overlayClassName="bg-black/60 backdrop-blur-xs overflow-y-auto"
+              panelClassName="max-w-2xl rounded-3xl p-0 space-y-0 overflow-hidden bg-white dark:bg-slate-900 my-8 max-h-[90vh]"
+            >
                 {/* Modal Header */}
                 <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
                   <div className="flex items-center gap-3">
@@ -1721,6 +1754,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   <button
                     type="button"
                     onClick={() => setShowAvailModal(false)}
+                    aria-label="Close availability settings"
                     className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                   >
                     <X className="h-5 w-5" />
@@ -1833,7 +1867,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                           <div className="flex items-center gap-3 flex-wrap">
                             <div>
                               <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Window Purpose</span>
-                              <select
+                              <select aria-label="Window purpose"
                                 value={win.slotType}
                                 onChange={(e) => {
                                   const copy = [...dayWindows];
@@ -1850,7 +1884,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                             <div className="flex items-center gap-2">
                               <div>
                                 <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Start Time</span>
-                                <input
+                                <input aria-label="Start time"
                                   type="time"
                                   value={to24Hour(win.startTime)}
                                   onChange={(e) => {
@@ -1864,7 +1898,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                               <span className="text-slate-400 font-black mt-4">→</span>
                               <div>
                                 <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">End Time</span>
-                                <input
+                                <input aria-label="End time"
                                   type="time"
                                   value={to24Hour(win.endTime)}
                                   onChange={(e) => {
@@ -1994,8 +2028,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
+            </Dialog>
           )}
 
         </div>

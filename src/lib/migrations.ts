@@ -129,14 +129,26 @@ const migrations: Migration[] = [
       const countRes = await db.get("SELECT COUNT(*) as count FROM sme_availability");
       if (!countRes || Number(countRes.count) !== 0) return;
       const smes = await db.all("SELECT id FROM sme_users");
+      if (smes.length === 0) return;
+
+      // One multi-row insert instead of 5 round trips per SME. The old per-row
+      // catch swallowed failures and still recorded the migration as applied,
+      // leaving a partially seeded table that was never retried. A single
+      // statement is atomic, and ON CONFLICT keeps the adapter's retry safe.
+      const placeholders: string[] = [];
+      const params: any[] = [];
       for (const s of smes) {
         for (const d of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]) {
-          await db.run(
-            "INSERT INTO sme_availability (id, sme_id, day_of_week, start_time, end_time, slot_type, is_active) VALUES (?, ?, ?, ?, ?, 'demo', 1)",
-            [`sme_avail_${s.id}_${d.toLowerCase()}_1`, s.id, d, "09:00 AM", "05:30 PM"]
-          ).catch(() => {});
+          placeholders.push("(?, ?, ?, ?, ?, 'demo', 1)");
+          params.push(`sme_avail_${s.id}_${d.toLowerCase()}_1`, s.id, d, "09:00 AM", "05:30 PM");
         }
       }
+      await db.run(
+        `INSERT INTO sme_availability (id, sme_id, day_of_week, start_time, end_time, slot_type, is_active)
+         VALUES ${placeholders.join(", ")}
+         ON CONFLICT (id) DO NOTHING`,
+        params
+      );
     }
   },
   {
@@ -437,6 +449,46 @@ const migrations: Migration[] = [
     }
   },
   {
+    name: "mentor_weekly_plans",
+    run: async (db) => {
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS mentor_weekly_plans (
+          id VARCHAR(255) PRIMARY KEY,
+          college_id VARCHAR(255) NOT NULL,
+          mentor_id VARCHAR(255) NOT NULL,
+          mentor_name VARCHAR(255),
+          department VARCHAR(255),
+          subject VARCHAR(255) NOT NULL,
+          class_group VARCHAR(255) NOT NULL,
+          week_number INTEGER NOT NULL,
+          start_date VARCHAR(50),
+          end_date VARCHAR(50),
+          unit VARCHAR(255),
+          topics_planned TEXT,
+          session_plan TEXT,
+          learning_objectives TEXT,
+          teaching_mode VARCHAR(50) DEFAULT 'Offline',
+          material_url TEXT,
+          status VARCHAR(50) DEFAULT 'Submitted',
+          cam_feedback TEXT,
+          sme_remarks TEXT,
+          verified_by VARCHAR(255),
+          verified_at VARCHAR(100),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      const cols = [
+        "ALTER TABLE mentor_weekly_plans ADD COLUMN start_date VARCHAR(50)",
+        "ALTER TABLE mentor_weekly_plans ADD COLUMN end_date VARCHAR(50)",
+        "ALTER TABLE mentor_weekly_plans ADD COLUMN sme_remarks TEXT"
+      ];
+      for (const sql of cols) {
+        await db.exec(sql).catch(() => {});
+      }
+    }
+  },
+  {
     // Leave-driven Demo Reallocation: when a mentor's leave overlaps a scheduled
     // demo, the mentor proposes a new period which is RESERVED (pending) until the
     // L&D approves. Pending reservations block booking/reschedule of other
@@ -469,33 +521,13 @@ const migrations: Migration[] = [
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `).catch(() => {});
+      // request_kind separates L&D leave reallocations from mentor-initiated reschedules and
+      // is read by the booking gates, so it is created with the table instead of being
+      // ALTERed on every reschedule request.
+      await db.exec("ALTER TABLE demo_reallocation_requests ADD COLUMN IF NOT EXISTS request_kind TEXT DEFAULT 'leave'").catch(() => {});
       await db.exec("CREATE INDEX IF NOT EXISTS idx_demo_realloc_status ON demo_reallocation_requests(status)").catch(() => {});
       await db.exec("CREATE INDEX IF NOT EXISTS idx_demo_realloc_session ON demo_reallocation_requests(demo_session_id)").catch(() => {});
       await db.exec("CREATE INDEX IF NOT EXISTS idx_demo_realloc_leave ON demo_reallocation_requests(leave_request_id)").catch(() => {});
-    }
-  },
-  {
-    // Hot-path indexes (plan item 18) — verified against the role-scoped
-    // queries in /api/data and the attendance routes.
-    name: "hot_path_indexes",
-    run: async (db) => {
-      const stmts = [
-        "CREATE INDEX IF NOT EXISTS idx_student_attendance_studentid ON student_attendance(studentId)",
-        "CREATE INDEX IF NOT EXISTS idx_student_attendance_slotid ON student_attendance(slotId)",
-        "CREATE INDEX IF NOT EXISTS idx_student_attendance_datestr ON student_attendance(dateStr)",
-        "CREATE INDEX IF NOT EXISTS idx_student_attendance_student_date ON student_attendance(studentId, dateStr)",
-        "CREATE INDEX IF NOT EXISTS idx_slots_mentorid ON slots(mentorId)",
-        "CREATE INDEX IF NOT EXISTS idx_slots_college_id ON slots(college_id)",
-        "CREATE INDEX IF NOT EXISTS idx_students_college_id ON students(college_id)",
-        "CREATE INDEX IF NOT EXISTS idx_mentors_college_id ON mentors(college_id)",
-        "CREATE INDEX IF NOT EXISTS idx_leave_requests_studentid ON leave_requests(studentId)",
-        "CREATE INDEX IF NOT EXISTS idx_login_history_user_id ON login_history(user_id)",
-      ];
-      for (const sql of stmts) {
-        await db.exec(sql).catch((err: any) => {
-          console.warn(`[migrations] index failed: ${sql.slice(0, 70)}... (${err?.message})`);
-        });
-      }
     }
   },
   {
@@ -581,6 +613,9 @@ const migrations: Migration[] = [
           updated_at TEXT
         );
       `).catch(() => {});
+      // is_system marks the four mandatory compliance checks as fixed; the CRUD route
+      // reads it on every request, so it lives with the table rather than being ALTERed.
+      await db.exec("ALTER TABLE demo_evaluation_criteria ADD COLUMN IF NOT EXISTS is_system INTEGER DEFAULT 0").catch(() => {});
       await db.exec("CREATE INDEX IF NOT EXISTS idx_demo_eval_criteria_dept ON demo_evaluation_criteria(department)").catch(() => {});
     }
   },
@@ -625,12 +660,21 @@ const migrations: Migration[] = [
     }
   },
   {
-    name: "preserve_student_attendance_on_slot_delete",
+    // Credential-stuffing guard for /api/login: failed attempts have to outlive the
+    // isolate that saw them, so the counter lives in the database, not in memory.
+    name: "login_attempts",
     run: async (db) => {
-      // Ensure clearing timetables or deleting slots NEVER cascades to delete attendance records
-      await db.exec("ALTER TABLE student_attendance ALTER COLUMN slotid DROP NOT NULL;").catch(() => {});
-      await db.exec("ALTER TABLE student_attendance DROP CONSTRAINT IF EXISTS student_attendance_slotid_fkey;").catch(() => {});
-      await db.exec("ALTER TABLE student_attendance ADD CONSTRAINT student_attendance_slotid_fkey FOREIGN KEY (slotid) REFERENCES slots(id) ON DELETE SET NULL;").catch(() => {});
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS login_attempts (
+          id TEXT PRIMARY KEY,
+          email_key TEXT NOT NULL,
+          ip TEXT,
+          success INTEGER NOT NULL DEFAULT 0,
+          attempted_at TEXT NOT NULL
+        );
+      `).catch(() => {});
+      await db.exec("CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts (email_key, attempted_at)").catch(() => {});
+      await db.exec("CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts (ip, attempted_at)").catch(() => {});
     }
   },
   {
@@ -653,13 +697,157 @@ const migrations: Migration[] = [
       await db.exec("UPDATE users SET reference_id = 'lnd_1' WHERE reference_id = 'allocator_1'").catch(() => {});
       await db.exec("UPDATE audit_logs SET actorRole = 'L and D' WHERE actorRole IN ('allocator', 'demo allocator', 'ld', 'lnd')").catch(() => {});
     }
+  },
+  {
+    // Ensure student_attendance has extended columns (type, mode, attendanceTypeSub, coveredSubject)
+    // so queries in /api/data never throw column does not exist on PostgreSQL or SQLite instances.
+    name: "student_attendance_extended_columns",
+    run: async (db) => {
+      const stmts = [
+        "ALTER TABLE student_attendance ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'Regular'",
+        "ALTER TABLE student_attendance ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'Offline'",
+        "ALTER TABLE student_attendance ADD COLUMN IF NOT EXISTS attendancetypesub TEXT",
+        "ALTER TABLE student_attendance ADD COLUMN IF NOT EXISTS coveredsubject TEXT"
+      ];
+      for (const sql of stmts) {
+        await db.exec(sql).catch(async () => {
+          // Fallback for SQLite which doesn't support IF NOT EXISTS in ADD COLUMN
+          const colOnly = sql.replace(" IF NOT EXISTS", "");
+          await db.exec(colOnly).catch(() => {});
+        });
+      }
+    }
+  },
+  {
+    // Columns that API routes write but that no DDL source declared. Kept as one
+    // migration so a deploy converges the live schema before the first write hits.
+    name: "schema_alignment_2026_10",
+    run: async (db) => {
+      const stmts = [
+        "ALTER TABLE campus_issues ADD COLUMN IF NOT EXISTS desc_text TEXT",
+        "ALTER TABLE campus_issues ADD COLUMN IF NOT EXISTS notes TEXT",
+        "ALTER TABLE kam_tasks ADD COLUMN IF NOT EXISTS assigned_cam_id VARCHAR(255)",
+        "ALTER TABLE kam_tasks ADD COLUMN IF NOT EXISTS description TEXT",
+        "ALTER TABLE sme_users ADD COLUMN IF NOT EXISTS department VARCHAR(255)",
+        "ALTER TABLE student_fees ADD COLUMN IF NOT EXISTS payment_proof TEXT",
+        "ALTER TABLE subjects ADD COLUMN IF NOT EXISTS shift VARCHAR(50) DEFAULT 'general'",
+        "ALTER TABLE demo_sessions ADD COLUMN IF NOT EXISTS checklist TEXT",
+        "ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_start_time TEXT",
+        "ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_end_time TEXT",
+        "ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_duration_minutes INTEGER",
+        "ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_start_time TEXT",
+        "ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_end_time TEXT",
+        "ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_duration_minutes INTEGER",
+        "ALTER TABLE student_attendance ADD COLUMN IF NOT EXISTS coveredsubject TEXT"
+      ];
+      for (const sql of stmts) {
+        await db.exec(sql).catch((err: any) => {
+          console.warn(`[migrations] ${sql.slice(0, 70)}... failed:`, err?.message);
+        });
+      }
+
+      if (!(db as any).isPostgres) return;
+
+      // An older build wrote campus_issues."desc"; fold any surviving rows into desc_text.
+      await db.exec(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'campus_issues' AND column_name = 'desc'
+          ) THEN
+            EXECUTE 'UPDATE campus_issues SET desc_text = COALESCE(desc_text, "desc") WHERE desc_text IS NULL';
+          END IF;
+        END $$;
+      `).catch(() => {});
+
+      // Deleting a slot must not delete its attendance history. The FK is rebuilt only
+      // while it still cascades — ADD CONSTRAINT validates the whole table, so it must
+      // not run on every cold start.
+      const needsFix = await db.get(`
+        SELECT 1 AS needs_fix
+        WHERE EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'student_attendance'
+            AND column_name = 'slotid' AND is_nullable = 'NO'
+        )
+        OR NOT EXISTS (
+          SELECT 1 FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          JOIN pg_namespace n ON n.oid = t.relnamespace
+          WHERE n.nspname = 'public' AND t.relname = 'student_attendance'
+            AND c.conname = 'student_attendance_slotid_fkey' AND c.confdeltype = 'n'
+        )
+      `).catch(() => null);
+
+      if (needsFix) {
+        await db.exec("ALTER TABLE student_attendance ALTER COLUMN slotid DROP NOT NULL;").catch(() => {});
+        await db.exec("ALTER TABLE student_attendance DROP CONSTRAINT IF EXISTS student_attendance_slotid_fkey;").catch(() => {});
+        await db.exec("ALTER TABLE student_attendance ADD CONSTRAINT student_attendance_slotid_fkey FOREIGN KEY (slotid) REFERENCES slots(id) ON DELETE SET NULL;").catch(() => {});
+      }
+    }
+  },
+  {
+    name: "handover_requests_target_staff_fk_drop",
+    run: async (db) => {
+      // targetStaffId holds routing tokens ("cm_approval") alongside real mentor ids,
+      // so a mentors(id) FK can never hold for every row. The POST handler used to
+      // drop this constraint from the request path on an FK violation; do it once at
+      // startup instead.
+      await db.exec("ALTER TABLE handover_requests DROP CONSTRAINT IF EXISTS handover_requests_targetstaffid_fkey").catch(() => {});
+    }
+  },
+  {
+    name: "weekly_academic_tasks_task_date",
+    run: async (db) => {
+      // Was issued as raw DDL inside every assign_weekly_task request.
+      await db.exec("ALTER TABLE weekly_academic_tasks ADD COLUMN IF NOT EXISTS task_date TEXT").catch(() => {});
+    }
+  },
+  {
+    name: "interview_actual_time_columns",
+    run: async (db) => {
+      // Were issued as six ALTER TABLEs inside every interview evaluation request.
+      for (const stmt of [
+        "ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_start_time TEXT",
+        "ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_end_time TEXT",
+        "ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_duration_minutes INTEGER",
+        "ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_start_time TEXT",
+        "ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_end_time TEXT",
+        "ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_duration_minutes INTEGER",
+      ]) {
+        await db.exec(stmt).catch(() => {});
+      }
+    }
   }
 ];
 
 const completed = new Set<string>();
 const inFlight = new Map<string, Promise<void>>();
+let appliedNames: Promise<Set<string>> | null = null;
 
-/** Runs one named migration once per process; safe to call on every request. */
+/**
+ * Migrations live outside a request, so a new server instance must know which
+ * ones already ran. Without this ledger every cold start replayed all of them.
+ * (Not `schema_migrations` — that name is taken by the legacy SQLite version table.)
+ */
+function loadAppliedNames(db: PostgresDbAdapter): Promise<Set<string>> {
+  if (!appliedNames) {
+    appliedNames = (async () => {
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS applied_migrations (
+          name VARCHAR(255) PRIMARY KEY,
+          applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `).catch(() => {});
+      const rows = await db.all("SELECT name FROM applied_migrations").catch(() => []);
+      return new Set<string>(rows.map((row: any) => String(row.name)));
+    })();
+  }
+  return appliedNames;
+}
+
+/** Runs one named migration once per deployment; safe to call on every request. */
 export async function ensureMigration(name: string): Promise<void> {
   const migration = migrations.find(m => m.name === name);
   if (!migration) throw new Error(`Unknown migration: ${name}`);
@@ -669,19 +857,33 @@ export async function ensureMigration(name: string): Promise<void> {
 
   const p = (async () => {
     const db = await getDb();
+    const applied = await loadAppliedNames(db);
+    if (applied.has(name)) {
+      completed.add(name);
+      return;
+    }
     await migration.run(db);
+    await db
+      .run("INSERT INTO applied_migrations (name) VALUES (?) ON CONFLICT (name) DO NOTHING", [name])
+      .catch((err: any) => {
+        console.warn(`[migrations] could not record ${name}:`, err?.message || err);
+      });
+    applied.add(name);
     completed.add(name);
-    inFlight.delete(name);
-  })().catch(err => {
-    inFlight.delete(name); // allow retry on next request
-    throw err;
+  })().finally(() => {
+    inFlight.delete(name); // allow retry if it rejected
   });
   inFlight.set(name, p);
   return p;
 }
 
-/** Runs every migration once per process (used by high-traffic entry points). */
-export async function runAllMigrations(): Promise<void> {
+/**
+ * Applies every pending migration. Called once per server start from
+ * instrumentation.ts so a deploy converges the database without a manual step.
+ * Index builds are deliberately not part of this list (see scripts/performance-indexes.sql):
+ * they take table locks and belong in a quiet window, not in a cold start.
+ */
+export async function runStartupMigrations(): Promise<void> {
   for (const m of migrations) {
     try {
       await ensureMigration(m.name);

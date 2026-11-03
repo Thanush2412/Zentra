@@ -1,17 +1,35 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
-import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { sendMail, renderEmailShell } from "@/lib/mail";
-import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
-import { checkMentorAvailability } from "@/lib/availability";
+import { NextResponse, after } from "next/server";
+import { requireAuth } from "@/lib/authGuard";
+import { getDb, allCapped, type QueryFailure } from "@/lib/db";
+import { renderEmailShell } from "@/lib/mail";
+import { dispatchMail, sendMailAsync } from "@/lib/mailAsync";
+import { notifyExternalInterviewsAfterResponse } from "@/lib/interview-notifications";
+import { checkMentorAvailability, loadAvailabilityContext } from "@/lib/availability";
+import type { AvailabilityContext } from "@/lib/availability";
 import { generateStudentGCalUrl } from "@/lib/google-calendar";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
+
+const SLOT_COLUMNS = [
+  "id", "interview_id", "allocation_id", "student_id", "student_name",
+  "mentor_id", "mentor_name", "college_id", "slot_start_time", "slot_end_time",
+  "gmeet_link", "gcal_link", "subject", "target_date", "status", "created_at"
+];
+// 16 columns × 200 rows stays far below Postgres' 65,535 bind-parameter ceiling.
+const SLOT_INSERT_CHUNK = 200;
+const chunkBy = <T,>(items: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+};
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "L and D", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     // Schema ensured by the centralized migration runner (runs once per process)
     await ensureMigration("student_interview_slots_table");
@@ -31,7 +49,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing interview_id" }, { status: 400 });
     }
 
-    const interview = await db.get("SELECT * FROM student_interviews WHERE id = ?", [interview_id]);
+    const mappedMentorIds: string[] = Array.isArray(mapped_mentor_ids)
+      ? mapped_mentor_ids.filter((id: any) => typeof id === "string" && id)
+      : [];
+
+    // The interview row and the mentor roster both key off this request's body, not off
+    // each other, so they travel together. A failed slice must not read as "interview
+    // not found" or "these mentors have no profile", so the batch is guarded.
+    const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
+    const useSchedule = mentorSchedule.length > 0;
+
+    // One lookup covers every mentor this request touches: availability messages, the
+    // slot rows below and the assignment email all read from it instead of re-querying.
+    const allMentorIds = Array.from(new Set([
+      ...mappedMentorIds,
+      ...(useSchedule ? mentorSchedule.map((ms: any) => ms.mentor_id) : [])
+    ].filter(Boolean)));
+
+    const assignFailures: QueryFailure[] = [];
+    const [interviewRows, mentorRows] = await db.multiQuery(
+      [
+        { sql: "SELECT * FROM student_interviews WHERE id = ?", params: [interview_id] },
+        allMentorIds.length > 0
+          ? { sql: `SELECT id, name, email, college_id FROM mentors WHERE id IN (${allMentorIds.map(() => "?").join(",")})`, params: allMentorIds }
+          : { sql: "SELECT 1 WHERE 1=0" },
+      ],
+      assignFailures
+    );
+    if (assignFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not verify this assignment. Please try again." }, { status: 500 });
+    }
+
+    const interview = interviewRows[0];
     if (!interview) {
       return NextResponse.json({ success: false, message: "Interview request not found" }, { status: 404 });
     }
@@ -39,64 +88,84 @@ export async function POST(request: Request) {
     const assignedTimeSlot = time_slot || interview.preferred_start_time || "09:00 AM";
 
     // Validate mentor availability on target date and time (per-mentor slot check)
-    const mentorSchedule = Array.isArray(body.mentor_schedule) ? body.mentor_schedule : [];
-    if (mentorSchedule.length > 0) {
-      for (const ms of mentorSchedule) {
-        if (!ms.mentor_id) continue;
-        try {
-          const avail = await checkMentorAvailability(db, {
-            mentorId: ms.mentor_id,
-            dateStr: interview.target_date,
-            timeSlot: ms.time_slot || assignedTimeSlot,
-            excludeInterviewId: interview_id
-          });
-          if (!avail.available) {
-            const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [ms.mentor_id]);
-            const mName = mInfo?.name || ms.mentor_id;
-            return NextResponse.json({
-              success: false,
-              message: `Cannot assign mentor ${mName} at ${ms.time_slot || assignedTimeSlot}: ${avail.reason}`
-            }, { status: 400 });
-          }
-        } catch (availErr) {
-          console.warn("Mentor availability check warning:", availErr);
-        }
+    const checksToRun: { mentorId: string; timeSlot: string }[] = useSchedule
+      ? mentorSchedule.filter((ms: any) => ms.mentor_id).map((ms: any) => ({
+          mentorId: ms.mentor_id,
+          timeSlot: ms.time_slot || assignedTimeSlot
+        }))
+      : mappedMentorIds.map((mId: string) => ({
+          mentorId: mId,
+          timeSlot: assignedTimeSlot
+        }));
+
+    const mentorById = new Map<string, any>();
+    for (const m of mentorRows) mentorById.set(m.id, m);
+
+    // The engine runs ~6 queries per mentor; loading one shared busy-window context for
+    // the whole assignment collapses that fan-out into a single batched round trip.
+    let availCtx: AvailabilityContext | null = null;
+    if (checksToRun.length > 0 && interview.target_date) {
+      try {
+        availCtx = await loadAvailabilityContext(db, {
+          mentorIds: Array.from(new Set(checksToRun.map(c => c.mentorId))),
+          dates: [interview.target_date]
+        });
+      } catch (ctxErr: any) {
+        console.warn("Availability context preload failed, falling back to per-mentor lookups:", ctxErr?.message);
       }
-    } else {
-      for (const mId of mapped_mentor_ids) {
-        try {
-          const avail = await checkMentorAvailability(db, {
-            mentorId: mId,
-            dateStr: interview.target_date,
-            timeSlot: assignedTimeSlot,
-            excludeInterviewId: interview_id
-          });
-          if (!avail.available) {
-            const mInfo = await db.get("SELECT name FROM mentors WHERE id = ?", [mId]);
-            const mName = mInfo?.name || mId;
-            return NextResponse.json({
-              success: false,
-              message: `Cannot assign mentor ${mName}: ${avail.reason}`
-            }, { status: 400 });
-          }
-        } catch (availErr) {
-          console.warn("Mentor availability check warning:", availErr);
+    }
+
+    for (const check of checksToRun) {
+      try {
+        const avail = await checkMentorAvailability(db, {
+          mentorId: check.mentorId,
+          dateStr: interview.target_date,
+          timeSlot: check.timeSlot,
+          excludeInterviewId: interview_id,
+          ctx: availCtx ?? undefined
+        });
+        if (!avail.available) {
+          const mName = mentorById.get(check.mentorId)?.name || check.mentorId;
+          const at = useSchedule ? ` at ${check.timeSlot}` : "";
+          return NextResponse.json({
+            success: false,
+            message: `Cannot assign mentor ${mName}${at}: ${avail.reason}`
+          }, { status: 400 });
         }
+      } catch (availErr) {
+        console.warn("Mentor availability check warning:", availErr);
       }
     }
 
     const now = new Date().toISOString();
-    const assigningStudentCount = Number(student_count) || 3;
+
+    // Student count comes from what the caller actually allocated. The old `|| 3`
+    // default invented a third student whenever the field was omitted.
+    const scheduleStudentTotal = useSchedule
+      ? mentorSchedule.reduce((sum: number, ms: any) => sum + (Number(ms.student_count) || 0), 0)
+      : 0;
+    const selectedStudentTotal = Array.isArray(body.selected_student_ids) ? body.selected_student_ids.filter(Boolean).length : 0;
+    const assigningStudentCount = Number(student_count) || scheduleStudentTotal || selectedStudentTotal || Number(interview.student_count) || 0;
+    if (assigningStudentCount <= 0) {
+      return NextResponse.json({ success: false, message: "Assign at least one student before saving this interview schedule." }, { status: 400 });
+    }
     const updatedCount = assigningStudentCount;
 
-    let combinedMentorIds = mapped_mentor_ids;
+    let combinedMentorIds = mappedMentorIds;
     let finalStatus = "assigned";
     let totalAccepted = assigningStudentCount;
     let totalAllocated = assigningStudentCount;
 
     if (interview.type === "external") {
-      const existingIds = interview.assigned_mentor_ids ? JSON.parse(interview.assigned_mentor_ids) : [];
-      combinedMentorIds = Array.from(new Set([...existingIds, ...mapped_mentor_ids]));
+      let existingIds: string[] = [];
+      try {
+        const parsed = interview.assigned_mentor_ids ? JSON.parse(interview.assigned_mentor_ids) : [];
+        if (Array.isArray(parsed)) existingIds = parsed.filter((id: any) => typeof id === "string" && id);
+      } catch {
+        // Legacy rows stored a comma-separated list instead of JSON.
+        existingIds = String(interview.assigned_mentor_ids || "").split(",").map(s => s.trim()).filter(Boolean);
+      }
+      combinedMentorIds = Array.from(new Set([...existingIds, ...mappedMentorIds]));
       
       const prevAccepted = Number(interview.accepted_capacity) || 0;
       const prevAllocated = Number(interview.allocated_students) || 0;
@@ -110,6 +179,10 @@ export async function POST(request: Request) {
     const assignedIdsStr = JSON.stringify(combinedMentorIds);
     const remainingCount = Math.max(0, (Number(interview.student_count) || 0) - totalAccepted);
 
+    // Internal interviews are in-person; any previously saved Meet room must be cleared,
+    // not preserved by a COALESCE that only skipped the new value.
+    const nextMeetLink = interview.type === "internal" ? null : (gmeet_link || interview.gmeet_link || null);
+
     await db.run(
       `UPDATE student_interviews 
        SET assigned_mentor_ids = ?, 
@@ -117,7 +190,7 @@ export async function POST(request: Request) {
            allocated_students = ?,
            remaining_students = ?,
            status = ?, 
-           gmeet_link = COALESCE(?, gmeet_link), 
+           gmeet_link = ?, 
            preferred_start_time = ?, 
            updated_at = ?
        WHERE id = ?`,
@@ -127,15 +200,31 @@ export async function POST(request: Request) {
         totalAllocated, 
         remainingCount, 
         finalStatus, 
-        interview.type === "internal" ? null : (gmeet_link || interview.gmeet_link || null), 
+        nextMeetLink, 
         assignedTimeSlot, 
         now, 
         interview_id
       ]
     );
 
-    // Populate student-level slot records for individual student tracking
-    if (mentorSchedule.length > 0) {
+    // Populate student-level slot records for individual student tracking.
+    // A caller that maps mentors without a per-mentor schedule still gets slots: the
+    // student count is split evenly across those mentors. Otherwise the interview sat
+    // in "assigned" with no slot for any student, so nobody knew when to attend.
+    const effectiveSchedule: any[] = useSchedule
+      ? mentorSchedule
+      : (() => {
+          if (mappedMentorIds.length === 0) return [];
+          const base = Math.floor(assigningStudentCount / mappedMentorIds.length);
+          let remainder = assigningStudentCount % mappedMentorIds.length;
+          return mappedMentorIds.map((id: string) => {
+            const count = base + (remainder > 0 ? 1 : 0);
+            if (remainder > 0) remainder--;
+            return { mentor_id: id, student_count: count, time_slot: assignedTimeSlot };
+          }).filter((ms: any) => ms.student_count > 0);
+        })();
+
+    if (effectiveSchedule.length > 0) {
       const isInternal = interview.type === "internal";
       const selectedStudentIds = Array.isArray(body.selected_student_ids) ? body.selected_student_ids.filter(Boolean) : [];
       let enrolledStudents: any[] = [];
@@ -164,7 +253,8 @@ export async function POST(request: Request) {
         try {
           let allCampusStudents: any[] = [];
           if (hostColId) {
-            allCampusStudents = await db.all(
+            allCampusStudents = await allCapped(
+              db,
               `SELECT id, name, email, register_number, classgroup as "classGroup", department 
                FROM students 
                WHERE college_id = ? 
@@ -240,24 +330,13 @@ export async function POST(request: Request) {
         return { start: toTimeStr(startMins), end: toTimeStr(endMins) };
       };
 
-      // Clean up previous slots for this interview before re-dispatching
-      try {
-        await db.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [interview_id]);
-      } catch (_) {}
-
+      // Build every slot row first, then clear and rewrite this interview's slots in one
+      // transaction. The previous per-row INSERT loop deleted the old slots up front and
+      // could die halfway, leaving the panel with a partial schedule.
       let sIndex = 0;
       let slotRunningIndex = 0;
-      // Batch-fetch all scheduled mentors in one query (was one db.get per schedule entry)
-      const scheduleMentorIds = Array.from(new Set(mentorSchedule.map((ms: any) => ms.mentor_id).filter(Boolean)));
-      const mentorById = new Map<string, any>();
-      if (scheduleMentorIds.length > 0) {
-        const mentorRows = await db.all(
-          `SELECT id, name, college_id FROM mentors WHERE id IN (${scheduleMentorIds.map(() => "?").join(",")})`,
-          scheduleMentorIds
-        );
-        for (const m of mentorRows) mentorById.set(m.id, m);
-      }
-      for (const ms of mentorSchedule) {
+      const slotRows: any[][] = [];
+      for (const ms of effectiveSchedule) {
         const mObj = mentorById.get(ms.mentor_id);
         const mName = mObj?.name || "Mentor";
         const mCol = mObj?.college_id || interview.college_id || "campus";
@@ -265,7 +344,7 @@ export async function POST(request: Request) {
         const baseTime = ms.time_slot || assignedTimeSlot || "09:00 AM";
 
         for (let k = 0; k < count; k++) {
-          const slotId = `slot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          const slotId = generateId("slot");
           const st = enrolledStudents[sIndex] || null;
           sIndex++;
 
@@ -284,142 +363,142 @@ export async function POST(request: Request) {
             studentName: stName,
             studentEmail: stEmail,
             subject: interview.subject || "Interview",
-            targetDate: interview.target_date || new Date().toISOString().slice(0, 10),
+            targetDate: interview.target_date || getInstitutionDateStr(),
             slotStartTime: slotTiming.start,
             slotEndTime: slotTiming.end,
             gmeetLink: effectiveMeetLink,
             mentorName: mName
           });
 
-          await db.run(
-            `INSERT INTO student_interview_slots (
-              id, interview_id, allocation_id, student_id, student_name,
-              mentor_id, mentor_name, college_id, slot_start_time, slot_end_time,
-              gmeet_link, gcal_link, subject, target_date, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              slotId,
-              interview_id,
-              "alloc_direct",
-              stId,
-              stName,
-              ms.mentor_id,
-              mName,
-              mCol,
-              slotTiming.start,
-              slotTiming.end,
-              effectiveMeetLink,
-              studentGCalUrl,
-              interview.subject || "Interview",
-              interview.target_date || now.slice(0, 10),
-              "scheduled",
-              now
-            ]
-          );
+          slotRows.push([
+            slotId,
+            interview_id,
+            "alloc_direct",
+            stId,
+            stName,
+            ms.mentor_id,
+            mName,
+            mCol,
+            slotTiming.start,
+            slotTiming.end,
+            effectiveMeetLink,
+            studentGCalUrl,
+            interview.subject || "Interview",
+            interview.target_date || getInstitutionDateStr(),
+            "scheduled",
+            now
+          ]);
         }
+      }
+
+      const clearPreviousSlots = "DELETE FROM student_interview_slots WHERE interview_id = ?";
+      if (slotRows.length === 0) {
+        await db.run(clearPreviousSlots, [interview_id]);
+      } else {
+        const rowPlaceholders = `(${SLOT_COLUMNS.map(() => "?").join(", ")})`;
+        await db.transaction(async (tx) => {
+          await tx.run(clearPreviousSlots, interview_id);
+          for (const part of chunkBy(slotRows, SLOT_INSERT_CHUNK)) {
+            await tx.run(
+              `INSERT INTO student_interview_slots (${SLOT_COLUMNS.join(", ")}) VALUES ${part.map(() => rowPlaceholders).join(", ")}`,
+              part.flat()
+            );
+          }
+        });
       }
     }
 
-    // Fetch mapped mentor details for email
-    let mentorEmails: string[] = [];
-    let mentorNames: string[] = [];
-    try {
-      if (mapped_mentor_ids.length > 0) {
-        const mentors = await db.all(
-          `SELECT email, name FROM mentors WHERE id IN (${mapped_mentor_ids.map(() => "?").join(",")})`,
-          mapped_mentor_ids
-        );
-        mentorEmails = mentors.map((m: any) => m.email).filter(Boolean);
-        mentorNames = mentors.map((m: any) => m.name).filter(Boolean);
-      }
-    } catch (_) {}
+    // Mentor names and addresses come from the single mentor lookup done up front
+    const mentorEmails: string[] = mappedMentorIds
+      .map((id: string) => mentorById.get(id)?.email)
+      .filter(Boolean);
+    const mentorNames: string[] = mappedMentorIds
+      .map((id: string) => mentorById.get(id)?.name)
+      .filter(Boolean);
 
-    // Send branded email to mapped mentors
+    // Send branded email to mapped mentors (after the response). BCC keeps each
+    // mentor's address private from the rest of the cohort.
     if (mentorEmails.length > 0) {
-      try {
-        await sendMail({
-          to: mentorEmails.join(", "),
-          subject: `[Interview Assignment] You have been assigned — ${interview.subject} on ${interview.target_date}`,
-          htmlBody: renderEmailShell({
-            title: "You Have Been Assigned to Conduct an Interview",
-            badgeText: interview.type === "external" ? "External Interview" : "Internal Interview",
-            badgeColor: interview.type === "external" ? "purple" : "emerald",
-            description: `Dear Mentor, Campus Manager <strong>${cm_name}</strong> has assigned you to conduct a student interview session for <strong>${interview.subject}</strong>. Please prepare accordingly.`,
-            details: [
-              { label: "Subject", value: interview.subject, highlight: true },
-              { label: "Class Group", value: interview.class_group || "All Classes" },
-              { label: "Target Date", value: interview.target_date || "" },
-              { label: "Interview Type", value: (interview.type || "internal").toUpperCase() },
-              { label: "Student Count", value: String(updatedCount) },
-              { label: "Topics", value: interview.topics || "General Review" },
-              ...(interview.type !== "internal" && gmeet_link ? [{ label: "Google Meet Link", value: gmeet_link, highlight: true }] : (interview.type === "internal" ? [{ label: "Interview Mode", value: "In-Person On-Campus Evaluation", highlight: true }] : [])),
-              { label: "Assigned By", value: cm_name },
-            ],
-            ctaText: "Open Mentor Dashboard to Evaluate →",
-          }),
-        });
-      } catch (mailErr) {
-        console.warn("Mentor assignment email failed:", mailErr);
-      }
+      sendMailAsync({
+        bcc: mentorEmails,
+        subject: `[Interview Assignment] You have been assigned — ${interview.subject} on ${interview.target_date}`,
+        htmlBody: renderEmailShell({
+          title: "You Have Been Assigned to Conduct an Interview",
+          badgeText: interview.type === "external" ? "External Interview" : "Internal Interview",
+          badgeColor: interview.type === "external" ? "purple" : "emerald",
+          description: `Dear Mentor, Campus Manager <strong>${cm_name}</strong> has assigned you to conduct a student interview session for <strong>${interview.subject}</strong>. Please prepare accordingly.`,
+          details: [
+            { label: "Subject", value: interview.subject, highlight: true },
+            { label: "Class Group", value: interview.class_group || "All Classes" },
+            { label: "Target Date", value: interview.target_date || "" },
+            { label: "Interview Type", value: (interview.type || "internal").toUpperCase() },
+            { label: "Student Count", value: String(updatedCount) },
+            { label: "Topics", value: interview.topics || "General Review" },
+            ...(interview.type !== "internal" && gmeet_link ? [{ label: "Google Meet Link", value: gmeet_link, highlight: true }] : (interview.type === "internal" ? [{ label: "Interview Mode", value: "In-Person On-Campus Evaluation", highlight: true }] : [])),
+            { label: "Assigned By", value: cm_name },
+          ],
+          ctaText: "Open Mentor Dashboard to Evaluate →",
+        }),
+        context: "interview-assignment-mentors"
+      });
     }
 
     // Notify KAM & Regional Colleges
-    try {
-      if (interview.type === "external") {
-        await dispatchExternalInterviewNotifications({
-          interviewId: interview.id,
-          subject: interview.subject,
-          classGroup: interview.class_group,
-          targetDate: interview.target_date,
-          type: "external",
-          topics: interview.topics,
-          studentCount: updatedCount,
-          mentorName: mentorNames.join(", ") || interview.mentor_name,
-          originCollegeId: interview.origin_college_id || interview.college_id,
-          targetCollegeId: interview.target_college_id,
-          actionType: "assigned",
-          gmeetLink: gmeet_link || interview.gmeet_link,
-          actorName: cm_name
-        });
-      } else {
+    if (interview.type === "external") {
+      notifyExternalInterviewsAfterResponse({
+        interviewId: interview.id,
+        subject: interview.subject,
+        classGroup: interview.class_group,
+        targetDate: interview.target_date,
+        type: "external",
+        topics: interview.topics,
+        studentCount: updatedCount,
+        mentorName: mentorNames.join(", ") || interview.mentor_name,
+        originCollegeId: interview.origin_college_id || interview.college_id,
+        targetCollegeId: interview.target_college_id,
+        actionType: "assigned",
+        gmeetLink: gmeet_link || interview.gmeet_link,
+        actorName: cm_name
+      });
+    } else {
+      // Deferred with its own lookup: the allocation is already committed, and the
+      // KAM mail must not cost the CM a read plus a 12s relay leg.
+      after(async () => {
         const kamRows = await db.all(`
           SELECT k.email, k.name FROM kam_users k
           INNER JOIN colleges c ON c.kam_id = k.id
-          WHERE c.id = ?
-        `, [interview.college_id || interview.origin_college_id]);
+          WHERE c.id = COALESCE(?, ?)
+        `, [interview.college_id || null, interview.origin_college_id || null]);
 
-        if (kamRows && kamRows.length > 0) {
-          const kamEmail = kamRows[0].email;
-          const kamName = kamRows[0].name;
-          if (kamEmail) {
-            await sendMail({
-              to: kamEmail,
-              subject: `[Interview Assigned] ${interview.subject} — ${interview.college_id || interview.origin_college_id}`,
-              htmlBody: renderEmailShell({
-                title: "Interview Session Assigned & Scheduled",
-                badgeText: "KAM Notification",
-                badgeColor: "indigo",
-                description: `Dear <strong>${kamName}</strong>, Campus Manager <strong>${cm_name}</strong> has allocated mentors for an interview session.`,
-                details: [
-                  { label: "Subject", value: interview.subject, highlight: true },
-                  { label: "Target Date", value: interview.target_date || "" },
-                  { label: "Student Count", value: String(updatedCount) },
-                  { label: "Mentors Assigned", value: mentorNames.join(", ") || "N/A" },
-                  { label: "Campus Manager", value: cm_name },
-                ],
-                ctaText: "View Interview Dashboard →",
-              }),
-            });
-          }
+        const kamEmail = kamRows?.[0]?.email;
+        const kamName = kamRows?.[0]?.name;
+        if (kamEmail) {
+          await dispatchMail({
+            to: kamEmail,
+            subject: `[Interview Assigned] ${interview.subject} — ${interview.college_id || interview.origin_college_id}`,
+            htmlBody: renderEmailShell({
+              title: "Interview Session Assigned & Scheduled",
+              badgeText: "KAM Notification",
+              badgeColor: "indigo",
+              description: `Dear <strong>${kamName}</strong>, Campus Manager <strong>${cm_name}</strong> has allocated mentors for an interview session.`,
+              details: [
+                { label: "Subject", value: interview.subject, highlight: true },
+                { label: "Target Date", value: interview.target_date || "" },
+                { label: "Student Count", value: String(updatedCount) },
+                { label: "Mentors Assigned", value: mentorNames.join(", ") || "N/A" },
+                { label: "Campus Manager", value: cm_name },
+              ],
+              ctaText: "View Interview Dashboard →",
+            }),
+            context: "interview-assignment-kam"
+          });
         }
-      }
-    } catch (kamMailErr) {
-      console.warn("KAM notification email failed:", kamMailErr);
+      });
     }
 
     return NextResponse.json({
       success: true,
-      message: `Successfully assigned ${updatedCount} students & mapped ${mapped_mentor_ids.length} mentor(s). Notification emails dispatched.`
+      message: `Successfully assigned ${updatedCount} students & mapped ${mappedMentorIds.length} mentor(s). Notification emails are being sent.`
     });
   } catch (error: any) {
     console.error("POST /api/interviews/assign error:", error);

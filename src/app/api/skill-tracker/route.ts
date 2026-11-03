@@ -1,10 +1,10 @@
-// Pin to Mumbai (bom1) — co-located with Turso/Postgres DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
 import {
   buildWeekRollup,
   deriveSubjectType,
@@ -12,42 +12,6 @@ import {
 } from "@/lib/skillTracker";
 
 const VERDICTS = new Set(["pending", "cleared", "not_cleared", "needs_revision"]);
-
-async function ensureTable(db: any) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS mentor_skill_clearances (
-      id TEXT PRIMARY KEY,
-      college_id TEXT,
-      mentor_id TEXT NOT NULL,
-      mentor_name TEXT,
-      subject TEXT NOT NULL,
-      subject_type TEXT DEFAULT 'Skill',
-      week_number INTEGER NOT NULL,
-      scope TEXT NOT NULL DEFAULT 'week',
-      topic TEXT,
-      demo_session_id TEXT,
-      weekly_plan_id TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      score INTEGER,
-      remarks TEXT,
-      verified_by TEXT,
-      verified_at TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT
-    );
-  `).catch(() => {});
-  const cols = [
-    "ALTER TABLE mentor_skill_clearances ADD COLUMN mentor_name TEXT",
-    "ALTER TABLE mentor_skill_clearances ADD COLUMN subject_type TEXT DEFAULT 'Skill'",
-    "ALTER TABLE mentor_skill_clearances ADD COLUMN weekly_plan_id TEXT",
-    "ALTER TABLE mentor_skill_clearances ADD COLUMN updated_at TEXT"
-  ];
-  for (const sql of cols) {
-    await db.exec(sql).catch(() => {});
-  }
-  await db.exec("CREATE INDEX IF NOT EXISTS idx_skill_clearances_mentor ON mentor_skill_clearances(mentor_id, subject, week_number)").catch(() => {});
-  await db.exec("CREATE INDEX IF NOT EXISTS idx_skill_clearances_college ON mentor_skill_clearances(college_id)").catch(() => {});
-}
 
 /** Pick the best weekly plan per (subject, week): Verified > Submitted > latest updated. */
 function pickBestPlan(plans: any[]): any | null {
@@ -58,9 +22,10 @@ function pickBestPlan(plans: any[]): any | null {
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     await ensureMigration("mentor_skill_clearances");
-    await ensureTable(db);
 
     const { searchParams } = new URL(request.url);
     const mentorId = searchParams.get("mentorId");
@@ -69,6 +34,11 @@ export async function GET(request: Request) {
     const weekNumber = searchParams.get("weekNumber");
 
     // ── 1. Clearance rows ──────────────────────────────────────────────
+    // Every slice below is parameterised only from the query string, so they are
+    // independent and issued as one batched group instead of six sequential round trips.
+    // Each used to end with `.catch(() => [])`, which turned a database failure into a
+    // plausible-but-empty tracker: a failed `subjects` slice makes the SKILL-ONLY gate
+    // fall back to keyword matching and hide real skill rows.
     let clearanceQuery = "SELECT * FROM mentor_skill_clearances WHERE 1=1";
     const clearanceParams: any[] = [];
     if (mentorId) {
@@ -83,7 +53,6 @@ export async function GET(request: Request) {
       clearanceQuery += " AND LOWER(TRIM(subject)) = LOWER(TRIM(?))";
       clearanceParams.push(subject);
     }
-    const clearances: any[] = await db.all(clearanceQuery, ...clearanceParams).catch(() => []);
 
     // ── 2. Weekly plans (skill subjects feed the roll-up) ──────────────
     let planQuery = "SELECT * FROM mentor_weekly_plans WHERE 1=1";
@@ -101,7 +70,6 @@ export async function GET(request: Request) {
       planParams.push(subject);
     }
     planQuery += " ORDER BY week_number ASC, updated_at DESC LIMIT 1000";
-    const plans: any[] = await db.all(planQuery, ...planParams).catch(() => []);
 
     // ── 3. Demo sessions ───────────────────────────────────────────────
     let demoQuery = "SELECT id, mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week, status, marks, comments FROM demo_sessions WHERE 1=1";
@@ -111,7 +79,6 @@ export async function GET(request: Request) {
       demoParams.push(mentorId);
     }
     demoQuery += " ORDER BY dateStr DESC LIMIT 200";
-    const demos: any[] = await db.all(demoQuery, ...demoParams).catch(() => []);
 
     // ── 4. Conducted topics (academic_tracker) ─────────────────────────
     let trackerQuery = "SELECT id, date, period_slot, class_group, subject, unit, topic, comments, status, mentor_id, week_number, weekly_plan_week FROM academic_tracker WHERE 1=1";
@@ -129,10 +96,34 @@ export async function GET(request: Request) {
       trackerParams.push(subject);
     }
     trackerQuery += " ORDER BY date DESC LIMIT 600";
-    const trackerRows: any[] = await db.all(trackerQuery, ...trackerParams).catch(() => []);
 
     // ── 5. Subject type map (subjects table) ───────────────────────────
-    const subjectRows: any[] = await db.all("SELECT name, type FROM subjects").catch(() => []);
+    const slices: { sql: string; params: any[] }[] = [
+      { sql: clearanceQuery, params: clearanceParams },
+      { sql: planQuery, params: planParams },
+      { sql: demoQuery, params: demoParams },
+      { sql: trackerQuery, params: trackerParams },
+      { sql: "SELECT name, type FROM subjects", params: [] },
+    ];
+
+    // ── 6. Mentor roster for the requested scope ───────────────────────
+    if (mentorId) {
+      slices.push({ sql: "SELECT id, name, college_id FROM mentors WHERE id = ?", params: [mentorId] });
+    } else if (collegeId && collegeId !== "all") {
+      slices.push({ sql: "SELECT id, name, college_id FROM mentors WHERE college_id = ? ORDER BY name ASC", params: [collegeId] });
+    }
+
+    const failedSlices: QueryFailure[] = [];
+    const [clearances, plans, demos, trackerRows, subjectRows, mentorRoster] = await db.multiQuery(slices, failedSlices);
+    if (failedSlices.length > 0) {
+      const tables = failedSlices.map(f => f.sql.match(/FROM\s+([a-z_]+)/i)?.[1] || "unknown");
+      console.error("GET /api/skill-tracker partial read:", failedSlices.map(f => `${f.sql.slice(0, 80)} → ${f.error}`).join(" | "));
+      return NextResponse.json(
+        { success: false, message: `Skill tracker could not be loaded (${tables.join(", ")}). Please retry.` },
+        { status: 500 }
+      );
+    }
+
     const subjectTypeMap = new Map<string, string>();
     subjectRows.forEach((s: any) => {
       if (s?.name) subjectTypeMap.set(normalizeTopic(s.name), s.type || "");
@@ -147,7 +138,7 @@ export async function GET(request: Request) {
     const skillDemos = demos.filter(d => isSkillSubjectName(d.subject || ""));
     const skillClearances = clearances.filter(c => isSkillSubjectName(c.subject));
 
-    // ── 6. Build per mentor × subject × week roll-up ───────────────────
+    // ── 7. Build per mentor × subject × week roll-up ───────────────────
     // Group plans by (subject, week)
     const plansByKey = new Map<string, any[]>();
     plans.forEach(p => {
@@ -169,14 +160,7 @@ export async function GET(request: Request) {
 
     const weeksFilter = weekNumber && weekNumber !== "all" ? [parseInt(weekNumber, 10)] : Array.from({ length: 16 }, (_, i) => i + 1);
 
-    const mentors: any[] = [];
-    if (mentorId) {
-      const m = await db.get("SELECT id, name, college_id FROM mentors WHERE id = ?", mentorId).catch(() => null);
-      if (m) mentors.push(m);
-    } else if (collegeId && collegeId !== "all") {
-      const rows = await db.all("SELECT id, name, college_id FROM mentors WHERE college_id = ? ORDER BY name ASC", collegeId).catch(() => []);
-      mentors.push(...rows);
-    }
+    const mentors: any[] = mentorRoster || [];
 
     const mentorRows: any[] = [];
     const mentorIds = mentorId ? [mentorId] : mentors.map(m => m.id);
@@ -238,7 +222,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // ── 7. Summary counts (for panel KPI cards) ────────────────────────
+    // ── 8. Summary counts (for panel KPI cards) ────────────────────────
     const allWeeks = mentorRows.flatMap(r => r.weeks);
     const summary = {
       mentors: mentorRows.length,
@@ -269,9 +253,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "sme", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     await ensureMigration("mentor_skill_clearances");
-    await ensureTable(db);
 
     const body = await request.json();
     const {
@@ -321,24 +306,27 @@ export async function POST(request: Request) {
     }
 
     // Upsert key: scope-aware. Demo scope keys on demo_session_id; topic on topic; week on week.
+    // These lookups must NOT fall back to `null` on a database error: that reads as "no verdict
+    // yet" and INSERTs a second row for the same week instead of updating the existing one.
     let existing: any = null;
     if (scope === "demo" && demoSessionId) {
       existing = await db.get(
         "SELECT id FROM mentor_skill_clearances WHERE mentor_id = ? AND subject = ? AND week_number = ? AND scope = 'demo' AND demo_session_id = ?",
         mentorId, subject, weekNumber, demoSessionId
-      ).catch(() => null);
+      );
     } else if (scope === "topic") {
       existing = await db.get(
         "SELECT id FROM mentor_skill_clearances WHERE mentor_id = ? AND subject = ? AND week_number = ? AND scope = 'topic' AND LOWER(TRIM(COALESCE(topic, ''))) = LOWER(TRIM(?))",
         mentorId, subject, weekNumber, topic
-      ).catch(() => null);
+      );
     } else {
       existing = await db.get(
         "SELECT id FROM mentor_skill_clearances WHERE mentor_id = ? AND subject = ? AND week_number = ? AND scope = 'week'",
         mentorId, subject, weekNumber
-      ).catch(() => null);
+      );
     }
 
+    let writtenId: string = existing?.id || generateId("MSC");
     if (existing?.id) {
       await db.run(
         `UPDATE mentor_skill_clearances SET
@@ -347,28 +335,32 @@ export async function POST(request: Request) {
         status,
         score ?? null,
         remarks || "",
-        verifiedBy || "Subject Matter Expert",
+        verifiedBy || "Reviewer",
         nowStr,
         nowStr,
-        existing.id
+        writtenId
       );
     } else {
-      const id = `MSC_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       await db.run(
         `INSERT INTO mentor_skill_clearances (
           id, college_id, mentor_id, mentor_name, subject, subject_type,
           week_number, scope, topic, demo_session_id, weekly_plan_id,
           status, score, remarks, verified_by, verified_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        id, collegeId || null, mentorId, mentorName || null, subject, resolvedType,
+        writtenId, collegeId || null, mentorId, mentorName || null, subject, resolvedType,
         weekNumber, scope, topic || null, demoSessionId || null, weeklyPlanId || null,
-        status, score ?? null, remarks || "", verifiedBy || "Subject Matter Expert", nowStr, nowStr
+        status, score ?? null, remarks || "", verifiedBy || "Reviewer", nowStr, nowStr
       );
     }
 
-    const row = existing?.id
-      ? await db.get("SELECT * FROM mentor_skill_clearances WHERE id = ?", existing.id)
-      : await db.get("SELECT * FROM mentor_skill_clearances WHERE mentor_id = ? AND subject = ? AND week_number = ? AND scope = ? ORDER BY updated_at DESC LIMIT 1", mentorId, subject, weekNumber, scope);
+    // Presentation only - the panel refetches the roll-up after a successful POST, so a
+    // read-back failure must not turn an already-saved verdict into "Failed to record".
+    let row: any = null;
+    try {
+      row = await db.get("SELECT * FROM mentor_skill_clearances WHERE id = ?", writtenId);
+    } catch (readErr: any) {
+      console.warn("POST /api/skill-tracker: verdict written but read-back failed:", readErr?.message);
+    }
 
     return NextResponse.json({
       success: true,

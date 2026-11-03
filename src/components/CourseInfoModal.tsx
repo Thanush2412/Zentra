@@ -20,6 +20,7 @@ import {
   Award,
   Hash
 } from "lucide-react";
+import { Dialog } from "@/components/ui/dialog";
 
 export interface CourseInfoModalProps {
   course: Course | string | null;
@@ -97,8 +98,8 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
   if (!isOpen || !resolvedCourse) return null;
 
   // College details
-  const courseCollege = colleges.find(c => c.id === resolvedCourse.college_id || (resolvedCourse.college_id === "college_1" && c.id === "college_1"));
-  const collegeName = courseCollege?.name || "Campus Institution";
+  const courseCollege = resolvedCourse.college_id ? colleges.find(c => c.id === resolvedCourse.college_id) : (colleges[0] || null);
+  const collegeName = courseCollege?.name || "Campus unassigned";
 
   // Compute live statistics
   const normDept = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -163,19 +164,15 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
   const semKeys = Object.keys(subjectsBySem).sort();
 
   return (
-    <div 
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-in fade-in duration-150"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClose();
+    <Dialog
+      open={isOpen}
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
-      onMouseDown={(e) => e.stopPropagation()}
+      ariaLabel={`Course details — ${resolvedCourse.name}`}
+      overlayClassName="z-[100] p-4 bg-slate-900/60 backdrop-blur-xs"
+      panelClassName="max-w-xl max-h-[90vh] p-6 space-y-5 flex flex-col overflow-hidden rounded-2xl"
     >
-      <div 
-        className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-5 relative max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-150"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
         {/* Close button */}
         <button
           type="button"
@@ -507,8 +504,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
             Close
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };
 

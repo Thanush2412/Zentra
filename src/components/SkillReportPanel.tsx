@@ -1,7 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../context/ToastContext";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
 import {
   FileSpreadsheet,
   Download,
@@ -114,42 +117,40 @@ interface WorkflowData {
 
 export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string; collegeName: string }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const now = new Date();
   const [month, setMonth] = useState<number>(now.getMonth());
   const [year, setYear] = useState<number>(now.getFullYear());
   const [problemsAssigned, setProblemsAssigned] = useState<number>(20);
-  const [batches, setBatches] = useState<BatchPreview[] | null>(null);
-  const [workflow, setWorkflow] = useState<WorkflowData | null>(null);
-  const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [hasCollegeLogo, setHasCollegeLogo] = useState<boolean | null>(null);
   const [showDailyLogs, setShowDailyLogs] = useState(false);
   const [dlogFilter, setDlogFilter] = useState<"all" | "hard" | "pending">("all");
 
-  const fetchPreview = async () => {
-    if (!collegeId) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/reports/skill-development?collegeId=${encodeURIComponent(collegeId)}&month=${month}&year=${year}&problemsAssigned=${problemsAssigned}`);
-      const json = await res.json();
-      if (json.success) {
-        setBatches(json.batches || []);
-        setWorkflow(json.workflow || null);
-        setHasCollegeLogo(!!json.hasCollegeLogo);
-      } else {
-        toast(json.message || "Failed to compute report data", "error");
-      }
-    } catch (e: any) {
-      toast("Network error: " + e.message, "error");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const reportQueryKey = qk.skillReport(collegeId, String(month), String(year));
+  const reportQuery = useQuery({
+    queryKey: reportQueryKey,
+    enabled: !!collegeId,
+    queryFn: async () => {
+      const json = await apiFetch(`/api/reports/skill-development?collegeId=${encodeURIComponent(collegeId)}&month=${month}&year=${year}&problemsAssigned=${problemsAssigned}`);
+      if (!json?.success) throw new Error(json?.message || "Failed to compute report data");
+      return {
+        batches: (json.batches || []) as BatchPreview[],
+        workflow: (json.workflow || null) as WorkflowData | null,
+        hasCollegeLogo: !!json.hasCollegeLogo,
+      };
+    },
+  });
+
+  const batches = reportQuery.data?.batches ?? null;
+  const workflow = reportQuery.data?.workflow ?? null;
+  const loading = reportQuery.isFetching;
+  const hasCollegeLogo = reportQuery.data ? reportQuery.data.hasCollegeLogo : null;
 
   useEffect(() => {
-    fetchPreview();
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [collegeId, month, year]);
+    if (reportQuery.isError) {
+      toast("Network error: " + (reportQuery.error as Error)?.message, "error");
+    }
+  }, [reportQuery.isError, reportQuery.error, toast]);
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -325,7 +326,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
                 const j = await res.json();
                 if (j.success) {
                   toast("College logo saved — it will appear on every slide.", "success");
-                  setHasCollegeLogo(true);
+                  queryClient.setQueryData(reportQueryKey, (prev: any) => prev ? { ...prev, hasCollegeLogo: true } : prev);
                 } else {
                   toast(j.message || "Logo upload failed", "error");
                 }
@@ -372,7 +373,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
         </div>
         <button
           type="button"
-          onClick={fetchPreview}
+          onClick={() => reportQuery.refetch()}
           disabled={loading || !collegeId}
           className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black border border-slate-200 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
         >

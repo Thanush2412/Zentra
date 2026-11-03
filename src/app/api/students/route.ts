@@ -1,13 +1,20 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
+import { DEFAULT_PASSWORD } from "@/lib/authConfig";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
 
 export async function PUT(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["student", "cm", "admin", "mentor"],
+      checkCsrf: true
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
     const {
@@ -47,10 +54,50 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: "Student ID and Name are required." }, { status: 400 });
     }
 
-    // Check if student exists
-    const currentStudent = await db.get("SELECT * FROM students WHERE id = ?", id);
+    // A student self-edit gates on the class-group policy, so fetch the record and the
+    // policy together — they used to be two sequential round trips on every profile save.
+    const isStudentEdit = auth?.user.role === "student";
+    const gateFailures: QueryFailure[] = [];
+    const [studentRows, policyRows] = await db.multiQuery(
+      isStudentEdit
+        ? [
+            { sql: "SELECT * FROM students WHERE id = ?", params: [id] },
+            { sql: "SELECT value FROM system_settings WHERE key = ?", params: ["profile_edit_allowed_classes"] }
+          ]
+        : [{ sql: "SELECT * FROM students WHERE id = ?", params: [id] }],
+      gateFailures
+    );
+    if (gateFailures.length > 0) {
+      console.error("PUT /api/students profile gate read failed:", gateFailures[0].error);
+      throw new Error("Could not load the profile. Please retry.");
+    }
+
+    const currentStudent = studentRows?.[0] || null;
     if (!currentStudent) {
       return NextResponse.json({ success: false, message: "Student not found." }, { status: 404 });
+    }
+
+    if (isStudentEdit) {
+      const isOwnRecord =
+        currentStudent.id === auth.user.reference_id ||
+        (!!auth.user.email && String(currentStudent.email || "").toLowerCase() === auth.user.email.toLowerCase());
+      if (!isOwnRecord) {
+        return NextResponse.json({ success: false, message: "You can only edit your own profile." }, { status: 403 });
+      }
+
+      let allowedClasses: string[] = [];
+      try {
+        const parsed = JSON.parse(policyRows?.[0]?.value || "[]");
+        allowedClasses = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        allowedClasses = [];
+      }
+      if (!allowedClasses.includes(currentStudent.classGroup || "")) {
+        return NextResponse.json(
+          { success: false, message: "Profile editing is locked for your class group by your Campus Manager." },
+          { status: 403 }
+        );
+      }
     }
 
     const currentShift = body.shift || currentStudent.shift || (classGroup?.includes("Shift 2") ? "Shift 2" : classGroup?.includes("Shift 1") ? "Shift 1" : "General");
@@ -139,6 +186,8 @@ export async function PUT(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
 
@@ -161,10 +210,10 @@ export async function POST(request: Request) {
       if (!stName) continue;
 
       let stId = (rawId || roll_number || register_number || (email ? email.split("@")[0] : "")).toString().trim();
-      if (!stId) stId = "STU_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+      if (!stId) stId = generateId("STU");
 
-      const stEmail = (email || `${stId.toLowerCase()}@university.edu`).toString().trim();
-      const emailPrefix = stEmail.split("@")[0].toLowerCase();
+      const stEmail = email ? email.toString().trim() : null;
+      const emailPrefix = stEmail ? stEmail.split("@")[0].toLowerCase() : "";
       let stRoll = roll_number ? String(roll_number).trim() : "";
       if (stRoll.toLowerCase() === emailPrefix) stRoll = "";
       let stReg = register_number ? String(register_number).trim() : "";
@@ -213,7 +262,7 @@ export async function POST(request: Request) {
     const CHUNK = 30;
     const batchStatements: { sql: string; args: any[] }[] = [];
     // Hash the default password once per batch (not per student, for performance)
-    const defaultPasswordHash = hashPassword("password123");
+    const defaultPasswordHash = hashPassword(DEFAULT_PASSWORD);
 
     for (let i = 0; i < normalizedStudents.length; i += CHUNK) {
       const chunk = normalizedStudents.slice(i, i + CHUNK);
@@ -262,15 +311,14 @@ export async function POST(request: Request) {
       });
 
       // Users INSERT — 5 params per row (hashed password)
-      const uPlaceholders = chunk.map(() => "(?, ?, ?, 'student', ?, ?, ?)").join(", ");
+      const uPlaceholders = chunk.map(() => "(?, ?, ?, 'student', ?, 1, ?, ?)").join(", ");
       const uArgs: any[] = [];
       chunk.forEach(s => { uArgs.push(s.stId, s.stEmail, defaultPasswordHash, s.stId, nowStr, nowStr); });
       batchStatements.push({
-        sql: `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at)
+        sql: `INSERT INTO users (id, email, password_hash, role, reference_id, must_change_password, created_at, updated_at)
               VALUES ${uPlaceholders}
               ON CONFLICT (id) DO UPDATE SET
                 email = EXCLUDED.email,
-                password_hash = EXCLUDED.password_hash,
                 role = EXCLUDED.role,
                 reference_id = EXCLUDED.reference_id,
                 updated_at = EXCLUDED.updated_at`,
@@ -290,6 +338,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     let ids: string[] = [];
@@ -314,9 +364,18 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "No student ID(s) provided for deletion." }, { status: 400 });
     }
 
-    const cleanIds = ids.map(id => String(id).trim()).filter(Boolean);
+    const cleanIds = Array.from(new Set(ids.map(id => String(id).trim()).filter(Boolean)));
     if (cleanIds.length === 0) {
       return NextResponse.json({ success: false, message: "Invalid student ID(s)." }, { status: 400 });
+    }
+    // The cascade below binds this list twelve times (twice for users, which matches on
+    // both id and reference_id), so an unbounded body would hit the parameter ceiling
+    // mid-transaction. No caller deletes more than one at a time today.
+    if (cleanIds.length > 500) {
+      return NextResponse.json(
+        { success: false, message: `Delete at most 500 students per request (${cleanIds.length} requested).` },
+        { status: 400 }
+      );
     }
 
     const placeholders = cleanIds.map(() => "?").join(",");

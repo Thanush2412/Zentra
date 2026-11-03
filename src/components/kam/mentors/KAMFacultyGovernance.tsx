@@ -1,7 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { UserCheck, Clock, Calendar, AlertTriangle, CheckCircle2, XCircle, Award, User, Search, ArrowUpRight } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { UserCheck, Calendar, Award, Search, ArrowUpDown } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 export const KAMFacultyGovernance: React.FC<{
   initialSubTab?: "punch" | "leaves" | "demos";
@@ -10,37 +18,42 @@ export const KAMFacultyGovernance: React.FC<{
   onOpenMentor360?: (mentorId: string) => void;
 }> = ({ initialSubTab = "punch", selectedCollegeId = "all", kamId, onOpenMentor360 }) => {
   const [subTab, setSubTab] = useState<"punch" | "leaves" | "demos">(initialSubTab);
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
+
+  // Pagination states
+  const [punchPage, setPunchPage] = useState(1);
+  const [punchPageSize, setPunchPageSize] = useState(15);
+  const [punchSortKey, setPunchSortKey] = useState<string | null>(null);
+  const [punchSortDirection, setPunchSortDirection] = useState<"asc" | "desc">("asc");
+
+  const [leavePage, setLeavePage] = useState(1);
+  const [leavePageSize, setLeavePageSize] = useState(10);
+
+  const [demoPage, setDemoPage] = useState(1);
+  const [demoPageSize, setDemoPageSize] = useState(10);
 
   useEffect(() => {
     setSubTab(initialSubTab);
   }, [initialSubTab]);
 
   useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
-        if (kamId) params.set("kamId", kamId);
-        const query = params.toString() ? `?${params.toString()}` : "";
-        const res = await fetch(`/api/kam/faculty-governance${query}`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setData(json);
-        }
-      } catch (err) {
-        console.error("Failed to load faculty governance data:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    loadData();
-    return () => { isMounted = false; };
-  }, [selectedCollegeId, kamId]);
+    setPunchPage(1);
+  }, [search, selectedCollegeId]);
+
+  const params = new URLSearchParams();
+  if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
+  if (kamId) params.set("kamId", kamId);
+  const queryString = params.toString();
+
+  const governanceQuery = useQuery({
+    queryKey: qk.kamPanel("faculty-governance", selectedCollegeId, queryString),
+    queryFn: async () => {
+      const json = await apiFetch<any>(`/api/kam/faculty-governance${queryString ? `?${queryString}` : ""}`);
+      return json?.success ? json : null;
+    },
+  });
+  const data = governanceQuery.data ?? null;
+  const loading = governanceQuery.isPending;
 
   const punchSummary = data?.punchSummary || {
     totalFaculty: 0,
@@ -57,9 +70,49 @@ export const KAMFacultyGovernance: React.FC<{
   const demoSummary = data?.demoSummary || { totalDemos: 0, completedDemos: 0, avgDemoScore: 0 };
   const demoRoster: any[] = data?.demoRoster || [];
 
-  const filteredPunchRoster = mentorPunchRoster.filter(m =>
-    !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.department.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredPunchRoster = useMemo(() => {
+    return mentorPunchRoster.filter(m =>
+      !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.department.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [mentorPunchRoster, search]);
+
+  const sortedPunchRoster = useMemo(() => {
+    if (!punchSortKey) return filteredPunchRoster;
+    return [...filteredPunchRoster].sort((a, b) => {
+      const valA = a[punchSortKey];
+      const valB = b[punchSortKey];
+      if (valA === valB) return 0;
+      if (valA === null || valA === undefined) return 1;
+      if (valB === null || valB === undefined) return -1;
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      return punchSortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+    });
+  }, [filteredPunchRoster, punchSortKey, punchSortDirection]);
+
+  const paginatedPunchRoster = useMemo(() => {
+    const start = (punchPage - 1) * punchPageSize;
+    return sortedPunchRoster.slice(start, start + punchPageSize);
+  }, [sortedPunchRoster, punchPage, punchPageSize]);
+
+  const paginatedLeaves = useMemo(() => {
+    const start = (leavePage - 1) * leavePageSize;
+    return upcomingLeaves.slice(start, start + leavePageSize);
+  }, [upcomingLeaves, leavePage, leavePageSize]);
+
+  const paginatedDemos = useMemo(() => {
+    const start = (demoPage - 1) * demoPageSize;
+    return demoRoster.slice(start, start + demoPageSize);
+  }, [demoRoster, demoPage, demoPageSize]);
+
+  const handlePunchSort = (key: string) => {
+    if (punchSortKey === key) {
+      setPunchSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setPunchSortKey(key);
+      setPunchSortDirection("asc");
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -94,41 +147,49 @@ export const KAMFacultyGovernance: React.FC<{
       {subTab === "punch" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Faculty Presence Today</span>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-slate-900">{punchSummary.punchRatePct}%</span>
-                <span className="text-xs font-bold text-emerald-600">On Campus</span>
-              </div>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">{punchSummary.presentToday + punchSummary.odToday} / {punchSummary.totalFaculty} Active Mentors</p>
-            </div>
+            <Card className="rounded-2xl border-slate-200 shadow-xs">
+              <CardContent className="p-4">
+                <span className="text-[10px] font-black uppercase text-slate-400">Faculty Presence Today</span>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-slate-900">{punchSummary.punchRatePct}%</span>
+                  <span className="text-xs font-bold text-emerald-600">On Campus</span>
+                </div>
+                <p className="text-[10px] font-bold text-slate-400 mt-1">{punchSummary.presentToday + punchSummary.odToday} / {punchSummary.totalFaculty} Active Mentors</p>
+              </CardContent>
+            </Card>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Late Punches Today</span>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-amber-700">{punchSummary.latePunchesToday}</span>
-                <span className="text-xs font-bold text-amber-600">&gt;30m Window</span>
-              </div>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">Requires CM late justification</p>
-            </div>
+            <Card className="rounded-2xl border-slate-200 shadow-xs">
+              <CardContent className="p-4">
+                <span className="text-[10px] font-black uppercase text-slate-400">Late Punches Today</span>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-amber-700">{punchSummary.latePunchesToday}</span>
+                  <span className="text-xs font-bold text-amber-600">&gt;30m Window</span>
+                </div>
+                <p className="text-[10px] font-bold text-slate-400 mt-1">Requires CM late justification</p>
+              </CardContent>
+            </Card>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Faculty On Leave / OD</span>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-indigo-700">{punchSummary.leaveToday + punchSummary.odToday}</span>
-                <span className="text-xs font-bold text-indigo-600">Instructors</span>
-              </div>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">{punchSummary.odToday} OD • {punchSummary.leaveToday} Approved Leave</p>
-            </div>
+            <Card className="rounded-2xl border-slate-200 shadow-xs">
+              <CardContent className="p-4">
+                <span className="text-[10px] font-black uppercase text-slate-400">Faculty On Leave / OD</span>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-indigo-700">{punchSummary.leaveToday + punchSummary.odToday}</span>
+                  <span className="text-xs font-bold text-indigo-600">Instructors</span>
+                </div>
+                <p className="text-[10px] font-bold text-slate-400 mt-1">{punchSummary.odToday} OD • {punchSummary.leaveToday} Approved Leave</p>
+              </CardContent>
+            </Card>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Missing / Unmarked</span>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-rose-700">{punchSummary.missingPunchesToday}</span>
-                <span className="text-xs font-bold text-rose-500">Unpunched</span>
-              </div>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">Unaccounted session absence</p>
-            </div>
+            <Card className="rounded-2xl border-slate-200 shadow-xs">
+              <CardContent className="p-4">
+                <span className="text-[10px] font-black uppercase text-slate-400">Missing / Unmarked</span>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-rose-700">{punchSummary.missingPunchesToday}</span>
+                  <span className="text-xs font-bold text-rose-500">Unpunched</span>
+                </div>
+                <p className="text-[10px] font-bold text-slate-400 mt-1">Unaccounted session absence</p>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
@@ -149,72 +210,108 @@ export const KAMFacultyGovernance: React.FC<{
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                    <th className="py-3 px-3">Faculty Name</th>
-                    <th className="py-3 px-3">Department & Campus</th>
-                    <th className="py-3 px-3 text-center">Status</th>
-                    <th className="py-3 px-3 text-center">Punch In Time</th>
-                    <th className="py-3 px-3 text-center">Punctuality</th>
-                    <th className="py-3 px-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                  {filteredPunchRoster.map(m => (
-                    <tr key={m.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-3">
-                        <p className="font-black text-slate-900">{m.name}</p>
-                        <p className="text-[10px] text-slate-400 font-medium">{m.email}</p>
-                      </td>
-                      <td className="py-3 px-3">
-                        <p className="font-bold text-slate-700">{m.department}</p>
-                        <p className="text-[10px] text-slate-400">{m.collegeName}</p>
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                          m.status.toLowerCase() === "present"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : m.status.toLowerCase() === "od"
-                            ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                            : m.status.toLowerCase() === "leave"
-                            ? "bg-amber-50 text-amber-700 border border-amber-200"
-                            : "bg-rose-50 text-rose-700 border border-rose-200"
-                        }`}>
-                          {m.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center font-bold text-slate-800">
-                        {m.punchTime}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        {m.isLate ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
-                            ⚠️ Late Punch
-                          </span>
-                        ) : m.status.toLowerCase() === "present" ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            🟢 On Time
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-[10px]">—</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => onOpenMentor360 && onOpenMentor360(m.id)}
-                          className="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100 transition-colors text-[10px] cursor-pointer"
-                        >
-                          Mentor 360°
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 hover:bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
+                    <TableHead onClick={() => handlePunchSort("name")} className="cursor-pointer hover:text-slate-800">
+                      <div className="flex items-center gap-1">Faculty Name <ArrowUpDown className="h-3 w-3" /></div>
+                    </TableHead>
+                    <TableHead>Department & Campus</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-center">Punch In Time</TableHead>
+                    <TableHead className="text-center">Punctuality</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-slate-400 font-bold">
+                        Loading punch records...
+                      </TableCell>
+                    </TableRow>
+                  ) : sortedPunchRoster.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-slate-400 font-bold">
+                        No faculty punch records match the active search.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedPunchRoster.map(m => (
+                      <TableRow key={m.id} className="hover:bg-slate-50/60 transition-colors">
+                        <TableCell>
+                          <p className="font-black text-slate-900">{m.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">{m.email}</p>
+                        </TableCell>
+                        <TableCell>
+                          <p className="font-bold text-slate-700">{m.department}</p>
+                          <p className="text-[10px] text-slate-400">{m.collegeName}</p>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge
+                            variant={
+                              m.status.toLowerCase() === "present"
+                                ? "success"
+                                : m.status.toLowerCase() === "od"
+                                ? "brand"
+                                : m.status.toLowerCase() === "leave"
+                                ? "warning"
+                                : "destructive"
+                            }
+                            className="text-[10px] font-black uppercase"
+                          >
+                            {m.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-slate-800">
+                          {m.punchTime}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {m.isLate ? (
+                            <Badge variant="warning" className="text-[10px] font-black">
+                              ⚠️ Late Punch
+                            </Badge>
+                          ) : m.status.toLowerCase() === "present" ? (
+                            <Badge variant="success" className="text-[10px] font-black">
+                              🟢 On Time
+                            </Badge>
+                          ) : (
+                            <span className="text-slate-400 text-[10px]">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onOpenMentor360 && onOpenMentor360(m.id)}
+                            className="text-indigo-700 hover:bg-indigo-100 text-[10px] font-bold h-7 px-2.5"
+                          >
+                            Mentor 360°
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </div>
+
+            {/* Pagination for Punch Roster */}
+            {sortedPunchRoster.length > 0 && (
+              <div className="pt-2">
+                <Pagination
+                  currentPage={punchPage}
+                  totalItems={sortedPunchRoster.length}
+                  pageSize={punchPageSize}
+                  onPageChange={setPunchPage}
+                  onPageSizeChange={(newSize) => {
+                    setPunchPageSize(newSize);
+                    setPunchPage(1);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -230,45 +327,62 @@ export const KAMFacultyGovernance: React.FC<{
           {upcomingLeaves.length === 0 ? (
             <div className="py-12 text-center text-xs font-bold text-slate-400">No scheduled upcoming leaves for the next 14 days.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                    <th className="py-3 px-3">Faculty Member</th>
-                    <th className="py-3 px-3">Campus & Dept</th>
-                    <th className="py-3 px-3">Leave Dates</th>
-                    <th className="py-3 px-3">Category</th>
-                    <th className="py-3 px-3">Reason</th>
-                    <th className="py-3 px-3 text-center">Coverage Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                  {upcomingLeaves.map(lr => (
-                    <tr key={lr.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-3 font-black text-slate-900">{lr.mentorName}</td>
-                      <td className="py-3 px-3">
-                        <p className="font-bold text-slate-700">{lr.department}</p>
-                        <p className="text-[10px] text-slate-400">{lr.collegeName}</p>
-                      </td>
-                      <td className="py-3 px-3 font-bold text-indigo-600">
-                        {lr.startDate} → {lr.endDate}
-                      </td>
-                      <td className="py-3 px-3 font-bold text-slate-700">{lr.leaveCategory}</td>
-                      <td className="py-3 px-3 text-slate-500 text-[11px] max-w-xs truncate">{lr.reason}</td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
-                          lr.coverageStatus.includes("Covered")
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                            : "bg-rose-50 text-rose-700 border border-rose-200"
-                        }`}>
-                          {lr.coverageStatus}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 hover:bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
+                      <TableHead>Faculty Member</TableHead>
+                      <TableHead>Campus & Dept</TableHead>
+                      <TableHead>Leave Dates</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead className="text-center">Coverage Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                    {paginatedLeaves.map(lr => (
+                      <TableRow key={lr.id} className="hover:bg-slate-50/60 transition-colors">
+                        <TableCell className="font-black text-slate-900">{lr.mentorName}</TableCell>
+                        <TableCell>
+                          <p className="font-bold text-slate-700">{lr.department}</p>
+                          <p className="text-[10px] text-slate-400">{lr.collegeName}</p>
+                        </TableCell>
+                        <TableCell className="font-bold text-indigo-600">
+                          {lr.startDate} → {lr.endDate}
+                        </TableCell>
+                        <TableCell className="font-bold text-slate-700">{lr.leaveCategory}</TableCell>
+                        <TableCell className="text-slate-500 text-[11px] max-w-xs truncate">{lr.reason}</TableCell>
+                        <TableCell className="text-center">
+                          <Badge
+                            variant={lr.coverageStatus.includes("Covered") ? "success" : "destructive"}
+                            className="text-[10px] font-black"
+                          >
+                            {lr.coverageStatus}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination for Leaves */}
+              {upcomingLeaves.length > 0 && (
+                <div className="pt-2">
+                  <Pagination
+                    currentPage={leavePage}
+                    totalItems={upcomingLeaves.length}
+                    pageSize={leavePageSize}
+                    onPageChange={setLeavePage}
+                    onPageSizeChange={(newSize) => {
+                      setLeavePageSize(newSize);
+                      setLeavePage(1);
+                    }}
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -277,21 +391,27 @@ export const KAMFacultyGovernance: React.FC<{
       {subTab === "demos" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Total Demo Sessions</span>
-              <p className="text-2xl font-black text-slate-900 mt-2">{demoSummary.totalDemos}</p>
-              <p className="text-[10px] font-bold text-indigo-600 mt-1">Conducted by Subject Matter Experts</p>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Completed Evaluations</span>
-              <p className="text-2xl font-black text-emerald-700 mt-2">{demoSummary.completedDemos}</p>
-              <p className="text-[10px] font-bold text-emerald-600 mt-1">Evaluated with structured rubrics</p>
-            </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <span className="text-[10px] font-black uppercase text-slate-400">Average Quality Benchmark</span>
-              <p className="text-2xl font-black text-indigo-700 mt-2">{demoSummary.avgDemoScore} / 100</p>
-              <p className="text-[10px] font-bold text-slate-400 mt-1">Regional faculty quality index</p>
-            </div>
+            <Card className="rounded-2xl border-slate-200 shadow-xs">
+              <CardContent className="p-4">
+                <span className="text-[10px] font-black uppercase text-slate-400">Total Demo Sessions</span>
+                <p className="text-2xl font-black text-slate-900 mt-2">{demoSummary.totalDemos}</p>
+                <p className="text-[10px] font-bold text-indigo-600 mt-1">Conducted by Subject Matter Experts</p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-2xl border-slate-200 shadow-xs">
+              <CardContent className="p-4">
+                <span className="text-[10px] font-black uppercase text-slate-400">Completed Evaluations</span>
+                <p className="text-2xl font-black text-emerald-700 mt-2">{demoSummary.completedDemos}</p>
+                <p className="text-[10px] font-bold text-emerald-600 mt-1">Evaluated with structured rubrics</p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-2xl border-slate-200 shadow-xs">
+              <CardContent className="p-4">
+                <span className="text-[10px] font-black uppercase text-slate-400">Average Quality Benchmark</span>
+                <p className="text-2xl font-black text-indigo-700 mt-2">{demoSummary.avgDemoScore} / 100</p>
+                <p className="text-[10px] font-bold text-slate-400 mt-1">Regional faculty quality index</p>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
@@ -301,22 +421,42 @@ export const KAMFacultyGovernance: React.FC<{
             </div>
 
             <div className="space-y-3">
-              {demoRoster.map(d => (
-                <div key={d.id} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 flex items-start justify-between gap-3 text-xs">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-slate-900">{d.mentorName}</span>
-                      <span className="text-[10px] text-slate-400">• Subject: {d.subject}</span>
+              {demoRoster.length === 0 ? (
+                <div className="py-8 text-center text-xs font-bold text-slate-400">No demo teaching records found.</div>
+              ) : (
+                paginatedDemos.map(d => (
+                  <div key={d.id} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 flex items-start justify-between gap-3 text-xs">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-slate-900">{d.mentorName}</span>
+                        <span className="text-[10px] text-slate-400">• Subject: {d.subject}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 mt-1 italic">"{d.comments}"</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-1">Evaluator: {d.smeName} • {d.dateStr} {d.timeSlot}</p>
                     </div>
-                    <p className="text-[11px] text-slate-600 mt-1 italic">"{d.comments}"</p>
-                    <p className="text-[10px] text-slate-400 font-bold mt-1">Evaluator: {d.smeName} • {d.dateStr} {d.timeSlot}</p>
+                    <Badge variant="brand" className="text-xs font-black shrink-0 px-2.5 py-1">
+                      {d.marks} / 100
+                    </Badge>
                   </div>
-                  <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
-                    {d.marks} / 100
-                  </span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
+
+            {/* Pagination for Demos */}
+            {demoRoster.length > 0 && (
+              <div className="pt-2">
+                <Pagination
+                  currentPage={demoPage}
+                  totalItems={demoRoster.length}
+                  pageSize={demoPageSize}
+                  onPageChange={setDemoPage}
+                  onPageSizeChange={(newSize) => {
+                    setDemoPageSize(newSize);
+                    setDemoPage(1);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

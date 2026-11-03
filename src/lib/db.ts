@@ -1,4 +1,7 @@
 import pg from "pg";
+import { readFileSync } from "fs";
+import { logger } from "./logger";
+import { PG_COLUMN_CASE_ENTRIES } from "./pgColumnCase.generated";
 
 const { Pool } = pg;
 
@@ -9,12 +12,18 @@ export interface DbTransactionContext {
   exec: (sql: string) => Promise<void>;
 }
 
+/** One slice that failed inside multiQuery, collected so the caller can report partial data. */
+export interface QueryFailure {
+  sql: string;
+  error: string;
+}
+
 export interface PostgresDbAdapter {
   get: (sql: string, ...params: any[]) => Promise<any>;
   all: (sql: string, ...params: any[]) => Promise<any[]>;
   run: (sql: string, ...params: any[]) => Promise<{ lastID?: number; changes: number }>;
   exec: (sql: string) => Promise<void>;
-  multiQuery: (queries: { sql: string; params?: any[] }[]) => Promise<any[][]>;
+  multiQuery: (queries: { sql: string; params?: any[] }[], failures?: QueryFailure[]) => Promise<any[][]>;
   transaction: <T>(callback: (tx: DbTransactionContext) => Promise<T>) => Promise<T>;
   client: any;
   pool: pg.Pool;
@@ -87,6 +96,57 @@ export function adaptQueryForPostgres(sql: string, params: any[]): { sql: string
 }
 
 /**
+ * Postgres SQLSTATE classes that mean "the statement never got to run, or the
+ * server rolled it back for us": a pooler/connection restart (08xxx), the
+ * instance shutting down or not accepting connections yet (57P0x), or the
+ * connection ceiling being temporarily reached (53300/53400). Supabase's
+ * transaction-mode pooler closes server-side connections on resize and during
+ * restarts, so these land on live traffic routinely.
+ *
+ * 40001/40P01 are the optimistic-concurrency pair. They are safe to re-issue for
+ * reads, and the idempotency gate below keeps them off plain writes.
+ *
+ * Deliberately excluded: 40003 statement_completion_unknown (the server may have
+ * applied it) and any 2xxxx/23xxx integrity error (deterministic, retry won't help).
+ */
+const TRANSIENT_SQLSTATES = new Set([
+  "08000", "08001", "08003", "08004", "08006", "08007", "08P01",
+  "57P01", "57P02", "57P03",
+  "53300", "53400",
+  "40001", "40P01"
+]);
+
+/** Node-level socket codes the pooler surfaces instead of a SQLSTATE. */
+const TRANSIENT_NET_CODES = new Set([
+  "ECONNRESET", "ECONNREFUSED", "ECONNABORTED", "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT", "ENOTFOUND", "EAI_AGAIN"
+]);
+
+/**
+ * True for failures that are worth a second attempt because the first one
+ * certainly did not persist. node-pg puts the SQLSTATE on `err.code` too, which
+ * is why both sets live on the same field.
+ */
+export function isTransientError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err?.code || "");
+  if (TRANSIENT_SQLSTATES.has(code) || TRANSIENT_NET_CODES.has(code)) return true;
+
+  // generic-pool (used by pg.Pool) rejects acquire with a plain Error, no code.
+  if (/timeout expired|connection timeout/i.test(String(err?.message || ""))) return true;
+
+  const message = String(err?.message || "");
+  return (
+    message.includes("fetch failed") ||
+    message.includes("Connect Timeout") ||
+    message.includes("read ECONNRESET") ||
+    message.includes("Connection terminated") ||
+    message.includes("server closed the connection") ||
+    message.includes("remaining connection slots are reserved")
+  );
+}
+
+/**
  * Retries transient network errors, but ONLY for idempotent operations by
  * default (plan item 13). Mutations (INSERT/UPDATE/DELETE/CREATE...) are NOT
  * auto-retried after an ambiguous mid-flight failure — the server state is
@@ -103,14 +163,7 @@ async function executeWithRetry<T>(fn: () => Promise<T>, opts?: { retries?: numb
       return await fn();
     } catch (err: any) {
       attempt++;
-      const isNetErr =
-        err?.code === "UND_ERR_CONNECT_TIMEOUT" ||
-        err?.code === "ECONNRESET" ||
-        err?.message?.includes("fetch failed") ||
-        err?.message?.includes("Connect Timeout") ||
-        err?.message?.includes("read ECONNRESET");
-
-      if (isNetErr && attempt < retries && idempotent) {
+      if (isTransientError(err) && attempt < retries && idempotent) {
         console.warn(`[PostgreSQL Retry] Transient network error on idempotent op (attempt ${attempt}/${retries}). Retrying in ${delay * attempt}ms...`);
         await new Promise(res => setTimeout(res, delay * attempt));
       } else {
@@ -127,49 +180,42 @@ function isReadOnlySql(sql: string): boolean {
   return trimmed.startsWith("SELECT") || trimmed.startsWith("WITH") || trimmed.startsWith("SHOW") || trimmed.startsWith("EXPLAIN");
 }
 
-const POSTGRES_CAMEL_MAP = new Map<string, string>([
-  ["slotid", "slotId"],
-  ["studentid", "studentId"],
-  ["datestr", "dateStr"],
-  ["markedby", "markedBy"],
-  ["classgroup", "classGroup"],
-  ["mentorid", "mentorId"],
-  ["requestorid", "requestorId"],
-  ["requestorname", "requestorName"],
-  ["targetstaffid", "targetStaffId"],
-  ["targetstaffname", "targetStaffName"],
-  ["coverstaffid", "coverStaffId"],
-  ["coverstaffname", "coverStaffName"],
-  ["originalmentorid", "originalMentorId"],
-  ["requestid", "requestId"],
-  ["dateformatted", "dateFormatted"],
-  ["headerreason", "headerReason"],
-  ["approvedby", "approvedBy"],
-  ["attendancetypesub", "attendanceTypeSub"],
-  ["sessionid", "sessionId"],
-  ["mentorname", "mentorName"],
-  ["smeid", "smeId"],
-  ["smename", "smeName"],
-  ["timeslot", "timeSlot"],
-  ["swaptype", "swapType"],
-  ["proposedmentorid", "proposedMentorId"],
-  ["proposedmentorname", "proposedMentorName"],
-  ["proposedsmeid", "proposedSmeId"],
-  ["proposedsmename", "proposedSmeName"],
-  ["proposeddatestr", "proposedDateStr"],
-  ["proposedtimeslot", "proposedTimeSlot"],
-  ["isread", "isRead"],
-  ["userid", "userId"],
-  ["taskname", "taskName"],
-  ["taskpdfurl", "taskPdfUrl"],
-  ["submissionurl", "submissionUrl"],
-  ["vivaassessment", "vivaAssessment"],
-  ["collegeid", "collegeId"],
-  ["collegename", "collegeName"],
-  ["camid", "camId"],
-  ["camname", "camName"],
-  ["studentname", "studentName"]
-]);
+/**
+ * Role-gated slices are stubbed with this placeholder, which always returns zero
+ * rows. Dispatching it still costs a full pooler round trip, so it is skipped.
+ */
+const NOOP_QUERY_RE = /^SELECT\s+1\s+WHERE\s+1\s*=\s*0$/i;
+
+/**
+ * /api/data fans out ~41 slices at once. Without a cap one dashboard burst takes
+ * every connection in the pool and other users' single-query reads queue behind it.
+ */
+const MULTI_QUERY_CONCURRENCY = 12;
+
+/** Runs fn over items with at most `limit` in flight, preserving result indices. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await fn(items[i]);
+      }
+    })
+  );
+  return results;
+}
+
+/**
+ * Restores the camelCase keys the app expects from Postgres' folded row names.
+ * Generated from postgres_schema.sql by scripts/generate-pg-column-case.mjs
+ * (npm run db:column-case, wired into predev/prebuild), because this list used to
+ * be hand-curated and silently missed five schema columns — reads arrived as
+ * `actorname` and AdminDashboard's audit-log filter threw on log.actorName.
+ * tests/column-casing.test.ts fails if the map and the schema drift apart again.
+ */
+const POSTGRES_CAMEL_MAP = new Map<string, string>(PG_COLUMN_CASE_ENTRIES);
 
 export function normalizePgRow(row: any): any {
   if (!row || typeof row !== "object" || Array.isArray(row)) return row;
@@ -183,7 +229,7 @@ export function normalizePgRow(row: any): any {
   return out;
 }
 
-function createPostgresAdapter(pool: pg.Pool): PostgresDbAdapter {
+export function createPostgresAdapter(pool: pg.Pool): PostgresDbAdapter {
   return {
     pool,
     client: {
@@ -233,7 +279,7 @@ function createPostgresAdapter(pool: pg.Pool): PostgresDbAdapter {
     async exec(sql: string) {
       await executeWithRetry(() => pool.query(sql));
     },
-    async multiQuery(queries: { sql: string; params?: any[] }[]): Promise<any[][]> {
+    async multiQuery(queries: { sql: string; params?: any[] }[], failures?: QueryFailure[]): Promise<any[][]> {
       if (!queries || queries.length === 0) return [];
       const hasParams = queries.some(q => q.params && q.params.length > 0);
       if (!hasParams) {
@@ -245,17 +291,22 @@ function createPostgresAdapter(pool: pg.Pool): PostgresDbAdapter {
         return [(res.rows || []).map(normalizePgRow)];
       }
 
-      return await Promise.all(queries.map(q => {
+      return await mapWithConcurrency(queries, MULTI_QUERY_CONCURRENCY, async (q) => {
+        if (NOOP_QUERY_RE.test((q.sql || "").trim())) return [];
         const adapted = adaptQueryForPostgres(q.sql, q.params || []);
-        return executeWithRetry(() => pool.query(adapted.sql, adapted.params), { readOnly: isReadOnlySql(adapted.sql) })
-          .then(r => r.rows.map(normalizePgRow))
-          .catch(err => {
-            // Log loudly instead of silently returning [] — silent failures here
-            // made data "disappear" with no trace (see API_OPTIMIZATION_PLAN #8).
-            console.error(`[multiQuery] Query failed and returned []: ${err?.message || err}\nSQL: ${q.sql.slice(0, 300)}`);
-            return [];
-          });
-      }));
+        try {
+          const res = await executeWithRetry(() => pool.query(adapted.sql, adapted.params), { readOnly: isReadOnlySql(adapted.sql) });
+          return res.rows.map(normalizePgRow);
+        } catch (err: any) {
+          // The slice still yields [], but the caller gets the failure recorded so a
+          // partial read can never be presented as a complete one (silent "data
+          // disappeared" - see API_OPTIMIZATION_PLAN #8).
+          const error = err?.message || String(err);
+          logger.error("[multiQuery] slice failed", { sql: q.sql.slice(0, 300), error });
+          failures?.push({ sql: q.sql, error });
+          return [];
+        }
+      });
     },
     async transaction<T>(callback: (tx: DbTransactionContext) => Promise<T>): Promise<T> {
       const client = await pool.connect();
@@ -300,6 +351,98 @@ function createPostgresAdapter(pool: pg.Pool): PostgresDbAdapter {
 let dbInstance: PostgresDbAdapter | null = null;
 let dbPromise: Promise<PostgresDbAdapter> | null = null;
 
+/**
+ * db.<ref>.supabase.co resolves AAAA-only and Vercel's Node runtime has no IPv6
+ * egress, so a direct Supabase URL has to become the IPv4 pooler. Hardcoding the
+ * pooler region meant moving the database required a code edit, hence the
+ * DB_POOLER_HOST override. Unset behavior is unchanged.
+ */
+export function resolveConnectionString(rawUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+
+  const supabaseMatch = parsed.hostname.match(/^db\.([a-z0-9_-]+)\.supabase\.co$/i);
+  if (!supabaseMatch) return rawUrl;
+
+  const projectRef = supabaseMatch[1];
+  if (parsed.username === "postgres") {
+    parsed.username = `postgres.${projectRef}`;
+  }
+  parsed.hostname = process.env.DB_POOLER_HOST?.trim()
+    || "aws-0-ap-southeast-2.pooler.supabase.com";
+  parsed.port = parsed.port === "5432" || !parsed.port ? "6543" : parsed.port;
+
+  console.log(`🐘 [Database] Auto-routed Supabase host to IPv4 Pooler (${parsed.hostname}:${parsed.port})`);
+  return parsed.toString();
+}
+
+/**
+ * TLS options for the Postgres pool.
+ *
+ * Supabase always encrypts the transport, but "encrypted" and "verified" are
+ * different settings: `{ rejectUnauthorized: false }` completes the handshake
+ * without checking that the server is really this project's database. The repo has
+ * run that way because Supabase publishes its own CA certificate in the dashboard
+ * (Settings -> Database -> SSL Root Certificate) for `verify-full`, so Node's
+ * bundled trust store is not guaranteed to validate the chain.
+ *
+ * Strict verification is therefore opt-in rather than defaulted on: flipping it
+ * blind would fail every connection if the chain is not trusted, and the pooler's
+ * certificate is not the same host as the direct connection. To enable it, set
+ *   DB_SSL_VERIFY=true
+ *   DB_SSL_CA_PATH=/absolute-or-cwd-relative/path/to/supabase-root-cert.pem
+ * then run one `npm run dev` and confirm the pool logs a successful connect before
+ * touching production.
+ */
+export function resolveSslConfig(isLocalHost: boolean): pg.PoolConfig["ssl"] {
+  if (isLocalHost) return undefined;
+
+  const strict = /^(1|true|yes)$/i.test((process.env.DB_SSL_VERIFY || "").trim());
+  if (!strict) return { rejectUnauthorized: false };
+
+  const caPath = (process.env.DB_SSL_CA_PATH || "").trim();
+  if (!caPath) return { rejectUnauthorized: true };
+
+  let ca: string;
+  try {
+    ca = readFileSync(caPath, "utf8");
+  } catch (err: any) {
+    throw new Error(
+      `DB_SSL_VERIFY is on but DB_SSL_CA_PATH="${caPath}" could not be read: ${err?.message || String(err)}`
+    );
+  }
+  return { rejectUnauthorized: true, ca };
+}
+
+/** Reads a positive-integer env var, clamped to [min, max], falling back to `fallback`. */
+function resolveIntEnv(name: string, fallback: number, min: number, max: number): number {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    console.warn(`[Database] Ignoring ${name}="${raw}" (expected a positive number); using ${fallback}.`);
+    return fallback;
+  }
+  const clamped = Math.min(Math.max(Math.round(value), min), max);
+  if (clamped !== value) {
+    console.warn(`[Database] ${name}=${value} clamped to ${clamped} (allowed ${min}-${max}).`);
+  }
+  return clamped;
+}
+
+/**
+ * Pool ceiling per instance. Left at 20 when unset; PG_POOL_MAX exists because the
+ * real budget is shared across every concurrent instance, and there is no way to
+ * know that from code.
+ */
+function resolvePoolMax(): number {
+  return resolveIntEnv("PG_POOL_MAX", 20, 1, 100);
+}
+
 export function getDb(): Promise<PostgresDbAdapter> {
   if (dbInstance) return Promise.resolve(dbInstance);
   if (!dbPromise) {
@@ -312,34 +455,33 @@ export function getDb(): Promise<PostgresDbAdapter> {
         );
       }
 
-      let finalConnectionString = postgresUrl;
-      try {
-        const parsed = new URL(postgresUrl);
-        const supabaseMatch = parsed.hostname.match(/^db\.([a-z0-9_-]+)\.supabase\.co$/i);
-        if (supabaseMatch) {
-          const projectRef = supabaseMatch[1];
-          if (parsed.username === "postgres") {
-            parsed.username = `postgres.${projectRef}`;
-          }
-          parsed.hostname = "aws-0-ap-southeast-2.pooler.supabase.com";
-          parsed.port = parsed.port === "5432" || !parsed.port ? "6543" : parsed.port;
-          finalConnectionString = parsed.toString();
-          console.log(`🐘 [Database] Auto-routed Supabase host to IPv4 Pooler (${parsed.hostname}:${parsed.port})`);
-        }
-      } catch (_) {
-        // Continue with original postgresUrl
-      }
+      const finalConnectionString = resolveConnectionString(postgresUrl);
 
       const isLocalHost = finalConnectionString.includes("localhost") || finalConnectionString.includes("127.0.0.1");
       console.log(`🐘 [Database] Connecting to PostgreSQL (${isLocalHost ? "Localhost" : "Cloud/Pooler"})...`);
 
       const pool = new Pool({
         connectionString: finalConnectionString,
-        ssl: !isLocalHost ? { rejectUnauthorized: false } : undefined,
-        max: 20,
+        ssl: resolveSslConfig(isLocalHost),
+        // Default kept at 20 because /api/data fans out 41 slices; MULTI_QUERY_CONCURRENCY
+        // caps how many of these a single request can occupy. Tunable because the
+        // ceiling is per instance, so Vercel autoscale multiplies it against
+        // Supabase's fixed connection limit - raise PG_POOL_MAX only together with
+        // the project's max_client_connections.
+        max: resolvePoolMax(),
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 10000,
-        statement_timeout: 60000
+        connectionTimeoutMillis: resolveIntEnv("DB_CONNECT_TIMEOUT_MS", 10000, 1000, 60000),
+        statement_timeout: resolveIntEnv("DB_STATEMENT_TIMEOUT_MS", 60000, 1000, 300000),
+        application_name: process.env.DB_APP_NAME || "fp-timetable"
+      });
+
+      // node-pg emits connection errors that belong to no in-flight query (an idle
+      // client gets killed by the pooler, the keepalive fails, the server restarts).
+      // A Pool with no 'error' listener re-raises those as unhandled, which takes
+      // down the whole function instance and every other request in it. The pool
+      // evicts the client itself, so logging is the correct and only action here.
+      pool.on("error", (err: any) => {
+        console.error("[PostgreSQL Pool] Error on idle connection (client evicted):", err?.message || err);
       });
 
       // Verify connection directly
@@ -347,62 +489,19 @@ export function getDb(): Promise<PostgresDbAdapter> {
         await pool.query("SELECT 1");
       } catch (connErr: any) {
         console.error("❌ [PostgreSQL Error] Connection failed:", connErr.message);
+        // A failed boot must not be cached. Without this the rejected promise stays
+        // in dbPromise for the life of the instance and every subsequent request
+        // 500s with the same stale error even after the pooler comes back.
+        await pool.end().catch(() => {});
         throw new Error(`Failed to connect to PostgreSQL: ${connErr.message}`);
       }
 
-      // Ensure compatibility functions exist in PostgreSQL
-      try {
-        await pool.query(`
-          CREATE OR REPLACE FUNCTION strftime(format text, date_val text) 
-          RETURNS text AS $$
-          BEGIN
-            IF format = '%w' THEN
-              BEGIN
-                RETURN EXTRACT(DOW FROM date_val::date)::text;
-              EXCEPTION WHEN OTHERS THEN
-                RETURN '1';
-              END;
-            ELSE
-              RETURN date_val;
-            END IF;
-          END;
-          $$ LANGUAGE plpgsql IMMUTABLE;
-
-          CREATE OR REPLACE FUNCTION date(base_val text, offset_val text)
-          RETURNS text AS $$
-          DECLARE
-            clean_offset text;
-          BEGIN
-            IF offset_val LIKE '-%' THEN
-              RETURN (CURRENT_DATE - SUBSTRING(offset_val FROM 2)::interval)::date::text;
-            ELSIF offset_val LIKE '+%' THEN
-              RETURN (CURRENT_DATE + SUBSTRING(offset_val FROM 2)::interval)::date::text;
-            ELSE
-              RETURN (CURRENT_DATE + offset_val::interval)::date::text;
-            END IF;
-          EXCEPTION WHEN OTHERS THEN
-            RETURN CURRENT_DATE::text;
-          END;
-          $$ LANGUAGE plpgsql IMMUTABLE;
-
-          CREATE OR REPLACE FUNCTION date(base_val text)
-          RETURNS text AS $$
-          BEGIN
-            IF base_val = 'now' THEN
-              RETURN CURRENT_DATE::text;
-            ELSE
-              RETURN base_val::date::text;
-            END IF;
-          EXCEPTION WHEN OTHERS THEN
-            RETURN CURRENT_DATE::text;
-          END;
-          $$ LANGUAGE plpgsql IMMUTABLE;
-        `);
-      } catch (_) { }
-
       dbInstance = createPostgresAdapter(pool);
       return dbInstance;
-    })();
+    })().catch((err) => {
+      dbPromise = null;
+      throw err;
+    });
   }
   return dbPromise;
 }
@@ -602,12 +701,101 @@ export function parseClassGroupDetails(classGroup: string) {
   return { course, shift, semester, startYear, endYear };
 }
 
+/**
+ * Postgres caps a statement at 65,535 bind parameters, and an IN-list built from a
+ * request body or from every student of a college can pass a comfortable query plan
+ * long before that. Anything fanning a statement out over an id list uses these
+ * helpers instead of interpolating the whole list into one statement.
+ */
+export const IN_CHUNK = 500;
+
+export function chunkList<T>(items: T[], size: number = IN_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+export const inPlaceholders = (count: number) => Array.from({ length: count }, () => "?").join(",");
+
+type ChunkStatement = { sql: string; params: any[] };
+
+export async function readInChunks<T = any>(
+  db: { all: (sql: string, ...params: any[]) => Promise<T[]> },
+  ids: any[],
+  build: (chunk: any[], placeholders: string) => ChunkStatement,
+  chunkSize: number = IN_CHUNK
+): Promise<T[]> {
+  const out: T[] = [];
+  for (const chunk of chunkList(ids, chunkSize)) {
+    const stmt = build(chunk, inPlaceholders(chunk.length));
+    out.push(...await db.all(stmt.sql, ...stmt.params));
+  }
+  return out;
+}
+
+/** Runs one statement per id chunk and returns the summed affected-row count. */
+export async function writeInChunks(
+  db: { run: (sql: string, ...params: any[]) => Promise<any> },
+  ids: any[],
+  build: (chunk: any[], placeholders: string) => ChunkStatement,
+  chunkSize: number = IN_CHUNK
+): Promise<number> {
+  let changes = 0;
+  for (const chunk of chunkList(ids, chunkSize)) {
+    const stmt = build(chunk, inPlaceholders(chunk.length));
+    const res = await db.run(stmt.sql, ...stmt.params);
+    changes += Number(res?.changes ?? 0);
+  }
+  return changes;
+}
+
+/** Ceiling for a read that has a scope filter but no natural page size. */
+export const ROW_CAP = 5000;
+
+/**
+ * Run a read with a hard ceiling. Passing it is reported as an error instead of a
+ * short list: a caller that builds a roster, a dropdown or an approval queue from
+ * these rows cannot tell a truncated page from the whole table, and the timetable
+ * UI treats a short list as "those records do not exist".
+ *
+ * The statement must not already carry a LIMIT.
+ */
+export async function allCapped<T = any>(
+  db: { all: (sql: string, ...params: any[]) => Promise<T[]> },
+  sql: string,
+  params: any[] = [],
+  cap: number = ROW_CAP
+): Promise<T[]> {
+  const rows = await db.all(`${sql} LIMIT ${cap + 1}`, ...params);
+  if (rows.length > cap) {
+    throw new Error(
+      `Read passed its ${cap}-row ceiling — ${sql.replace(/\s+/g, " ").slice(0, 80)}. Scope it to one college or raise ROW_CAP.`
+    );
+  }
+  return rows;
+}
+
+/** Splits a set-based write so one statement stays clear of the bind-parameter cap. */
+function chunkForWrite<T>(items: T[], size: number): T[][] {
+  return chunkList(items, size);
+}
+
+/**
+ * Re-derives subject_group / mentor_group from the subject_groups table.
+ *
+ * The matching is done in memory (it is a "first group name contained in the
+ * subject name" rule with no SQL equivalent worth writing), but the writes used to
+ * be one UPDATE per matched row — hundreds or thousands of round trips on every
+ * mentors/subject-groups save. They are now folded into one statement per table.
+ */
 export async function syncMentorSubjectGroups(db: any) {
   const groupRows = await db.all("SELECT * FROM subject_groups");
   if (!groupRows || groupRows.length === 0) return;
   const groupNames = groupRows.map((g: any) => g.name);
 
   const allSubjects = await db.all("SELECT id, name, subject_group, mentor_group FROM subjects");
+
+  const subjectUpdates: { id: string; group: string }[] = [];
 
   for (const sub of allSubjects) {
     let matchedGroup: string | null = sub.subject_group || sub.mentor_group || null;
@@ -622,17 +810,36 @@ export async function syncMentorSubjectGroups(db: any) {
         }
       }
 
-      if (matchedGroup) {
-        await db.run(
-          "UPDATE subjects SET subject_group = ?, mentor_group = ? WHERE id = ?",
-          [matchedGroup, matchedGroup, sub.id]
-        );
+      // Rows already carrying the value in both columns used to be re-written with
+      // the same text; skipping them keeps the bulk statement to real changes.
+      if (matchedGroup && (sub.subject_group !== matchedGroup || sub.mentor_group !== matchedGroup)) {
+        subjectUpdates.push({ id: sub.id, group: matchedGroup });
       }
     }
+
+    if (matchedGroup) sub.subject_group = matchedGroup;
+  }
+
+  for (const chunk of chunkForWrite(subjectUpdates, 500)) {
+    const values = chunk.map(() => "(?, ?)").join(", ");
+    const params: any[] = [];
+    for (const u of chunk) params.push(u.id, u.group);
+    await db.run(
+      `UPDATE subjects AS s
+       SET subject_group = u.grp, mentor_group = u.grp
+       FROM (VALUES ${values}) AS u(id, grp)
+       WHERE s.id = u.id`,
+      params
+    );
   }
 
   const mentors = await db.all("SELECT id, subjects, department, mentor_group, subject_group FROM mentors");
-  const updatedSubjects = await db.all("SELECT name, COALESCE(subject_group, mentor_group) as group_name FROM subjects WHERE subject_group IS NOT NULL AND subject_group != '' AND subject_group != 'General'");
+  // Same rows the follow-up SELECT used to re-read from the subjects table.
+  const updatedSubjects = allSubjects
+    .filter((sub: any) => sub.subject_group && sub.subject_group !== "General")
+    .map((sub: any) => ({ name: sub.name, group_name: sub.subject_group }));
+
+  const mentorUpdates: { id: string; group: string }[] = [];
 
   for (const mentor of mentors) {
     const mentorSubjects = (mentor.subjects || "")
@@ -655,12 +862,21 @@ export async function syncMentorSubjectGroups(db: any) {
       }
     }
 
-    if (matchedGroup) {
-      await db.run(
-        "UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id = ? AND (mentor_group IS NULL OR mentor_group = '' OR mentor_group = 'General')",
-        [matchedGroup, matchedGroup, mentor.id]
-      );
-    }
+    if (matchedGroup) mentorUpdates.push({ id: mentor.id, group: matchedGroup });
+  }
+
+  for (const chunk of chunkForWrite(mentorUpdates, 500)) {
+    const values = chunk.map(() => "(?, ?)").join(", ");
+    const params: any[] = [];
+    for (const u of chunk) params.push(u.id, u.group);
+    await db.run(
+      `UPDATE mentors AS m
+       SET mentor_group = u.grp, subject_group = u.grp
+       FROM (VALUES ${values}) AS u(id, grp)
+       WHERE m.id = u.id
+         AND (m.mentor_group IS NULL OR m.mentor_group = '' OR m.mentor_group = 'General')`,
+      params
+    );
   }
 }
 

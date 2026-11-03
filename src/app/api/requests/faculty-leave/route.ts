@@ -1,13 +1,25 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
-import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { sendMail, renderEmailShell } from "@/lib/mail";
-import { checkMentorAvailability } from "@/lib/availability";
+import { NextResponse, after } from "next/server";
+import { getDb, readInChunks, type QueryFailure } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
+import { renderEmailShell } from "@/lib/mail";
+import { dispatchMail, sendMailAsync } from "@/lib/mailAsync";
+import { checkMentorAvailability, loadAvailabilityContext, type AvailabilityContext } from "@/lib/availability";
+import { generateId } from "@/lib/id";
+import { applyHandoverDateCorrection, correctStaleHandoverDate } from "@/lib/handoverDates";
+
+// Faculty leave reads and writes the live schedule (handovers, mentor_attendance)
+// and mails CM/KAM/cover mentors, so every handler needs a session.
+const LEAVE_ROLES: Role[] = ["mentor", "cm", "kam", "admin"];
 
 export async function GET(request: Request) {
+  const { errorResponse } = await requireAuth(request, {
+    allowedRoles: LEAVE_ROLES,
+    checkCsrf: false
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
@@ -22,13 +34,49 @@ export async function GET(request: Request) {
     const excludeMentorId = searchParams.get("excludeMentorId");
 
     if (availableForSlotId && availableForDate && availableForCollegeId) {
-      const slot = await db.get("SELECT * FROM slots WHERE id = ?", [availableForSlotId]);
+      // Slot + campus roster are independent, then the whole campus shares ONE preloaded
+      // availability context and ONE same-subject lookup. This branch used to run roughly
+      // seven queries per mentor, so a 30-mentor campus cost ~200 round trips.
+      const [slotRows, mentorRows] = await db.multiQuery([
+        { sql: "SELECT * FROM slots WHERE id = ?", params: [availableForSlotId] },
+        {
+          sql: `SELECT id, name, department, email FROM mentors WHERE college_id = ? AND id != ? ORDER BY name`,
+          params: [availableForCollegeId, excludeMentorId || ""]
+        }
+      ]);
+      const slot = slotRows[0];
       if (!slot) return NextResponse.json({ success: false, message: "Slot not found" }, { status: 404 });
 
-      const allMentors = await db.all(
-        `SELECT id, name, department, email FROM mentors WHERE college_id = ? AND id != ? ORDER BY name`,
-        [availableForCollegeId, excludeMentorId || ""]
-      );
+      const allMentors: any[] = mentorRows;
+
+      // Which mentors already teach this course (sameSubject), fetched for the whole campus
+      // in one chunked read instead of once per candidate.
+      const mentorIds = allMentors.map((m: any) => m.id);
+
+      // Which mentors already teach this course, fetched for the whole campus in one
+      // chunked read instead of once per candidate. It only drives a sort hint and a badge,
+      // so a failed read degrades to "no same-subject match" rather than breaking the picker.
+      const sameSubjectRead = readInChunks(
+        db,
+        mentorIds,
+        (chunk, ph) => ({
+          sql: `SELECT DISTINCT mentorId FROM slots WHERE mentorId IN (${ph}) AND LOWER(course) = LOWER(?)`,
+          params: [...chunk, slot.course]
+        })
+      ).catch(() => [] as any[]);
+
+      const [sameSubjectRows, ctxResult] = await Promise.all([
+        sameSubjectRead,
+        loadAvailabilityContext(db, { mentorIds, dates: [availableForDate] })
+          .then(c => ({ ctx: c as AvailabilityContext | null, error: null as any }))
+          .catch(error => ({ ctx: null as AvailabilityContext | null, error }))
+      ]);
+      if (ctxResult.error) {
+        console.warn("[faculty-leave] availability preload failed, falling back to per-mentor lookups:", ctxResult.error?.message);
+      }
+      const availCtx = ctxResult.ctx;
+
+      const sameSubjectIds = new Set<string>(sameSubjectRows.map((r: any) => String(r.mentorId ?? r.mentorid ?? "")));
 
       const available: any[] = [];
       for (const m of allMentors) {
@@ -36,15 +84,11 @@ export async function GET(request: Request) {
           mentorId: m.id,
           dateStr: availableForDate,
           timeSlot: slot.time,
-          shift: slot.shift
+          shift: slot.shift,
+          ctx: availCtx ?? undefined
         });
         if (result.available) {
-          // Is this mentor a match for the same subject?
-          const sameSubject = await db.get(
-            `SELECT id FROM slots WHERE mentorId = ? AND LOWER(course) = LOWER(?) LIMIT 1`,
-            [m.id, slot.course]
-          );
-          available.push({ ...m, sameSubject: !!sameSubject });
+          available.push({ ...m, sameSubject: sameSubjectIds.has(String(m.id)) });
         }
       }
       // Sort: same subject first
@@ -78,137 +122,37 @@ export async function GET(request: Request) {
 
     const records = await db.all(query, params);
 
-    // Enrich with cover requests and perform self-healing auto-sync if covers are approved
+    // Load cover requests for every leave in one round trip instead of one per row.
+    const leaveIds = records.map((r: any) => r.id).filter(Boolean);
+    const coversByLeave = new Map<string, any[]>();
+    if (leaveIds.length > 0) {
+      // MAIL-C02 Fix: Use SQLite/libSQL compatible IN syntax instead of PostgreSQL ANY(?::text[])
+      const placeholders = leaveIds.map(() => "?").join(",");
+      const allCovers = await db.all(
+        `SELECT id, compensates_handover_id, targetStaffId, targetStaffName, targetstaffname, status, course, day, time, dateStr, dateFormatted
+         FROM handover_requests
+         WHERE compensates_handover_id IN (${placeholders})`,
+        leaveIds
+      ).catch(() => []);
+      for (const cover of allCovers) {
+        const leaveId = cover.compensates_handover_id;
+        if (!leaveId) continue;
+        const list = coversByLeave.get(leaveId);
+        if (list) list.push(cover);
+        else coversByLeave.set(leaveId, [cover]);
+      }
+    }
+
+    // Enrich with cover requests. A GET never writes: stale cover dates are
+    // corrected in memory only, and the approve/attendance cascade runs in
+    // POST /api/requests/review when the last cover is accepted.
     for (const rec of records) {
-      try {
-        const covers = await db.all(
-          `SELECT id, targetStaffId, targetStaffName, targetstaffname, status, course, day, time, dateStr, dateFormatted 
-           FROM handover_requests 
-           WHERE compensates_handover_id = ?`,
-          [rec.id]
-        );
-        rec.covers = covers || [];
-
-        // Auto-heal any timezone-shifted handover dates
-        for (const c of rec.covers) {
-          const cDate = c.datestr || c.dateStr;
-          if (cDate && rec.start_date && cDate < rec.start_date) {
-            const [rY, rM, rD] = rec.start_date.split("-").map(Number);
-            const dtObj = new Date(rY, rM - 1, rD, 12, 0, 0);
-            const corFormatted = dtObj.toLocaleDateString("en-IN", {
-              weekday: "long", day: "2-digit", month: "short", year: "numeric"
-            });
-            await db.run(
-              "UPDATE handover_requests SET datestr = ?, dateformatted = ? WHERE id = ?",
-              [rec.start_date, corFormatted, c.id]
-            );
-            await db.run(
-              "UPDATE approved_handovers SET datestr = ? WHERE requestid = ?",
-              [rec.start_date, c.id]
-            );
-            c.datestr = rec.start_date;
-            c.dateStr = rec.start_date;
-            c.dateformatted = corFormatted;
-            c.dateFormatted = corFormatted;
-          }
-        }
-
-        // Auto-heal any timezone-shifted handover dates
-        for (const c of rec.covers) {
-          const cDate = c.datestr || c.dateStr;
-          if (cDate && rec.start_date && cDate < rec.start_date) {
-            const [rY, rM, rD] = rec.start_date.split("-").map(Number);
-            const dtObj = new Date(rY, rM - 1, rD, 12, 0, 0);
-            const corFormatted = dtObj.toLocaleDateString("en-IN", {
-              weekday: "long", day: "2-digit", month: "short", year: "numeric"
-            });
-            await db.run(
-              "UPDATE handover_requests SET datestr = ?, dateformatted = ? WHERE id = ?",
-              [rec.start_date, corFormatted, c.id]
-            );
-            await db.run(
-              "UPDATE approved_handovers SET datestr = ? WHERE requestid = ?",
-              [rec.start_date, c.id]
-            );
-            c.datestr = rec.start_date;
-            c.dateStr = rec.start_date;
-            c.dateformatted = corFormatted;
-            c.dateFormatted = corFormatted;
-          }
-        }
-
-        // If leave is pending but all assigned covers are approved, auto-approve and sync attendance
-        if (rec.status === "pending" && covers && covers.length > 0) {
-          const allApproved = covers.every((c: any) => c.status === "approved");
-          if (allApproved) {
-            const coverNames = Array.from(new Set(
-              covers.map((c: any) => c.targetStaffName || c.targetstaffname).filter(Boolean)
-            )).join(", ");
-            const approverTag = `Cover Approved (${coverNames || "Assigned Mentor"})`;
-            await db.run(
-              `UPDATE faculty_leave_requests SET status = 'approved', approved_by = ?, updated_at = NOW() WHERE id = ?`,
-              [approverTag, rec.id]
-            );
-            rec.status = "approved";
-            rec.approved_by = approverTag;
-
-            // Auto-sync mentor attendance
-            try {
-              const [sY, sM, sD] = rec.start_date.split("-").map(Number);
-              const [eY, eM, eD] = (rec.end_date || rec.start_date).split("-").map(Number);
-              let cur = new Date(sY, sM - 1, sD, 12, 0, 0);
-              const end = new Date(eY, eM - 1, eD, 12, 0, 0);
-              const attStatus = rec.request_type === "OD" ? "OD" : "Leave";
-              while (cur <= end) {
-                const year = cur.getFullYear();
-                const month = String(cur.getMonth() + 1).padStart(2, "0");
-                const day = String(cur.getDate()).padStart(2, "0");
-                const dateStr = `${year}-${month}-${day}`;
-                const attId = `att_${rec.mentor_id}_${dateStr}`;
-                await db.run(
-                  `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, reason, marked_by, marked_by_id, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'cover_approval', ?, NOW())
-                   ON CONFLICT(mentor_id, date_str) DO UPDATE SET
-                   status = excluded.status,
-                   reason = excluded.reason,
-                   marked_by = excluded.marked_by,
-                   marked_by_id = excluded.marked_by_id,
-                   updated_at = NOW()`,
-                  [
-                    attId,
-                    rec.mentor_id,
-                    rec.college_id,
-                    dateStr,
-                    attStatus,
-                    `${rec.request_type}: ${rec.reason || 'Leave Approved'} (Covered by ${coverNames})`,
-                    approverTag
-                  ]
-                );
-                cur.setDate(cur.getDate() + 1);
-              }
-            } catch (_) {}
-
-            try {
-              const autoNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-              const autoDateSpan = rec.end_date && rec.end_date !== rec.start_date
-                ? `${rec.start_date} to ${rec.end_date}`
-                : rec.start_date;
-              await db.run(
-                `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
-                 VALUES (?, ?, ?, ?, 0, ?, 'leave_decision', ?)`,
-                [
-                  autoNotifId,
-                  rec.mentor_id,
-                  `${rec.request_type} Request Approved`,
-                  `Your ${rec.request_type} application for ${autoDateSpan} was auto-approved because every assigned class cover was accepted${coverNames ? ` (covered by ${coverNames})` : ""}.`,
-                  "/mentor/leaves",
-                  new Date().toISOString()
-                ]
-              );
-            } catch (_) {}
-          }
-        }
-      } catch (_) {}
+      const covers = coversByLeave.get(rec.id) || [];
+      rec.covers = covers;
+      for (const c of covers) {
+        const correction = correctStaleHandoverDate(c.dateStr || c.datestr, rec.start_date);
+        if (correction) applyHandoverDateCorrection(c, correction);
+      }
     }
 
     return NextResponse.json({ success: true, records });
@@ -218,6 +162,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: LEAVE_ROLES });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const body = await request.json();
@@ -231,14 +178,34 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Missing requestId" }, { status: 400 });
       }
 
-      const reqRecord = await db.get(
-        `SELECT flr.*, m.name as mentorName, m.email as mentorEmail, c.name as collegeName
-         FROM faculty_leave_requests flr
-         JOIN mentors m ON flr.mentor_id = m.id
-         LEFT JOIN colleges c ON flr.college_id = c.id
-         WHERE flr.id = ?`,
-        [requestId]
+      // The request row and the demo-reallocation gate both key off requestId, so one
+      // round trip serves both. Each decides a write, so a failed slice aborts rather
+      // than reading as "request not found" or "no conflicts".
+      const approveFailures: QueryFailure[] = [];
+      const [requestRows, pendingReallocs] = await db.multiQuery(
+        [
+          {
+            sql: `SELECT flr.*, m.name as mentorName, m.email as mentorEmail, c.name as collegeName
+                  FROM faculty_leave_requests flr
+                  JOIN mentors m ON flr.mentor_id = m.id
+                  LEFT JOIN colleges c ON flr.college_id = c.id
+                  WHERE flr.id = ?`,
+            params: [requestId],
+          },
+          action === "approve"
+            ? {
+                sql: "SELECT id, subject, original_date_str, original_time_slot, proposed_date_str, proposed_time_slot FROM demo_reallocation_requests WHERE leave_request_id = ? AND status = 'pending'",
+                params: [requestId],
+              }
+            : { sql: "SELECT 1 WHERE 1=0" },
+        ],
+        approveFailures
       );
+      if (approveFailures.length > 0) {
+        return NextResponse.json({ success: false, message: "Could not verify this request before approving it. Please try again." }, { status: 500 });
+      }
+
+      const reqRecord = requestRows[0] || null;
       if (!reqRecord) {
         return NextResponse.json({ success: false, message: "Request not found" }, { status: 404 });
       }
@@ -247,10 +214,6 @@ export async function POST(request: Request) {
 
       // ── Gate: leave approval must not create an unhandled demo conflict ──
       if (action === "approve") {
-        const pendingReallocs: any[] = await db.all(
-          "SELECT id, subject, original_date_str, original_time_slot, proposed_date_str, proposed_time_slot FROM demo_reallocation_requests WHERE leave_request_id = ? AND status = 'pending'",
-          [requestId]
-        ).catch(() => []);
         if (pendingReallocs.length > 0) {
           return NextResponse.json({
             success: false,
@@ -259,9 +222,10 @@ export async function POST(request: Request) {
         }
       }
 
+      // MAIL-M09 Fix: Replace NOW() with CURRENT_TIMESTAMP
       await db.run(
         `UPDATE faculty_leave_requests
-         SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = NOW()
+         SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [newStatus, approvedBy || "Campus Manager", rejectionReason || null, requestId]
       );
@@ -281,16 +245,17 @@ export async function POST(request: Request) {
           const day = String(cur.getDate()).padStart(2, "0");
           const dateStr = `${year}-${month}-${day}`;
           const attId = `att_${reqRecord.mentor_id}_${dateStr}`;
-          
+
+          // MAIL-M09 Fix: Replace NOW() with CURRENT_TIMESTAMP
           await db.run(
             `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, reason, marked_by, marked_by_id, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'cam_approval', ?, NOW())
+             VALUES (?, ?, ?, ?, ?, ?, 'cam_approval', ?, CURRENT_TIMESTAMP)
              ON CONFLICT(mentor_id, date_str) DO UPDATE SET
              status = excluded.status,
              reason = excluded.reason,
              marked_by = excluded.marked_by,
              marked_by_id = excluded.marked_by_id,
-             updated_at = NOW()`,
+             updated_at = CURRENT_TIMESTAMP`,
             [
               attId,
               reqRecord.mentor_id,
@@ -325,7 +290,7 @@ export async function POST(request: Request) {
 
             // 1. In-app notification to the assigned SME (freeing their slot and letting them know mentor will reschedule)
             if (demo.smeId) {
-              const smeNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+              const smeNotifId = generateId("notif");
               await db.run(
                 `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
                  VALUES (?, ?, ?, ?, 0, ?, 'demo_cancelled', ?)`,
@@ -342,7 +307,7 @@ export async function POST(request: Request) {
 
             // 2. In-app notification to the mentor prompting them to pick a new date & slot
             if (reqRecord.mentor_id) {
-              const mentorNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+              const mentorNotifId = generateId("notif");
               await db.run(
                 `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
                  VALUES (?, ?, ?, ?, 0, ?, 'demo_reschedule_prompt', ?)`,
@@ -358,7 +323,7 @@ export async function POST(request: Request) {
             }
 
             // 3. Audit log
-            const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+            const auditId = generateId("audit");
             await db.run(
               `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
                VALUES (?, 'demo_leave_hold', ?, ?, 'Campus Manager', ?)`,
@@ -374,6 +339,11 @@ export async function POST(request: Request) {
 
         // Automatic identification of affected regular teaching classes for this mentor
         const mentorSlots = await db.all("SELECT * FROM slots WHERE mentorId = ?", [reqRecord.mentor_id]);
+
+        // Which classes fall in the window is pure date arithmetic, so work that out
+        // first and then read every handover flag in one set-based query. Used to be one
+        // round trip per period per day (a 5-day leave covering 6 periods cost 30 trips).
+        const scheduled: { slot: any; dateStr: string }[] = [];
         let curSlotCheck = new Date(sY, sM - 1, sD, 12, 0, 0);
         while (curSlotCheck <= end) {
           const cYear = curSlotCheck.getFullYear();
@@ -381,60 +351,70 @@ export async function POST(request: Request) {
           const cDay = String(curSlotCheck.getDate()).padStart(2, "0");
           const dStr = `${cYear}-${cMonth}-${cDay}`;
           const dName = curSlotCheck.toLocaleDateString("en-US", { weekday: "long" });
-          const daySlots = mentorSlots.filter((s: any) => s.day.toLowerCase() === dName.toLowerCase());
-          for (const s of daySlots) {
-            const existingHandover = await db.get(
-              "SELECT id, coverStaffId FROM approved_handovers WHERE slotId = ? AND dateStr = ?",
-              [s.id, dStr]
-            );
-            affectedClasses.push({
-              slotId: s.id,
-              course: s.course,
-              classGroup: s.classGroup,
-              day: s.day,
-              time: s.time,
-              dateStr: dStr,
-              isHandedOver: !!existingHandover,
-              coverStaffId: existingHandover?.coverStaffId || null
-            });
+          for (const s of mentorSlots.filter((s: any) => s.day.toLowerCase() === dName.toLowerCase())) {
+            scheduled.push({ slot: s, dateStr: dStr });
           }
           curSlotCheck.setDate(curSlotCheck.getDate() + 1);
+        }
+
+        const handoverSlotIds = Array.from(new Set(scheduled.map(x => x.slot.id))).filter(Boolean);
+        const handoverBySlotDate = new Map<string, any>();
+        if (handoverSlotIds.length > 0) {
+          const handoverRows = await db.all(
+            `SELECT slotId, dateStr, coverStaffId FROM approved_handovers
+             WHERE slotId IN (${handoverSlotIds.map(() => "?").join(",")}) AND dateStr >= ? AND dateStr <= ?`,
+            [...handoverSlotIds, reqRecord.start_date, reqRecord.end_date]
+          );
+          for (const h of handoverRows) handoverBySlotDate.set(`${h.slotId}|${h.dateStr}`, h);
+        }
+
+        for (const { slot: s, dateStr: dStr } of scheduled) {
+          const existingHandover = handoverBySlotDate.get(`${s.id}|${dStr}`) || null;
+          affectedClasses.push({
+            slotId: s.id,
+            course: s.course,
+            classGroup: s.classGroup,
+            day: s.day,
+            time: s.time,
+            dateStr: dStr,
+            isHandedOver: !!existingHandover,
+            coverStaffId: existingHandover?.coverStaffId || null
+          });
         }
       }
 
       // Trigger Email Notification to Mentor (End 2)
       if (reqRecord.mentorEmail) {
-        try {
-          const emailSubject = `[Update] Your ${reqRecord.request_type} Request Has Been ${newStatus.toUpperCase()}`;
-          const emailHtml = renderEmailShell({
-            title: `Application ${newStatus.toUpperCase()}`,
-            badgeText: newStatus === "approved" ? "APPROVED BY CM" : "REJECTED BY CM",
-            badgeColor: newStatus === "approved" ? "emerald" : "rose",
-            description: `Hello ${reqRecord.mentorName}, your ${reqRecord.request_type} application has been ${newStatus} by your Campus Manager.`,
-            details: [
-              { label: "Request Type", value: reqRecord.request_type, highlight: true },
-              { label: "Date Schedule", value: `${reqRecord.start_date} to ${reqRecord.end_date}` },
-              { label: "Status", value: newStatus.toUpperCase(), highlight: true },
-              { label: "Processed By", value: approvedBy || "Campus Manager" },
-              ...(rejectionReason ? [{ label: "CM Remarks", value: rejectionReason }] : [])
-            ],
-            footerText: "Official notification from FACE Prep E-Campus Operations."
-          });
+        const emailSubject = `[Update] Your ${reqRecord.request_type} Request Has Been ${newStatus.toUpperCase()}`;
+        const emailHtml = renderEmailShell({
+          title: `Application ${newStatus.toUpperCase()}`,
+          badgeText: newStatus === "approved" ? "APPROVED BY CM" : "REJECTED BY CM",
+          badgeColor: newStatus === "approved" ? "emerald" : "rose",
+          description: `Hello ${reqRecord.mentorName}, your ${reqRecord.request_type} application has been ${newStatus} by your Campus Manager.`,
+          details: [
+            { label: "Request Type", value: reqRecord.request_type, highlight: true },
+            { label: "Date Schedule", value: `${reqRecord.start_date} to ${reqRecord.end_date}` },
+            { label: "Status", value: newStatus.toUpperCase(), highlight: true },
+            { label: "Processed By", value: approvedBy || "Campus Manager" },
+            ...(rejectionReason ? [{ label: "CM Remarks", value: rejectionReason }] : [])
+          ],
+          footerText: "Official notification from FACE Prep E-Campus Operations."
+        });
 
-          await sendMail({
-            to: reqRecord.mentorEmail,
-            subject: emailSubject,
-            htmlBody: emailHtml
-          });
-        } catch (mailErr) {
-          console.error("Failed to send leave decision email to mentor:", mailErr);
-        }
+        // Dispatched after the response: a slow relay must not hold up the
+        // CM's approve click for the full 12s mail deadline.
+        sendMailAsync({
+          to: reqRecord.mentorEmail,
+          subject: emailSubject,
+          htmlBody: emailHtml,
+          context: "faculty-leave-decision"
+        });
       }
 
       // In-app notification to mentor (bell) so the decision is visible without email
       if (reqRecord.mentor_id) {
         try {
-          const decisionNotifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+          const decisionNotifId = generateId("notif");
           const dateSpan = reqRecord.end_date && reqRecord.end_date !== reqRecord.start_date
             ? `${reqRecord.start_date} to ${reqRecord.end_date}`
             : reqRecord.start_date;
@@ -457,7 +437,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: `Faculty leave request ${newStatus} successfully and notification email sent.`,
+        message: `Faculty leave request ${newStatus} successfully and the mentor has been notified.`,
         affectedClasses
       });
     }
@@ -494,7 +474,7 @@ export async function POST(request: Request) {
       "Casual Leave";
 
     const effectiveEndDate = endDate || startDate;
-    const reqId = `f_leave_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const reqId = generateId("f_leave");
 
     let effectiveCollegeId = collegeId;
     const mentor = await db.get(`SELECT * FROM mentors WHERE id = ?`, [mentorId]);
@@ -506,9 +486,10 @@ export async function POST(request: Request) {
       ? `[Time: ${startTime} - ${endTime}] ${reason.trim()}`
       : reason.trim();
 
+    // MAIL-M09 Fix: Replace NOW() with CURRENT_TIMESTAMP
     await db.run(
       `INSERT INTO faculty_leave_requests (id, mentor_id, college_id, request_type, leave_category, start_date, end_date, reason, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [
         reqId,
         mentorId,
@@ -536,16 +517,44 @@ export async function POST(request: Request) {
     const needsManualCover: any[] = [];
 
     if (Array.isArray(coverSelections) && coverSelections.length > 0) {
-      for (const sel of coverSelections) {
+      const validSelections = coverSelections.filter((sel: any) => sel?.slotId && sel?.dateStr);
+      const wantedSlotIds = Array.from(new Set(validSelections.map((sel: any) => sel.slotId)));
+      const wantedCoverIds = Array.from(new Set(validSelections.map((sel: any) => sel.coverMentorId).filter(Boolean)));
+
+      // Every selection needs its slot row and, when a cover was nominated, that
+      // mentor's row. Used to be two round trips per selection (~400ms each here);
+      // one set-based batch covers the whole list.
+      const slotById = new Map<string, any>();
+      const coverMentorById = new Map<string, any>();
+      if (wantedSlotIds.length > 0 || wantedCoverIds.length > 0) {
+        const coverFailures: QueryFailure[] = [];
+        const [slotRows, coverMentorRows] = await db.multiQuery(
+          [
+            wantedSlotIds.length > 0
+              ? { sql: `SELECT * FROM slots WHERE id IN (${wantedSlotIds.map(() => "?").join(",")})`, params: wantedSlotIds }
+              : { sql: "SELECT 1 WHERE 1=0" },
+            wantedCoverIds.length > 0
+              ? { sql: `SELECT * FROM mentors WHERE id IN (${wantedCoverIds.map(() => "?").join(",")})`, params: wantedCoverIds }
+              : { sql: "SELECT 1 WHERE 1=0" },
+          ],
+          coverFailures
+        );
+        if (coverFailures.length > 0) {
+          return NextResponse.json({ success: false, message: "Could not load the classes you nominated covers for. Please try again." }, { status: 500 });
+        }
+        for (const s of slotRows) slotById.set(s.id, s);
+        for (const m of coverMentorRows) coverMentorById.set(m.id, m);
+      }
+
+      for (const sel of validSelections) {
         const { slotId, dateStr, coverMentorId } = sel;
-        if (!slotId || !dateStr) continue;
 
         if (coverMentorId) {
-          const slot = await db.get("SELECT * FROM slots WHERE id = ?", [slotId]);
-          const coverMentor = await db.get("SELECT * FROM mentors WHERE id = ?", [coverMentorId]);
+          const slot = slotById.get(slotId);
+          const coverMentor = coverMentorById.get(coverMentorId);
           if (!slot || !coverMentor) continue;
 
-          const handoverId = `ho_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+          const handoverId = generateId("ho");
           const [dY, dM, dD] = dateStr.split("-").map(Number);
           const dateObj = new Date(dY, dM - 1, dD, 12, 0, 0);
           const dateFormatted = dateObj.toLocaleDateString("en-IN", {
@@ -573,39 +582,23 @@ export async function POST(request: Request) {
 
           createdHandovers.push({ slotId, dateStr, course: slot.course, coverMentorId, coverMentorName: coverMentor.name });
 
-          // Email cover mentor
-          if (coverMentor.email) {
-            try {
-              const coverEmailHtml = renderEmailShell({
-                title: "Cover Class Request",
-                badgeText: "COVER REQUESTED",
-                badgeColor: "amber",
-                description: `${mentor?.name || "A colleague"} has selected you to cover their class while on ${requestType}. Please review and accept or decline in your dashboard.`,
-                details: [
-                  { label: "Subject", value: slot.course, highlight: true },
-                  { label: "Class Group", value: slot.classGroup || "General" },
-                  { label: "Date", value: dateFormatted, highlight: true },
-                  { label: "Time Slot", value: slot.time },
-                  { label: "Requested By", value: mentor?.name || "Faculty" },
-                  { label: "Leave Reason", value: finalReason }
-                ],
-                ctaText: "Open Dashboard to Accept or Decline →",
-                footerText: "Please respond promptly. If you decline, the requesting mentor will be notified to select another cover."
-              });
-              await sendMail({
-                to: coverMentor.email,
-                subject: `[Cover Request] ${slot.course} on ${dateFormatted} — ${mentor?.name || "Faculty"}`,
-                htmlBody: coverEmailHtml
-              });
-            } catch (mailErr) {
-              console.error("Failed to email cover mentor:", mailErr);
-            }
-          }
+          // MAIL-M04 Fix: Collect emails for batch sending instead of blocking per-mentor
+          createdHandovers.push({ 
+            slotId, 
+            dateStr, 
+            course: slot.course, 
+            coverMentorId, 
+            coverMentorName: coverMentor.name,
+            coverMentorEmail: coverMentor.email,
+            dateFormatted,
+            time: slot.time,
+            classGroup: slot.classGroup
+          });
         } else {
           // No cover selected for this slot — mentor explicitly requested CAM to help in swap
-          const slot = await db.get("SELECT * FROM slots WHERE id = ?", [slotId]);
+          const slot = slotById.get(slotId);
           if (slot) {
-            const handoverId = `ho_cam_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+            const handoverId = generateId("ho_cam");
             const [dY2, dM2, dD2] = dateStr.split("-").map(Number);
             const dateObj2 = new Date(dY2, dM2 - 1, dD2, 12, 0, 0);
             const dateFormatted = dateObj2.toLocaleDateString("en-IN", {
@@ -636,71 +629,135 @@ export async function POST(request: Request) {
       }
     }
 
-    // Fetch KAM for CC
-    let kamEmail: string | null = null;
-    try {
-      const kamUser = await db.get(`SELECT email FROM kam_users WHERE college_id = ? LIMIT 1`, [effectiveCollegeId]);
-      kamEmail = kamUser?.email || null;
-    } catch (_) {}
-
-    // Trigger Email Notification to Campus Manager (CM)
-    let camUser = null;
-    try {
-      camUser = await db.get(
-        `SELECT email, name FROM campus_managers WHERE college_id = ? LIMIT 1`,
-        [effectiveCollegeId]
+    // Mail is the slow part of this request (up to 12s per leg), and the cover-mentor
+    // batch used to be a detached promise — Vercel froze the function at the response, so
+    // those requests simply never went out. after() runs it once the response lands.
+    after(async () => {
+      // Fetch KAM for CC and the Campus Manager together — both are keyed off the
+      // college and only feed the email, so they share one round trip.
+      const recipientFailures: QueryFailure[] = [];
+      const [kamRows, camRows] = await db.multiQuery(
+        [
+          { sql: `SELECT email FROM kam_users WHERE college_id = ? LIMIT 1`, params: [effectiveCollegeId] },
+          { sql: `SELECT email, name FROM campus_managers WHERE college_id = ? LIMIT 1`, params: [effectiveCollegeId] },
+        ],
+        recipientFailures
       );
-    } catch (_) {
-      try {
-        camUser = await db.get(
-          `SELECT email, name FROM cams WHERE college_id = ? LIMIT 1`,
-          [effectiveCollegeId]
-        );
-      } catch (_) {}
-    }
-
-    const cmEmail = camUser?.email || "cam@zentra.edu";
-    if (cmEmail) {
-      try {
-        const coverSummary = createdHandovers.length > 0
-          ? `${createdHandovers.length} class(es) have cover mentors requested by the faculty.`
-          : "";
-        const needsCoverSummary = needsManualCover.length > 0
-          ? `${needsManualCover.length} class(es) have no cover assigned — manual intervention required.`
-          : "";
-
-        const emailSubject = `[Action Required] New ${requestType} Request - ${mentor?.name || "Faculty"}`;
-        const emailHtml = renderEmailShell({
-          title: `New ${requestType} Application Pending Review`,
-          badgeText: requestType === "Emergency Leave" ? "EMERGENCY — ACTION REQUIRED" : "ACTION REQUIRED",
-          badgeColor: requestType === "Emergency Leave" ? "rose" : "amber",
-          description: `Faculty member ${mentor?.name || "A Mentor"} has submitted a new ${requestType} application. ${coverSummary} ${needsCoverSummary}`,
-          details: [
-            { label: "Faculty Name", value: mentor?.name || "Faculty", highlight: true },
-            { label: "Department", value: mentor?.department || "General" },
-            { label: "Request Type", value: requestType, highlight: true },
-            { label: "Schedule", value: requestType === "Permission" && startTime ? `${startDate} (${startTime} - ${endTime})` : `${startDate} to ${effectiveEndDate}` },
-            { label: "Mandatory Reason", value: finalReason },
-            ...(createdHandovers.length > 0 ? [{ label: "Cover Requests Sent", value: createdHandovers.map(h => `${h.course} → ${h.coverMentorName}`).join(", ") }] : []),
-            ...(needsManualCover.length > 0 ? [{ label: "Needs Manual Cover", value: needsManualCover.map(h => `${h.course} on ${h.dateStr}`).join(", "), highlight: true }] : [])
-          ],
-          ctaText: "Open CM Dashboard to Review →",
-          footerText: "Official operational notification from FACE Prep E-Campus System."
-        });
-
-        await sendMail({
-          to: kamEmail ? [cmEmail, kamEmail] : cmEmail,
-          subject: emailSubject,
-          htmlBody: emailHtml
-        });
-      } catch (mailErr) {
-        console.error("Failed to send leave request email to CM:", mailErr);
+      const kamEmail: string | null = kamRows[0]?.email || null;
+      let camUser: any = camRows[0] || null;
+      if (!camUser && recipientFailures.some(f => f.sql.includes("campus_managers"))) {
+        // Legacy campuses still keep their manager in `cams`; only a failed read of
+        // campus_managers means "table absent", never a plain "no rows".
+        try {
+          camUser = await db.get(
+            `SELECT email, name FROM cams WHERE college_id = ? LIMIT 1`,
+            [effectiveCollegeId]
+          );
+        } catch (_) {}
       }
-    }
+
+      // MAIL-C04 Fix: Don't send to hardcoded fallback; log warning instead
+      const cmEmail = camUser?.email;
+      if (!cmEmail) {
+        console.warn(`No CM email found for college ${effectiveCollegeId} — leave notification skipped`);
+        // Optionally: escalate to super admin
+        const adminEmail = process.env.SUPER_ADMIN_EMAIL;
+        if (adminEmail) {
+          try {
+            const escalationHtml = renderEmailShell({
+              title: `[Escalation] No CM Configured for ${effectiveCollegeId}`,
+              badgeText: "SYSTEM ALERT",
+              badgeColor: "rose",
+              description: `A leave request was submitted but no Campus Manager email is configured for college ${effectiveCollegeId}.`,
+              details: [
+                { label: "Faculty", value: mentor?.name || "Unknown", highlight: true },
+                { label: "Request Type", value: requestType },
+                { label: "Date Range", value: `${startDate} to ${effectiveEndDate}` },
+                { label: "College ID", value: effectiveCollegeId }
+              ]
+            });
+            await dispatchMail({
+              to: adminEmail,
+              subject: `[System Alert] No CM for Leave Request - ${effectiveCollegeId}`,
+              htmlBody: escalationHtml,
+              context: "no-cm-escalation"
+            });
+          } catch (_) {}
+        }
+      } else {
+        try {
+          const coverSummary = createdHandovers.length > 0
+            ? `${createdHandovers.length} class(es) have cover mentors requested by the faculty.`
+            : "";
+          const needsCoverSummary = needsManualCover.length > 0
+            ? `${needsManualCover.length} class(es) have no cover assigned — manual intervention required.`
+            : "";
+
+          const emailSubject = `[Action Required] New ${requestType} Request - ${mentor?.name || "Faculty"}`;
+          const emailHtml = renderEmailShell({
+            title: `New ${requestType} Application Pending Review`,
+            badgeText: requestType === "Emergency Leave" ? "EMERGENCY — ACTION REQUIRED" : "ACTION REQUIRED",
+            badgeColor: requestType === "Emergency Leave" ? "rose" : "amber",
+            description: `Faculty member ${mentor?.name || "A Mentor"} has submitted a new ${requestType} application. ${coverSummary} ${needsCoverSummary}`,
+            details: [
+              { label: "Faculty Name", value: mentor?.name || "Faculty", highlight: true },
+              { label: "Department", value: mentor?.department || "General" },
+              { label: "Request Type", value: requestType, highlight: true },
+              { label: "Schedule", value: requestType === "Permission" && startTime ? `${startDate} (${startTime} - ${endTime})` : `${startDate} to ${effectiveEndDate}` },
+              { label: "Mandatory Reason", value: finalReason },
+              ...(createdHandovers.length > 0 ? [{ label: "Cover Requests Sent", value: createdHandovers.map(h => `${h.course} → ${h.coverMentorName}`).join(", ") }] : []),
+              ...(needsManualCover.length > 0 ? [{ label: "Needs Manual Cover", value: needsManualCover.map(h => `${h.course} on ${h.dateStr}`).join(", "), highlight: true }] : [])
+            ],
+            ctaText: "Open CM Dashboard to Review →",
+            footerText: "Official operational notification from FACE Prep E-Campus System."
+          });
+
+          await dispatchMail({
+            to: kamEmail ? [cmEmail, kamEmail] : cmEmail,
+            subject: emailSubject,
+            htmlBody: emailHtml,
+            context: "faculty-leave-to-cm"
+          });
+        } catch (mailErr) {
+          console.error("Failed to send leave request email to CM:", mailErr);
+        }
+      }
+
+      // MAIL-M04: batch cover-mentor mails, dispatched after the response
+      if (createdHandovers.length > 0) {
+        await Promise.allSettled(
+          createdHandovers.map((handover: any) => {
+            if (!handover.coverMentorEmail) return Promise.resolve();
+            const coverEmailHtml = renderEmailShell({
+              title: "Cover Class Request",
+              badgeText: "COVER REQUESTED",
+              badgeColor: "amber",
+              description: `${mentor?.name || "A colleague"} has selected you to cover their class while on ${requestType}. Please review and accept or decline in your dashboard.`,
+              details: [
+                { label: "Subject", value: handover.course, highlight: true },
+                { label: "Class Group", value: handover.classGroup || "General" },
+                { label: "Date", value: handover.dateFormatted, highlight: true },
+                { label: "Time Slot", value: handover.time },
+                { label: "Requested By", value: mentor?.name || "Faculty" },
+                { label: "Leave Reason", value: finalReason }
+              ],
+              ctaText: "Open Dashboard to Accept or Decline →",
+              footerText: "Please respond promptly. If you decline, the requesting mentor will be notified to select another cover."
+            });
+            return dispatchMail({
+              to: handover.coverMentorEmail,
+              subject: `[Cover Request] ${handover.course} on ${handover.dateFormatted} — ${mentor?.name || "Faculty"}`,
+              htmlBody: coverEmailHtml,
+              context: "cover-request"
+            });
+          })
+        ).catch((err) => console.error("Cover-mentor mails failed:", err));
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      message: `${requestType} request submitted successfully! ${createdHandovers.length > 0 ? `Cover requests sent for ${createdHandovers.length} class(es).` : ""} Email notification sent to CM.`,
+      message: `${requestType} request submitted successfully!${createdHandovers.length > 0 ? ` Cover requests are being sent for ${createdHandovers.length} class(es).` : ""} The Campus Manager has been notified for review.`,
       requestId: reqId,
       createdHandovers,
       needsManualCover

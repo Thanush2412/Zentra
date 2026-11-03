@@ -2,11 +2,16 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { isSuperAdminSession } from "@/lib/superadmin";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRoleHomePath, normalizeRoleValue } from "@/lib/utils";
+import { resolveNotificationDestination } from "@/lib/notificationTarget";
 import { useApp, Role } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { apiFetch, setClientCsrfToken } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
 import { UserProfileBar } from "./UserProfileBar";
+import { Dialog } from "./ui/dialog";
+import { QueryPrefetcher } from "./QueryPrefetcher";
 import {
   LogOut,
   ChevronDown,
@@ -20,7 +25,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  Building2,
   GraduationCap,
   Layers,
   User,
@@ -28,7 +32,6 @@ import {
   IndianRupee,
   Award,
   Calendar,
-  Globe,
   Check,
   RefreshCw,
   AlertTriangle,
@@ -69,8 +72,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     dataLoadError,
     retryDataLoad,
     refreshData,
-    currentCampusScope,
-    setCampusScope,
     lastSyncTime,
     logout
   } = useApp();
@@ -78,12 +79,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const { toast: showToast } = useToast();
 
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
-  const [showCampusDropdown, setShowCampusDropdown] = useState(false);
-
-  const handleSelectCampusScope = (scopeId: string) => {
-    setCampusScope(scopeId);
-    setShowCampusDropdown(false);
-  };
 
   const handleManualRefresh = async () => {
     if (isManualRefreshing || isDataLoading) return;
@@ -99,23 +94,37 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const isAuthorized = isAuthenticated && (isSuperAdmin || normalizeRoleValue(currentRole) === normalizeRoleValue(requiredRole));
 
   /* ─── Notifications Bell ─── */
+  const queryClient = useQueryClient();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [activeNotificationId, setActiveNotificationId] = useState<string | null>(null);
   const notificationsDropRef = useRef<HTMLDivElement | null>(null);
-  const [notifRefreshKey, setNotifRefreshKey] = useState(0);
   const [bellShake, setBellShake] = useState(false);
 
   const resolveCurrentUserId = () => {
     return currentUser?.reference_id || currentUser?.id || currentMentor?.id || currentCAM?.id || currentKAM?.id || currentAdmin?.id || currentStudent?.id || currentSME?.id || null;
   };
 
+  const notificationsUserId = resolveCurrentUserId();
+  const notificationsQueryKey = qk.notifications(notificationsUserId || "anonymous");
+  const notificationsQuery = useQuery({
+    queryKey: notificationsQueryKey,
+    enabled: !!notificationsUserId,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/notifications?user_id=${encodeURIComponent(notificationsUserId!)}&limit=25`);
+      return data?.success && Array.isArray(data.notifications) ? (data.notifications as any[]) : [];
+    },
+    // Poll faster while something is unread; TanStack pauses this when the tab is hidden.
+    refetchInterval: (query) => {
+      const rows = query.state.data as any[] | undefined;
+      return rows?.some((n) => !n.is_read) ? 15_000 : 30_000;
+    },
+  });
+  const notifications = notificationsQuery.data || [];
+  const notificationsLoading = notificationsQuery.isFetching;
+
   /* ─── Global Feedback Modal State & Reporter Resolution ─── */
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackModalTab, setFeedbackModalTab] = useState<"submit" | "history">("submit");
-  const [myFeedbackList, setMyFeedbackList] = useState<any[]>([]);
-  const [myFeedbackLoading, setMyFeedbackLoading] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   const getReporterDetails = () => {
@@ -177,146 +186,36 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     };
   };
 
-  const fetchMyFeedback = async () => {
-    const reporter = getReporterDetails();
-    const uid = reporter.userId;
-    if (!uid) return;
-    setMyFeedbackLoading(true);
-    try {
-      const res = await fetch(`/api/feedback?userId=${encodeURIComponent(uid)}`);
-      const data = await res.json();
-      if (data?.success && Array.isArray(data.reports)) {
-        setMyFeedbackList(data.reports);
-      }
-    } catch (_) {
-    } finally {
-      setMyFeedbackLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (showFeedbackModal && feedbackModalTab === "history") {
-      fetchMyFeedback();
-    }
-  }, [showFeedbackModal, feedbackModalTab]);
+  const feedbackReporterId = getReporterDetails().userId;
+  const myFeedbackQuery = useQuery({
+    queryKey: qk.myFeedback(feedbackReporterId),
+    enabled: showFeedbackModal && feedbackModalTab === "history",
+    queryFn: async () => {
+      const data = await apiFetch(`/api/feedback?userId=${encodeURIComponent(feedbackReporterId)}`);
+      return data?.success && Array.isArray(data.reports) ? (data.reports as any[]) : [];
+    },
+  });
+  const myFeedbackList = myFeedbackQuery.data || [];
+  const myFeedbackLoading = myFeedbackQuery.isFetching;
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
   const hasUnread = unreadCount > 0;
 
-  const fetchNotifications = async (silent = false) => {
-    const uid = resolveCurrentUserId();
-    if (!uid) {
-      setNotifications([]);
-      return;
+  // Shake the bell only when unread state flips from read to unread.
+  const prevHasUnreadRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (notificationsQuery.data === undefined) return;
+    if (prevHasUnreadRef.current === false && hasUnread) {
+      setBellShake(true);
+      const timer = setTimeout(() => setBellShake(false), 600);
+      prevHasUnreadRef.current = hasUnread;
+      return () => clearTimeout(timer);
     }
-    if (!silent) setNotificationsLoading(true);
-    fetch(`/api/notifications?user_id=${encodeURIComponent(uid)}&limit=25`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.success && Array.isArray(data.notifications)) {
-          setNotifications(data.notifications);
-          if (!silent && hasUnread !== (data.notifications.filter((n: any) => !n.is_read).length > 0)) {
-            setBellShake(true);
-            setTimeout(() => setBellShake(false), 600);
-          }
-        } else {
-          setNotifications([]);
-        }
-      })
-      .catch(() => setNotifications([]))
-      .finally(() => setNotificationsLoading(false));
-  };
+    prevHasUnreadRef.current = hasUnread;
+  }, [hasUnread, notificationsQuery.data]);
 
-  const resolveNotificationTarget = (n: any) => {
-    if (!n) return null;
-    const rawLink = n.link?.trim();
-    if (rawLink && (rawLink.startsWith("http://") || rawLink.startsWith("https://"))) {
-      return { url: rawLink, isExternal: true, actionLabel: "Open Link" };
-    }
-
-    const title = (n.title || "").toLowerCase();
-    const message = (n.message || "").toLowerCase();
-    const fullText = `${title} ${message}`;
-
-    // Extract any YYYY-MM-DD date mentioned
-    const dateMatch = `${n.title || ""} ${n.message || ""}`.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-    const targetDate = dateMatch ? dateMatch[1] : null;
-
-    // Resolve base prefix for current role
-    const role = currentRole || "student";
-    const roleBase = getRoleHomePath(role);
-
-    // If explicit relative link exists
-    if (rawLink) {
-      let cleanLink = rawLink.startsWith("/") ? rawLink : `${roleBase}/${rawLink}`;
-      // Adapt cross-role links if needed
-      if (cleanLink.startsWith("/cm") && role === "student") {
-        cleanLink = cleanLink.replace(/^\/cm/, "/student");
-      } else if (cleanLink.startsWith("/cm") && role === "mentor") {
-        cleanLink = cleanLink.replace(/^\/cm/, "/mentor");
-      }
-      return { url: cleanLink, isExternal: false, targetDate, actionLabel: "View Details" };
-    }
-
-    // Smart semantic categorization based on text
-    if (fullText.includes("schedule") || fullText.includes("calendar") || fullText.includes("timetable") || fullText.includes("day order") || fullText.includes("holiday") || fullText.includes("class session") || fullText.includes("campus schedule")) {
-      if (role === "student") return { url: `/student/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Class Schedule" };
-      if (role === "mentor") return { url: `/mentor/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Timetable" };
-      if (role === "cm") return { url: `/cm/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule" };
-      if (role === "kam") return { url: `/kam/attendance${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Attendance" };
-      if (role === "admin") return { url: `/admin/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule" };
-    }
-
-    if (fullText.includes("interview") || fullText.includes("mock") || fullText.includes("gmeet") || fullText.includes("evaluat") || fullText.includes("split")) {
-      if (role === "student") return { url: `/student/interviews`, isExternal: false, targetDate, actionLabel: "View Interview" };
-      if (role === "mentor") return { url: `/mentor/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews" };
-      if (role === "cm") return { url: `/cm/interviews`, isExternal: false, targetDate, actionLabel: "Open Interviews" };
-      if (role === "kam") return { url: `/kam/analytics`, isExternal: false, targetDate, actionLabel: "View Analytics" };
-      if (role === "admin") return { url: `/admin/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews" };
-    }
-
-    if (fullText.includes("leave") || fullText.includes("on-duty") || fullText.includes("on duty") || fullText.includes(" od ") || fullText.includes("handover") || fullText.includes("permission") || fullText.includes("approval")) {
-      if (role === "student") return { url: `/student/dashboard`, isExternal: false, targetDate, actionLabel: "View Dashboard" };
-      if (role === "mentor") return { url: `/mentor/leaves`, isExternal: false, targetDate, actionLabel: "View Leaves" };
-      if (role === "cm") return { url: `/cm/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals" };
-      if (role === "admin") return { url: `/admin/approvals`, isExternal: false, targetDate, actionLabel: "View Approvals" };
-      if (role === "hr") return { url: `/hr`, isExternal: false, targetDate, actionLabel: "View HR Portal" };
-    }
-
-    if (fullText.includes("exam") || fullText.includes("test") || fullText.includes("assessment")) {
-      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Test Marks" };
-      if (role === "mentor") return { url: `/mentor/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
-      if (role === "cm") return { url: `/cm/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
-      if (role === "admin") return { url: `/admin/exams`, isExternal: false, targetDate, actionLabel: "View Exams" };
-    }
-
-    if (fullText.includes("mark") || fullText.includes("cia") || fullText.includes("grade") || fullText.includes("score")) {
-      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Test Marks" };
-      if (role === "mentor") return { url: `/mentor/marks`, isExternal: false, targetDate, actionLabel: "View Marks" };
-    }
-
-    if (fullText.includes("task") || fullText.includes("tracker") || fullText.includes("practical") || fullText.includes("submission") || fullText.includes("assignment")) {
-      if (role === "student") return { url: `/student/tracker`, isExternal: false, targetDate, actionLabel: "Open Tracker" };
-      if (role === "mentor") return { url: `/mentor/submissions`, isExternal: false, targetDate, actionLabel: "View Submissions" };
-    }
-
-    if (fullText.includes("fee") || fullText.includes("due") || fullText.includes("payment") || fullText.includes("tuition") || fullText.includes("invoice")) {
-      if (role === "student") return { url: `/student/fees`, isExternal: false, targetDate, actionLabel: "View Fees" };
-      if (role === "fee_manager" || role === "admin") return { url: `/fee-manager`, isExternal: false, targetDate, actionLabel: "View Fee Manager" };
-    }
-
-    if (fullText.includes("library") || fullText.includes("book") || fullText.includes("opac")) {
-      if (role === "student") return { url: `/student/library`, isExternal: false, targetDate, actionLabel: "Open Library" };
-    }
-
-    if (fullText.includes("profile") || fullText.includes("password") || fullText.includes("account")) {
-      if (role === "student") return { url: `/student/profile`, isExternal: false, targetDate, actionLabel: "View Profile" };
-      if (role === "mentor") return { url: `/mentor/profile`, isExternal: false, targetDate, actionLabel: "View Profile" };
-    }
-
-    // Default fallback to role dashboard
-    return { url: `${roleBase}/dashboard`, isExternal: false, targetDate, actionLabel: "View Details" };
-  };
+  const resolveNotificationTarget = (n: any) =>
+    resolveNotificationDestination(n, currentRole);
 
   const handleNotificationClick = (n: any) => {
     if (!n) return;
@@ -365,16 +264,15 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   const markNotifRead = async (id: string, navigateTo?: string | null) => {
     setActiveNotificationId(id);
-    fetch(`/api/notifications`, {
+    apiFetch(`/api/notifications`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notification_id: id, action: "mark_read" }),
+      body: { notification_id: id, action: "mark_read" },
     })
-      .then((r) => r.json())
       .then((d) => {
         if (d?.success) {
-          setNotifications((prev) =>
-            prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n))
+          queryClient.setQueryData(notificationsQueryKey, (prev: any[] | undefined) =>
+            (prev || []).map((n) => (n.id === id ? { ...n, is_read: 1 } : n))
           );
         }
         if (navigateTo && typeof window !== "undefined") {
@@ -385,38 +283,34 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
           }
         }
       })
+      .catch(() => {})
       .finally(() => setActiveNotificationId(null));
   };
 
   const clearAllNotifs = () => {
     const uid = resolveCurrentUserId();
     if (!uid) return;
-    fetch(`/api/notifications`, {
+    apiFetch(`/api/notifications`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: uid, action: "mark_all_read" }),
+      body: { user_id: uid, action: "mark_all_read" },
     })
-      .then((r) => r.json())
       .then((d) => {
         if (d?.success) {
-          setNotifications((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
+          queryClient.setQueryData(notificationsQueryKey, (prev: any[] | undefined) =>
+            (prev || []).map((n) => ({ ...n, is_read: 1 }))
+          );
         }
-      });
+      })
+      .catch(() => {});
   };
 
-  /* auto-refresh notifications on mount + when opened + every 30s / 15s if unread exists */
+  /* Notifications poll through React Query (refetchInterval above); opening the
+     dropdown just asks for a fresh snapshot. */
   useEffect(() => {
-    let isMounted = true;
-    fetchNotifications(true);
-    const interval = window.setInterval(() => {
-      if (isMounted) fetchNotifications(true);
-    }, hasUnread ? 15000 : 30000);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
+    if (showNotifications) notificationsQuery.refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRole, notifRefreshKey, currentMentor?.id, currentCAM?.id, currentHR?.id, currentAdmin?.id, currentStudent?.id, currentSME?.id]);
+  }, [showNotifications]);
 
   /* Close dropdowns when clicking outside */
   useEffect(() => {
@@ -460,7 +354,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     (currentRole === "kam" && currentKAM?.email) ||
     (currentRole === "admin" && currentAdmin?.email) ||
     (currentRole === "student" && currentStudent?.email) ||
-    (currentRole === "fee_manager" && "fee.manager@zentra.edu") ||
+    (currentRole === "fee_manager" && currentUser?.email) ||
     (currentRole === "sme" && currentSME?.email) ||
     "";
 
@@ -488,32 +382,31 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
     try {
       setIsSavingPass(true);
-      const res = await fetch("/api/change-password", {
+      const data = await apiFetch("/api/change-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: currentUserEmail,
+        body: {
           currentPassword,
           newPassword,
-        }),
+        },
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setPassError(data.message || "Failed to update password.");
-      } else {
-        setPassSuccess("Password updated successfully!");
-        localStorage.removeItem("fp_must_change_pass");
-        setTimeout(() => {
-          setShowPasswordModal(false);
-          setCurrentPassword("");
-          setNewPassword("");
-          setConfirmPassword("");
-          setPassSuccess("");
-        }, 1500);
+      // The server rotates the session (and CSRF secret) on password change;
+      // keep the in-memory token in sync or every later mutation will 403.
+      if (data?.csrfToken) {
+        setClientCsrfToken(data.csrfToken);
       }
+
+      setPassSuccess("Password updated successfully!");
+      localStorage.removeItem("fp_must_change_pass");
+      setTimeout(() => {
+        setShowPasswordModal(false);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setPassSuccess("");
+      }, 1500);
     } catch (err: any) {
-      setPassError(err.message || "An unexpected error occurred.");
+      setPassError(err?.message || "An unexpected error occurred.");
     } finally {
       setIsSavingPass(false);
     }
@@ -544,9 +437,9 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     };
 
     const handleWindowFocus = () => {
-      // Throttle window focus revalidation to once every 15 seconds
+      // Throttle window focus revalidation to once every 5 minutes (300s) to avoid freezing on tab-switching
       const now = Date.now();
-      if (now - lastFocusRefresh > 15000) {
+      if (now - lastFocusRefresh > 300000) {
         lastFocusRefresh = now;
         scheduleRefresh();
       }
@@ -558,11 +451,12 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     window.addEventListener("fp_audits_updated", scheduleRefresh);
     window.addEventListener("fp_weekly_plan_updated", scheduleRefresh);
     window.addEventListener("focus", handleWindowFocus);
-    document.addEventListener("visibilitychange", () => {
+    const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         handleWindowFocus();
       }
-    });
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const onStorage = (e: StorageEvent) => {
       if (e.key === "fp_data_changed" && e.newValue) scheduleRefresh();
@@ -577,6 +471,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
       window.removeEventListener("fp_audits_updated", scheduleRefresh);
       window.removeEventListener("fp_weekly_plan_updated", scheduleRefresh);
       window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("storage", onStorage);
     };
   }, [refreshData]);
@@ -633,16 +528,17 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
   // Render global loading screen if app is initializing or not authorized yet
   if (isLoading || !isAuthorized) {
-    return <ProfessionalLoader message="Connecting to live database & loading workspace..." />;
+    return <ProfessionalLoader />;
   }
 
   return (
     <div className="h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden relative">
+      <QueryPrefetcher />
       {/* Data-load failure retry banner — replaces the old silent empty-dashboard behavior */}
       {dataLoadError && (
         <div className="sticky top-0 z-[60] w-full bg-rose-50 border-b border-rose-200 px-4 py-2 flex items-center justify-center gap-3">
           <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
-          <span className="text-xs font-bold text-rose-700">Couldn&apos;t reach the database — showing possibly stale data.</span>
+          <span className="text-xs font-bold text-rose-700" role="alert">Couldn&apos;t reach the database — showing possibly stale data.</span>
           <button
             type="button"
             onClick={() => retryDataLoad()}
@@ -662,25 +558,26 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         </div>
       )}
 
-      {/* Balanced Centered Global Header + Compact Right Floating Team Attendance Pill */}
-      <div className="relative w-[92%] sm:w-[82%] md:w-[74%] lg:w-[66%] max-w-[1040px] mx-auto self-center mt-2.5 md:mt-4 z-30 shrink-0">
+      {/* Global Header — one width and one surface for every role */}
+      <div className="relative w-[92%] sm:w-[82%] md:w-[74%] lg:w-[66%] max-w-[1040px] mx-auto self-center mt-3 md:mt-4 z-30 shrink-0">
         <header className="floating-header w-full px-3 sm:px-6 py-2.5 md:py-4 flex items-center justify-between transition-all rounded-xl border border-slate-200/80 shadow-md bg-white/80 backdrop-blur-md">
-        {/* Left: Brand */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Left: Brand + Role Badge */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-7 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
-          <div className="hidden sm:block border-l border-slate-200 pl-3">
-            <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block truncate">
-              {normalizeRoleValue(currentRole) === "mentor" && "Faculty Workspace"}
-              {normalizeRoleValue(currentRole) === "hr" && "HR Audit Portal"}
-              {normalizeRoleValue(currentRole) === "cm" && "CM Dashboard"}
-              {normalizeRoleValue(currentRole) === "kam" && "Key Account Manager"}
-              {normalizeRoleValue(currentRole) === "admin" && "Super Admin Console"}
-              {normalizeRoleValue(currentRole) === "student" && "Student Portal"}
-              {normalizeRoleValue(currentRole) === "fee_manager" && "Fee Collections"}
-              {normalizeRoleValue(currentRole) === "sme" && "SME Evaluation Hub"}
-              {normalizeRoleValue(currentRole) === "L and D" && "Learning & Development (L&D)"}
-            </span>
-          </div>
+          {normalizeRoleValue(currentRole) !== "admin" && (
+            <div className="hidden sm:flex items-center gap-2 border-l border-slate-200 pl-3">
+              <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block truncate">
+                {normalizeRoleValue(currentRole) === "mentor" && "Faculty Workspace"}
+                {normalizeRoleValue(currentRole) === "hr" && "HR Audit Portal"}
+                {normalizeRoleValue(currentRole) === "cm" && "CM Dashboard"}
+                {normalizeRoleValue(currentRole) === "kam" && "Key Account Manager"}
+                {normalizeRoleValue(currentRole) === "student" && "Student Portal"}
+                {normalizeRoleValue(currentRole) === "fee_manager" && "Fee Collections"}
+                {normalizeRoleValue(currentRole) === "sme" && "SME Evaluation Hub"}
+                {normalizeRoleValue(currentRole) === "L and D" && "Learning & Development (L&D)"}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Right: Profile trigger + Logout */}
@@ -691,95 +588,15 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
             type="button"
             onClick={handleManualRefresh}
             disabled={isManualRefreshing || isDataLoading}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-indigo-600 transition-all cursor-pointer shadow-xs disabled:opacity-70"
-            title="Click to reload latest data from server"
+            aria-label={isManualRefreshing || isDataLoading ? "Syncing data" : `Reload latest data — last synced ${lastSyncTime || "just now"}`}
+            className="relative flex items-center justify-center h-9 w-9 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer shadow-xs disabled:opacity-70"
+            title={`Last synced ${lastSyncTime || "just now"} — click to reload latest data from server`}
           >
-            {isManualRefreshing || isDataLoading ? (
-              <RefreshCw className="h-3 w-3 text-indigo-600 animate-spin" />
-            ) : (
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <RefreshCw className={`h-4 w-4 ${isManualRefreshing || isDataLoading ? "text-indigo-600 animate-spin" : "text-slate-600 dark:text-slate-300"}`} />
+            {!isManualRefreshing && !isDataLoading && (
+              <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" aria-hidden="true" />
             )}
-            <span className="truncate max-w-[140px] sm:max-w-none">
-              {isManualRefreshing || isDataLoading ? "Syncing..." : `Synced: ${lastSyncTime || "Just now"}`}
-            </span>
           </button>
-
-          {/* Master Global Region / Campus Scope Switcher (super-admin sessions only) */}
-          {isSuperAdmin && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowCampusDropdown(prev => !prev)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-800 font-extrabold text-xs shadow-xs hover:border-indigo-500 hover:text-indigo-600 transition-all cursor-pointer"
-                title="Filter Real-Time Data Region / Campus"
-              >
-                <Globe className="h-3.5 w-3.5 text-indigo-600 animate-pulse" />
-                <span className="hidden sm:inline">
-                  {currentCampusScope === "all"
-                    ? "All Regions (Global)"
-                    : colleges.find(c => c.id === currentCampusScope)?.name || "Selected Campus"}
-                </span>
-                <ChevronDown className={`h-3.5 w-3.5 opacity-80 transition-transform ${showCampusDropdown ? "rotate-180" : ""}`} />
-              </button>
-
-              {showCampusDropdown && (
-                <div className="absolute right-0 mt-2.5 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50 animate-fadeIn space-y-1 max-h-80 overflow-y-auto">
-                  <div className="px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-600 border-b border-slate-100 flex items-center justify-between">
-                    <span>Global Data Scope</span>
-                    <span className="text-[8px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-bold">{currentUser?.name || "Super Admin"}</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSelectCampusScope("all");
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
-                      currentCampusScope === "all"
-                        ? "bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 shadow-xs"
-                        : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Globe className="h-4 w-4 text-indigo-600 shrink-0" />
-                      <div>
-                        <span className="block font-black">All Regions & Campuses</span>
-                        <span className="text-[9px] text-slate-400 font-medium block">Aggregated real-time data</span>
-                      </div>
-                    </div>
-                    {currentCampusScope === "all" && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
-                  </button>
-
-                  <div className="border-t border-slate-100 my-1 pt-1">
-                    <span className="px-2.5 py-1 text-[9px] font-extrabold uppercase text-slate-400 block">Individual Campuses</span>
-                    {colleges.map(c => {
-                      const isSelected = currentCampusScope === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            handleSelectCampusScope(c.id);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-left ${
-                            isSelected
-                              ? "bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 shadow-xs"
-                              : "text-slate-700 hover:bg-slate-50 hover:text-indigo-600"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <Building2 className="h-4 w-4 text-purple-600 shrink-0" />
-                            <span className="truncate">{c.name}</span>
-                          </div>
-                          {isSelected && <Check className="h-4 w-4 text-indigo-600 shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Notifications Bell */}
           <div className="relative" ref={notificationsDropRef}>
@@ -787,18 +604,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               type="button"
               onClick={() => {
                 setShowNotifications((p) => !p);
-                setShowCampusDropdown && setShowCampusDropdown(false);
-                if (!showNotifications) {
-                  fetchNotifications(true);
-                  setNotifRefreshKey((k) => k + 1);
-                }
               }}
-              className={`relative flex items-center justify-center h-9 w-9 rounded-lg bg-gray-55 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700 transition-all cursor-pointer ${
+              className={`relative flex items-center justify-center h-9 w-9 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer ${
                 hasUnread ? "ring-1 ring-amber-400/60 ring-offset-1 dark:ring-offset-slate-900 bg-amber-50 dark:bg-amber-950/30" : ""
               } ${bellShake ? "animate-[wiggle_0.5s_ease-in-out]" : ""}`}
               title="Notifications"
             >
-              <Bell className={`h-4 w-4 ${hasUnread ? "text-amber-600 dark:text-amber-400" : "text-gray-600 dark:text-slate-300"} ${hasUnread ? "animate-pulse" : ""}`} />
+              <Bell className={`h-4 w-4 ${hasUnread ? "text-amber-600 dark:text-amber-400" : "text-slate-600 dark:text-slate-300"} ${hasUnread ? "animate-pulse" : ""}`} />
               {hasUnread && (
                 <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]">
                   {unreadCount > 99 ? "99+" : unreadCount}
@@ -830,8 +642,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                   <button
                     type="button"
                     onClick={() => {
-                      fetchNotifications(false);
-                      setNotifRefreshKey((k) => k + 1);
+                      notificationsQuery.refetch();
                     }}
                     className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     title="Refresh"
@@ -842,7 +653,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     <button
                       type="button"
                       onClick={clearAllNotifs}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 text-indigo-650 dark:text-indigo-300 text-[9px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                      className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 text-indigo-600 dark:text-indigo-300 text-[9px] font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
                     >
                       Mark all read
                     </button>
@@ -1017,13 +828,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     </div>
 
       {/* Main Workspace Dashboard Content */}
-      <main className="flex-grow flex flex-col relative overflow-hidden">
+      <main className="flex-grow flex flex-col relative overflow-hidden min-h-0">
         {/* Modern Dot Grid Background Pattern Overlay */}
         <div className="absolute inset-0 bg-dotted-grid pointer-events-none opacity-75 dark:opacity-40 z-0" />
         {children}
 
-        {/* Global Floating Feedback Button */}
-        <div className="fixed bottom-4 right-4 z-40">
+        {/* Global Floating Feedback Button — clears the mobile bottom navigation */}
+        <div className="fixed bottom-20 md:bottom-4 right-4 z-40">
           <button
             type="button"
             onClick={() => {
@@ -1041,8 +852,15 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
       {/* Change Password Glassmorphic Modal */}
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xl p-6 sm:p-7 overflow-hidden">
+        <Dialog
+          open={showPasswordModal}
+          onOpenChange={(next) => {
+            if (!next) setShowPasswordModal(false);
+          }}
+          ariaLabel={isFirstLoginRequired ? "Password change required" : "Change password"}
+          overlayClassName="bg-slate-950/60 backdrop-blur-md"
+          panelClassName="max-w-md bg-white dark:bg-slate-900 p-6 sm:p-7 space-y-0 max-h-[90vh] overflow-y-auto"
+        >
             {/* Ambient Top Glow */}
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
 
@@ -1087,7 +905,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
             {/* Notifications */}
             {passError && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/50 flex items-start gap-2.5 text-xs text-rose-600 dark:text-rose-400">
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/50 flex items-start gap-2.5 text-xs text-rose-600 dark:text-rose-400" role="alert">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>{passError}</span>
               </div>
@@ -1112,6 +930,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                   readOnly
                   value={currentUserEmail}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 text-xs font-mono font-semibold text-slate-600 dark:text-slate-300 cursor-not-allowed"
+                  aria-label="Account Email"
                 />
               </div>
 
@@ -1131,11 +950,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
                     className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    aria-label="Current Password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrentPass((p) => !p)}
                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    aria-label="Show or hide current password"
                   >
                     {showCurrentPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
@@ -1158,11 +979,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password (min. 6 chars)"
                     className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    aria-label="New Password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPass((p) => !p)}
                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    aria-label="Show or hide new password"
                   >
                     {showNewPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
@@ -1185,11 +1008,13 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Confirm new password"
                     className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    aria-label="Confirm New Password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPass((p) => !p)}
                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    aria-label="Show or hide confirm password"
                   >
                     {showConfirmPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
@@ -1235,17 +1060,19 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Global Feedback & Issue Modal */}
-      {(showFeedbackModal || true) && (
-        <div
-          id="global-feedback-modal"
-          className={`${showFeedbackModal ? "flex" : "hidden"} fixed inset-0 z-50 items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200`}
-        >
-          <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <Dialog
+        open={showFeedbackModal}
+        onOpenChange={(next) => {
+          if (!next) setShowFeedbackModal(false);
+        }}
+        ariaLabel="Support and feedback center"
+        overlayClassName="bg-slate-950/60 backdrop-blur-md"
+        panelClassName="max-w-xl bg-white dark:bg-slate-900 rounded-2xl p-0 space-y-0 overflow-hidden flex flex-col max-h-[90vh]"
+      >
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/30">
               <div className="flex items-center gap-3">
@@ -1259,11 +1086,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setShowFeedbackModal(false);
-                  const el = document.getElementById("global-feedback-modal");
-                  if (el) el.classList.add("hidden");
-                }}
+                onClick={() => setShowFeedbackModal(false)}
                 className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
               >
                 <X className="h-4 w-4" />
@@ -1288,7 +1111,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                 type="button"
                 onClick={() => {
                   setFeedbackModalTab("history");
-                  fetchMyFeedback();
                 }}
                 className={`flex items-center gap-2 py-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
                   feedbackModalTab === "history"
@@ -1343,7 +1165,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                       if (data.success) {
                         showToast("Feedback submitted successfully! Our administration team will review it.", "success");
                         form.reset();
-                        fetchMyFeedback();
+                        queryClient.invalidateQueries({ queryKey: qk.myFeedback(feedbackReporterId) });
                         setFeedbackModalTab("history");
                       } else {
                         showToast(data.message || "Failed to submit feedback.", "error");
@@ -1385,6 +1207,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                       <select
                         name="type"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500"
+                        aria-label="Issue Category"
                       >
                         <option value="bug">🐞 Bug / Error Report</option>
                         <option value="feature">✨ Feature Request</option>
@@ -1401,6 +1224,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                         defaultValue={getReporterDetails().contactInfo}
                         placeholder="e.g. +91 9876543210"
                         className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-medium"
+                        aria-label="Contact Phone (Optional)"
                       />
                     </div>
                   </div>
@@ -1413,6 +1237,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                       type="text"
                       placeholder="e.g. Date of birth is incorrect in my profile"
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-bold"
+                      aria-label="Title / Summary"
                     />
                   </div>
 
@@ -1424,17 +1249,14 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                       rows={4}
                       placeholder="Describe what happened, what needs correction, and any error message you encountered..."
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:border-indigo-500 font-medium resize-none"
+                      aria-label="Detailed Description"
                     />
                   </div>
 
                   <div className="flex gap-2 pt-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setShowFeedbackModal(false);
-                        const el = document.getElementById("global-feedback-modal");
-                        if (el) el.classList.add("hidden");
-                      }}
+                      onClick={() => setShowFeedbackModal(false)}
                       className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
                     >
                       Cancel
@@ -1467,7 +1289,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                     </p>
                     <button
                       type="button"
-                      onClick={fetchMyFeedback}
+                      onClick={() => myFeedbackQuery.refetch()}
                       className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700 transition-colors cursor-pointer"
                     >
                       <RefreshCw className={`h-3 w-3 ${myFeedbackLoading ? "animate-spin" : ""}`} />
@@ -1597,21 +1419,65 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
+      </Dialog>
     </div>
   );
 }
 
-export function ProfessionalLoader({ message = "Loading your workspace..." }: { message?: string }) {
+const CAMPUS_LOADER_PHRASES = [
+  "Preparing your academic workspace...",
+  "Synchronizing timetables and schedules...",
+  "Organizing faculty and student rosters...",
+  "Gathering today's academic insights...",
+  "Compiling attendance records and metrics...",
+  "Calibrating department allocations...",
+  "Optimizing timetable grid and rooms...",
+  "Retrieving course and slot distributions...",
+  "Updating semester learning milestones...",
+  "Refreshing campus operations hub...",
+  "Aligning batches and session plans...",
+  "Loading curriculum trackers and logs...",
+];
+
+export function ProfessionalLoader({ message }: { message?: string }) {
+  // The first paint must be identical on the server and the client, so the
+  // starting phrase is deterministic; it rotates from there after hydration.
+  const [phrase, setPhrase] = useState<string>(() => message || CAMPUS_LOADER_PHRASES[0]);
+  const [fade, setFade] = useState(false);
+
+  useEffect(() => {
+    if (message) {
+      setPhrase(message);
+      return;
+    }
+    const interval = setInterval(() => {
+      setFade(true);
+      setTimeout(() => {
+        setPhrase((prev) => {
+          const others = CAMPUS_LOADER_PHRASES.filter((p) => p !== prev);
+          const nextIdx = Math.floor(Math.random() * others.length);
+          return others[nextIdx];
+        });
+        setFade(false);
+      }, 200);
+    }, 2400);
+
+    return () => clearInterval(interval);
+  }, [message]);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-warm-canvas">
       <div className="flex flex-col items-center gap-3">
         <img src="/E-Campus.png" alt="FACE Prep E-Campus" className="h-9 w-auto object-contain" />
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 text-indigo-600 animate-spin shrink-0" />
-          <span className="text-xs font-bold text-slate-500">{message}</span>
+          <span
+            className={`text-xs font-bold text-slate-500 transition-opacity duration-300 ${
+              fade ? "opacity-0" : "opacity-100"
+            }`}
+          >
+            {phrase}
+          </span>
         </div>
       </div>
     </div>

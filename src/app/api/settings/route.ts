@@ -1,13 +1,15 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const rows = await db.all("SELECT key, value, updated_at, updated_by FROM system_settings");
     
@@ -49,15 +51,16 @@ export async function POST(request: Request) {
     const actorName = updatedBy || "System Admin";
 
     // Upsert into system_settings
+    // MAIL-M09 Fix: Replace NOW() with CURRENT_TIMESTAMP for SQLite/libSQL compatibility
     await db.run(
       `INSERT INTO system_settings (key, value, updated_at, updated_by)
-       VALUES (?, ?, NOW(), ?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=NOW(), updated_by=excluded.updated_by`,
+       VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP, updated_by=excluded.updated_by`,
       [key, strValue, actorName]
     );
 
     // Write audit log entry
-    const auditId = `audit_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const auditId = generateId("audit");
     const description = key === "mailing_enabled"
       ? `Global Email Delivery toggled ${strValue === "true" ? "ON (Active)" : "OFF (Disabled)"}`
       : key === "attendance_lock_enabled"

@@ -2,6 +2,8 @@ import { getDb, parseClassGroupDetails } from "./db";
 import path from "path";
 import fs from "fs";
 import * as XLSX from "xlsx";
+import { DEFAULT_PASSWORD } from "./authConfig";
+import { hashPassword } from "./auth";
 
 // Helper to generate slugs for IDs and emails
 function getSlug(text: string): string {
@@ -652,6 +654,10 @@ function getSemesterFromLabel(label: string): string {
 }
 
 export async function seedDatabase() {
+  if (process.env.NODE_ENV === "production" && !process.env.ALLOW_SEED_IN_PROD) {
+    console.warn("Seed skipped in production. Set ALLOW_SEED_IN_PROD=true to override.");
+    return;
+  }
   const db = await getDb();
 
   let existingColleges: any[] = [];
@@ -661,397 +667,13 @@ export async function seedDatabase() {
 
   const isCustomSeed = existingColleges.length > 0;
 
-  // 1. Ensure tables exist safely without dropping live database data
-  // (No DROP TABLE calls to guarantee data persistence)
-
-  // 2. Recreate the tables
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS admin_users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS kam_users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      title TEXT NOT NULL DEFAULT 'Key Account Manager'
-    );
-
-    CREATE TABLE IF NOT EXISTS colleges (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      address TEXT,
-      kam_id TEXT NOT NULL,
-      has_shifts INTEGER NOT NULL DEFAULT 1,
-      FOREIGN KEY (kam_id) REFERENCES kam_users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS campus_managers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      college_id TEXT NOT NULL,
-      kam_id TEXT NOT NULL,
-      FOREIGN KEY (college_id) REFERENCES colleges(id),
-      FOREIGN KEY (kam_id) REFERENCES kam_users(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS mentors (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      department TEXT NOT NULL,
-      avatar TEXT NOT NULL,
-      subjects TEXT,
-      classes TEXT,
-      shift TEXT,
-      college_id TEXT,
-      employee_id TEXT,
-      phone TEXT,
-      qualification TEXT,
-      experience TEXT,
-      specialization TEXT,
-      designation TEXT,
-      joining_date TEXT,
-      status TEXT DEFAULT 'Active',
-      password_hash TEXT,
-      last_login TEXT,
-      created_at TEXT,
-      updated_at TEXT,
-      subject_group TEXT,
-      FOREIGN KEY (college_id) REFERENCES colleges(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS slots (
-      id TEXT PRIMARY KEY,
-      mentorId TEXT NOT NULL,
-      day TEXT NOT NULL,
-      time TEXT NOT NULL,
-      course TEXT NOT NULL,
-      location TEXT NOT NULL,
-      shift TEXT NOT NULL DEFAULT 'general',
-      classGroup TEXT,
-      semester TEXT,
-      year TEXT,
-      department TEXT,
-      batch_start_year INTEGER,
-      batch_end_year INTEGER,
-      college_id TEXT,
-      FOREIGN KEY (mentorId) REFERENCES mentors(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS handover_requests (
-      id TEXT PRIMARY KEY,
-      requestorId TEXT NOT NULL,
-      requestorName TEXT NOT NULL,
-      slotId TEXT NOT NULL,
-      course TEXT NOT NULL,
-      day TEXT NOT NULL,
-      time TEXT NOT NULL,
-      dateStr TEXT NOT NULL,
-      dateFormatted TEXT NOT NULL,
-      targetStaffId TEXT NOT NULL,
-      targetStaffName TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      status TEXT NOT NULL,
-      headerReason TEXT,
-      approvedBy TEXT,
-      timestamp TEXT NOT NULL,
-      classGroup TEXT,
-      FOREIGN KEY (requestorId) REFERENCES mentors(id) ON DELETE CASCADE,
-      FOREIGN KEY (targetStaffId) REFERENCES mentors(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS approved_handovers (
-      id TEXT PRIMARY KEY,
-      requestId TEXT UNIQUE NOT NULL,
-      slotId TEXT NOT NULL,
-      dateStr TEXT NOT NULL,
-      originalMentorId TEXT NOT NULL,
-      coverStaffId TEXT NOT NULL,
-      coverStaffName TEXT NOT NULL,
-      course TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      description TEXT NOT NULL,
-      actorName TEXT NOT NULL,
-      actorRole TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      old_status TEXT,
-      new_status TEXT,
-      reason TEXT,
-      changed_by TEXT
-    );
-
-     CREATE TABLE IF NOT EXISTS subjects (
-       id TEXT PRIMARY KEY,
-       department TEXT NOT NULL,
-       semester TEXT NOT NULL,
-       name TEXT NOT NULL,
-       type TEXT NOT NULL,
-       college_id TEXT,
-       year TEXT,
-       weekly_hours INTEGER DEFAULT 4,
-       subject_group TEXT
-     );
-
-      CREATE TABLE IF NOT EXISTS subject_groups (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL UNIQUE,
-        description TEXT,
-        lead_sme_id TEXT,
-        lead_sme_name TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS demo_rules (
-        id TEXT PRIMARY KEY,
-        subject TEXT NOT NULL,
-        week INTEGER NOT NULL,
-        target INTEGER NOT NULL,
-        created_at TEXT NOT NULL
-      );
-
-    CREATE TABLE IF NOT EXISTS courses (
-      id TEXT PRIMARY KEY,
-      name TEXT UNIQUE NOT NULL,
-      college_id TEXT,
-      code TEXT,
-      description TEXT,
-      hod_name TEXT,
-      established_year TEXT,
-      status TEXT DEFAULT 'Active',
-      years INTEGER DEFAULT 4,
-      start_date TEXT,
-      end_date TEXT,
-      start_year TEXT,
-      end_year TEXT,
-      default_room TEXT,
-      default_shift TEXT,
-      shift_based INTEGER DEFAULT 0,
-      sections TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS departments (
-      id TEXT PRIMARY KEY,
-      name TEXT UNIQUE NOT NULL,
-      college_id TEXT,
-      code TEXT,
-      description TEXT,
-      hod_name TEXT,
-      established_year TEXT,
-      status TEXT DEFAULT 'Active',
-      years INTEGER DEFAULT 4,
-      start_year TEXT,
-      end_year TEXT,
-      shift_based INTEGER DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS students (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      classGroup TEXT NOT NULL,
-      department TEXT,
-      college_id TEXT,
-      batch_start_year INTEGER,
-      batch_end_year INTEGER,
-      semester TEXT,
-      shift TEXT,
-      register_number TEXT,
-      roll_number TEXT,
-      avatar TEXT,
-      phone TEXT,
-      gender TEXT,
-      dob TEXT,
-      address TEXT,
-      guardian_name TEXT,
-      guardian_phone TEXT,
-      admission_date TEXT,
-      password_hash TEXT,
-      status TEXT DEFAULT 'Active',
-      last_login TEXT,
-      created_at TEXT,
-      updated_at TEXT,
-      FOREIGN KEY (college_id) REFERENCES colleges(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL,
-      reference_id TEXT,
-      status TEXT DEFAULT 'Active',
-      last_login TEXT,
-      created_at TEXT,
-      updated_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS notifications (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      message TEXT NOT NULL,
-      type TEXT NOT NULL,
-      is_read INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS announcements (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      description TEXT,
-      created_by TEXT NOT NULL,
-      target_role TEXT,
-      college_id TEXT,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS holidays (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      date TEXT NOT NULL,
-      type TEXT NOT NULL,
-      college_id TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS login_history (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      login_time TEXT NOT NULL,
-      logout_time TEXT,
-      ip TEXT,
-      device TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS student_attendance (
-      id TEXT PRIMARY KEY,
-      studentId TEXT NOT NULL,
-      slotId TEXT,
-      dateStr TEXT NOT NULL,
-      status TEXT NOT NULL,
-      markedBy TEXT,
-      timestamp TEXT NOT NULL,
-      FOREIGN KEY (studentId) REFERENCES students(id) ON DELETE CASCADE,
-      FOREIGN KEY (slotId) REFERENCES slots(id) ON DELETE SET NULL,
-      UNIQUE(studentId, slotId, dateStr)
-    );
-
-    CREATE TABLE IF NOT EXISTS sme_users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL DEFAULT 'password123',
-      subject TEXT,
-      is_head_sme INTEGER DEFAULT 0,
-      head_subject_group TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS sme_availability (
-      id TEXT PRIMARY KEY,
-      sme_id TEXT NOT NULL,
-      day_of_week TEXT NOT NULL,
-      start_time TEXT NOT NULL,
-      end_time TEXT NOT NULL,
-      is_active INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (sme_id) REFERENCES sme_users(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS demo_sessions (
-      id TEXT PRIMARY KEY,
-      mentorId TEXT NOT NULL,
-      mentorName TEXT NOT NULL,
-      smeId TEXT NOT NULL,
-      smeName TEXT NOT NULL,
-      dateStr TEXT NOT NULL,
-      timeSlot TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      stream TEXT NOT NULL,
-      week INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'scheduled',
-      marks INTEGER,
-      comments TEXT,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS demo_swap_requests (
-      id TEXT PRIMARY KEY,
-      sessionId TEXT NOT NULL,
-      mentorId TEXT NOT NULL,
-      mentorName TEXT NOT NULL,
-      smeId TEXT NOT NULL,
-      smeName TEXT NOT NULL,
-      dateStr TEXT NOT NULL,
-      timeSlot TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      stream TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      remarks TEXT,
-      swapType TEXT NOT NULL,
-      proposedMentorId TEXT,
-      proposedMentorName TEXT,
-      proposedSmeId TEXT,
-      proposedSmeName TEXT,
-      proposedDateStr TEXT,
-      proposedTimeSlot TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS cm_attendance (
-      id TEXT PRIMARY KEY,
-      cam_id TEXT NOT NULL,
-      college_id TEXT NOT NULL,
-      date_str TEXT NOT NULL,
-      status TEXT NOT NULL,
-      punch_in_time TEXT,
-      punch_out_time TEXT,
-      reason TEXT,
-      approved_by TEXT,
-      approval_status TEXT DEFAULT 'pending',
-      approval_notes TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (cam_id, date_str)
-    );
-
-    CREATE TABLE IF NOT EXISTS cm_leave_requests (
-      id TEXT PRIMARY KEY,
-      cam_id TEXT NOT NULL,
-      college_id TEXT NOT NULL,
-      kam_id TEXT,
-      request_type TEXT NOT NULL,
-      start_date TEXT NOT NULL,
-      end_date TEXT NOT NULL,
-      start_time TEXT,
-      end_time TEXT,
-      reason TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',
-      approved_by TEXT,
-      rejection_reason TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  // ── SCHEMA MIGRATIONS ───────────────────────────────────────────────────
-  // Add missing columns to existing tables (fail silently if column exists)
+  // 1. Schema is owned by postgres_schema.sql and src/lib/migrations.ts.
+  // Seeding only fills data, so fail loudly when the tables are absent.
   try {
-    await db.run("ALTER TABLE courses ADD COLUMN default_room TEXT");
-  } catch (_) {}
-  try {
-    await db.run("ALTER TABLE courses ADD COLUMN default_shift TEXT");
-  } catch (_) {}
-  try {
-    await db.run("ALTER TABLE courses ADD COLUMN sections TEXT");
-  } catch (_) {}
+    await db.get("SELECT 1 FROM colleges LIMIT 1");
+  } catch {
+    throw new Error("Database schema is missing - apply postgres_schema.sql before seeding.");
+  }
 
   let targetCollege1 = "college_1";
   let targetCollege2 = "college_2";
@@ -1064,50 +686,46 @@ export async function seedDatabase() {
   // 3. Seed Admin, KAM, Colleges, Campus Managers (Only if not a custom seed)
   if (!isCustomSeed) {
     await db.run(
-      `INSERT INTO admin_users (id, name, email) VALUES (?, ?, ?)`,
+      `INSERT OR IGNORE INTO admin_users (id, name, email) VALUES (?, ?, ?)`,
       "admin_1", "System Admin", "admin@university.edu"
     );
 
     await db.run(
-      `INSERT INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO kam_users (id, name, email, title) VALUES (?, ?, ?, ?)`,
       "kam_1", "Rajesh Kumar", "rajesh.kam@university.edu", "Key Account Manager"
     );
 
     await db.run(
-      `INSERT INTO colleges (id, name, address, kam_id, has_shifts) VALUES (?, ?, ?, ?, ?)`,
-      "college_1", "FP City Campus", "123, Anna Salai, Chennai - 600002", "kam_1", 1
+      `INSERT OR IGNORE INTO colleges (id, name, address, kam_id, has_shifts) VALUES (?, ?, ?, ?, ?)`,
+      "college_1", "City Campus", "Main Academic Block, Chennai", "kam_1", 1
     );
     await db.run(
-      `INSERT INTO colleges (id, name, address, kam_id, has_shifts) VALUES (?, ?, ?, ?, ?)`,
-      "college_2", "FP North Campus", "45, Poonamallee High Road, Chennai - 600056", "kam_1", 0
+      `INSERT OR IGNORE INTO colleges (id, name, address, kam_id, has_shifts) VALUES (?, ?, ?, ?, ?)`,
+      "college_2", "North Campus", "North Campus Complex, Chennai", "kam_1", 0
     );
 
     await db.run(
-      `INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
       "cm_1", "Priya Venkatesh", "priya.cm@university.edu", "college_1", "kam_1"
     );
     await db.run(
-      `INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)`,
       "cm_2", "Arjun Sharma", "arjun.cm@university.edu", "college_2", "kam_1"
-    );
-    await db.run(
-      `INSERT OR IGNORE INTO admin_users (id, name, email) VALUES (?, ?, ?)`,
-      "admin_1", "System Admin", "admin@university.edu"
     );
   }
 
   // Seed default Subject Matter Experts (SMEs)
   await db.run(
     "INSERT OR IGNORE INTO sme_users (id, name, email, subject) VALUES (?, ?, ?, ?)",
-    ["sme_1", "Dr. Ramesh Kumar", "ramesh.sme@zentra.edu", "Aptitude"]
+    ["sme_1", "Dr. Ramesh Kumar", "ramesh.sme@university.edu", "Aptitude"]
   );
   await db.run(
     "INSERT OR IGNORE INTO sme_users (id, name, email, subject) VALUES (?, ?, ?, ?)",
-    ["sme_2", "Prof. Sneha Iyer", "sneha.sme@zentra.edu", "Soft Skills"]
+    ["sme_2", "Prof. Sneha Iyer", "sneha.sme@university.edu", "Soft Skills"]
   );
   await db.run(
     "INSERT OR IGNORE INTO sme_users (id, name, email, subject) VALUES (?, ?, ?, ?)",
-    ["sme_3", "Mr. Tharun Balaji", "tharun.sme@zentra.edu", "Technical"]
+    ["sme_3", "Mr. Tharun Balaji", "tharun.sme@university.edu", "Technical"]
   );
 
   // Seed default availability windows for active SMEs if empty
@@ -1170,7 +788,7 @@ export async function seedDatabase() {
     }
 
     await db.run(
-      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       mentorId, cleanName, email, cleanDept, initials, m.subjects || "", m.classes || "", collegeId, subjectGroup
     );
 
@@ -1220,7 +838,7 @@ export async function seedDatabase() {
           : targetCollege1;
 
         await db.run(
-          `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           `sub_${subIdx}`, deptName, semesterName, subName, calculatedType, collegeId, yearName, weeklyHours
         );
       }
@@ -1241,7 +859,7 @@ export async function seedDatabase() {
     subIdx++;
     const calculatedType = getSubjectType(sObj.name);
     await db.run(
-      `INSERT INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO subjects (id, department, semester, name, type, college_id, year, weekly_hours) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       `sub_${subIdx}`, "BBA Airline and Airport Management", "Semester 1", sObj.name, calculatedType, targetCollege2, "Year 1", sObj.hours
     );
   }
@@ -1342,7 +960,7 @@ export async function seedDatabase() {
         slotIdx++;
         const { startYear, endYear } = parseClassGroupDetails(dbClassGroup);
         await db.run(
-          `INSERT INTO slots (id, mentorId, day, time, course, location, shift, classGroup, semester, year, department, batch_start_year, batch_end_year, college_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO slots (id, mentorId, day, time, course, location, shift, classGroup, semester, year, department, batch_start_year, batch_end_year, college_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           `s_${slotIdx}`, mentorId, dayName, translatedTime, canonicalCourseName, room, shift, dbClassGroup, semester, year, deptName, startYear, endYear, collegeId
         );
       }
@@ -1374,7 +992,7 @@ export async function seedDatabase() {
 
   // 10. Audit log entry
   await db.run(
-    `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
     "l1", "assignment", `Database successfully seeded from Excel files. Seeded ${dbMentors.length} mentors, ${subIdx} subjects, and ${slotIdx} slots.`, "System", "Manager", new Date().toISOString()
   );
 
@@ -1494,15 +1112,14 @@ async function seedStudents(db: any, targetCollege1: string, targetCollege2: str
   }
 
   let totalStudents = 0;
-  let totalAttendance = 0;
 
   if (fs.existsSync(excelPath)) {
     try {
       const workbook = XLSX.readFile(excelPath);
-      
-      // Wrap everything in a single SQLite transaction
-      await db.run("BEGIN TRANSACTION;");
-      
+
+      // Each row is INSERT OR REPLACE, so a failed run can simply be re-run.
+      // (BEGIN/COMMIT via db.run is unsafe: pool queries take different connections.)
+
       for (const sheetName of workbook.SheetNames) {
         const classGroup = sheetToClassMap[sheetName];
         if (!classGroup) {
@@ -1565,23 +1182,25 @@ async function seedStudents(db: any, targetCollege1: string, targetCollege2: str
         }
         console.log(`Seeded students for class group "${classGroup}" from sheet "${sheetName}".`);
       }
-      await db.run("COMMIT;");
-      console.log(`Successfully seeded ${totalStudents} students and ${totalAttendance} attendance records from Excel.`);
+      console.log(`Successfully seeded ${totalStudents} students from Excel.`);
     } catch (err) {
-      await db.run("ROLLBACK;");
       console.error("Error reading SDNB__Attendance__2025-2026.xlsx:", err);
     }
+  } else {
+    console.warn(`Skipping student seed: ${excelPath} not found.`);
   }
 }
 
 async function seedCentralizedUsers(db: any) {
   console.log("Seeding centralized users authentication table...");
+  // Login only accepts hashed credentials, so store a real v2 hash of the shared demo password.
+  const seededPasswordHash = hashPassword(DEFAULT_PASSWORD);
   // 1. Admins
   const admins = await db.all("SELECT id, name, email FROM admin_users");
   for (const admin of admins) {
     await db.run(
       "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [admin.id, admin.email, 'password123', 'admin', admin.id, new Date().toISOString(), new Date().toISOString()]
+      [admin.id, admin.email, seededPasswordHash, 'admin', admin.id, new Date().toISOString(), new Date().toISOString()]
     );
   }
 
@@ -1590,7 +1209,7 @@ async function seedCentralizedUsers(db: any) {
   for (const kam of kams) {
     await db.run(
       "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [kam.id, kam.email, 'password123', 'kam', kam.id, new Date().toISOString(), new Date().toISOString()]
+      [kam.id, kam.email, seededPasswordHash, 'kam', kam.id, new Date().toISOString(), new Date().toISOString()]
     );
   }
 
@@ -1599,7 +1218,7 @@ async function seedCentralizedUsers(db: any) {
   for (const cam of cams) {
     await db.run(
       "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [cam.id, cam.email, 'password123', 'cm', cam.id, new Date().toISOString(), new Date().toISOString()]
+      [cam.id, cam.email, seededPasswordHash, 'cm', cam.id, new Date().toISOString(), new Date().toISOString()]
     );
   }
 
@@ -1608,7 +1227,7 @@ async function seedCentralizedUsers(db: any) {
   for (const m of mentors) {
     await db.run(
       "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [m.id, m.email, 'password123', 'mentor', m.id, new Date().toISOString(), new Date().toISOString()]
+      [m.id, m.email, seededPasswordHash, 'mentor', m.id, new Date().toISOString(), new Date().toISOString()]
     );
   }
 
@@ -1617,7 +1236,7 @@ async function seedCentralizedUsers(db: any) {
   for (const st of students) {
     await db.run(
       "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [st.id, st.email, 'password123', 'student', st.id, new Date().toISOString(), new Date().toISOString()]
+      [st.id, st.email, seededPasswordHash, 'student', st.id, new Date().toISOString(), new Date().toISOString()]
     );
   }
 
@@ -1626,13 +1245,13 @@ async function seedCentralizedUsers(db: any) {
   for (const sme of smes) {
     await db.run(
       "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [sme.id, sme.email, 'password123', 'sme', sme.id, new Date().toISOString(), new Date().toISOString()]
+      [sme.id, sme.email, seededPasswordHash, 'sme', sme.id, new Date().toISOString(), new Date().toISOString()]
     );
   }
 
   // 8. L and D (Learning and Development) view users
   await db.run(
     "INSERT OR IGNORE INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ["lnd_1", "lnd@zentra.edu", "password123", "L and D", "lnd_1", new Date().toISOString(), new Date().toISOString()]
+    ["lnd_1", "lnd@faceprep.in", seededPasswordHash, "L and D", "lnd_1", new Date().toISOString(), new Date().toISOString()]
   );
 }

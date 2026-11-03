@@ -9,6 +9,8 @@ import {
   Clock, Ticket, Award, Users, BookOpen, GraduationCap, Building2, AlertTriangle
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 /**
  * Admin Oversight Hub — infographic oversight of cross-campus operations that
@@ -23,7 +25,7 @@ function ChartCard({ title, subtitle, icon: Icon, children, accent = "bg-indigo-
   title: string; subtitle: string; icon: any; children: React.ReactNode; accent?: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-xs p-4">
+    <div className="bg-white rounded-xl border border-slate-200/80 shadow-xs p-4">
       <div className="flex items-center gap-2.5 mb-3">
         <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${accent}`}>
           <Icon className="h-4 w-4" />
@@ -147,30 +149,28 @@ export function OversightHub() {
   const hasNoData = requests.length === 0 && approvedHandovers.length === 0 && campusIssues.length === 0 && interviews.length === 0;
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-150 pb-3">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-indigo-655" />
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">Oversight Hub</h2>
-            <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Cross-campus operational oversight — handovers, tickets, interviews, workload &amp; academics</p>
-          </div>
-        </div>
-        <select
-          value={campusFilter}
-          onChange={e => setCampusFilter(e.target.value)}
-          className="bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-705 font-bold focus:outline-none cursor-pointer"
-        >
-          <option value="all">All Campuses</option>
-          {colleges.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      </div>
+    <div className="space-y-4 animate-fadeIn font-sans text-xs">
+      <PageHeader
+        icon={Building2}
+        title="Oversight Hub"
+        subtitle="Cross-campus operational oversight — handovers, tickets, interviews, workload & academics."
+        actions={
+          <Select
+            aria-label="Campus filter"
+            value={campusFilter}
+            onChange={e => setCampusFilter(e.target.value)}
+            className="w-auto min-w-[170px] cursor-pointer"
+          >
+            <option value="all">All Campuses</option>
+            {colleges.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </Select>
+        }
+      />
 
       {hasNoData && (
-        <div className="text-center py-16 border border-gray-200 rounded-xl bg-gray-55/50">
-          <Building2 className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-555 font-semibold">No operational data across campuses yet.</p>
+        <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
+          <Building2 className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 font-semibold">No operational data across campuses yet.</p>
         </div>
       )}
 

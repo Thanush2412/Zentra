@@ -1837,3 +1837,72 @@ export function getCollegeStartAndEndTime(college: any): { start: string; end: s
   } catch (_) {}
   return { start: "08:30 AM", end: "04:30 PM" };
 }
+
+/**
+ * Generates an uppercase campus code acronym or short identifier from campus name.
+ */
+export const generateCampusCode = (name: string): string => {
+  if (!name || !name.trim()) return "";
+  const stopwords = new Set(["of", "and", "the", "for", "in", "at", "&", "to", "a", "an"]);
+  const rawWords = name.trim().replace(/[^a-zA-Z0-9\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+  const words = rawWords.filter(w => !stopwords.has(w.toLowerCase()));
+  const list = words.length > 0 ? words : rawWords;
+
+  if (list.length === 1) {
+    return list[0].substring(0, 6).toUpperCase();
+  }
+
+  // Preserve words that are already uppercase acronyms (e.g. "FP", "IIT", "SRM")
+  const parts = list.map(w => {
+    if (w.length <= 4 && w === w.toUpperCase() && /^[A-Z0-9]+$/.test(w)) {
+      return w;
+    }
+    return w[0].toUpperCase();
+  });
+
+  const combined = parts.join("");
+  if (combined.length >= 2 && combined.length <= 8) {
+    return combined;
+  }
+
+  return combined.substring(0, 8);
+};
+
+/**
+ * Generates a standard degree or course code from a course name.
+ */
+export const generateCodeFromName = (name: string): string => {
+  if (!name || typeof name !== "string") return "";
+  const words = name.replace(/with|and|for/gi, "").split(/\s+/).filter(Boolean);
+  const code = words.map(w => {
+    const cleanWord = w.replace(/[^a-zA-Z0-9]/g, "");
+    if (!cleanWord) return "";
+    if (/^\d+$/.test(cleanWord)) return cleanWord;
+    const lower = cleanWord.toLowerCase();
+    if (lower === "bsc") return "BSC";
+    if (lower === "bba") return "BBA";
+    if (lower === "bcom") return "BCOM";
+    if (lower === "bca") return "BCA";
+    const match = cleanWord.match(/^([a-zA-Z]+)(\d+)$/);
+    if (match) return match[1][0].toUpperCase() + match[2];
+    return cleanWord[0].toUpperCase();
+  }).filter(Boolean).join("-");
+  return code || "";
+};
+
+/**
+ * Formats a defaultRoom JSON string or raw string into human-readable year-wise rooms.
+ */
+export const formatYearWiseRooms = (defaultRoomStr?: string): string => {
+  if (!defaultRoomStr) return "None";
+  if (!defaultRoomStr.startsWith("{")) return defaultRoomStr;
+  try {
+    const parsed = JSON.parse(defaultRoomStr);
+    return Object.keys(parsed)
+      .map(year => `Year ${year}: ${parsed[year]}`)
+      .join(", ");
+  } catch (_) {
+    return defaultRoomStr;
+  }
+};
+

@@ -1,9 +1,18 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
+
+// Courses are campus configuration, and DELETE cascades into slots, mentors,
+// students and their user accounts — so this route is staff-only. Other roles
+// get course lists from the role-scoped /api/data payload.
+const COURSE_CONFIG_ROLES: Role[] = ["admin", "cm", "kam"];
+
+async function requireCourseConfigAccess(request: Request) {
+  return requireAuth(request, { allowedRoles: COURSE_CONFIG_ROLES });
+}
 
 // Helper to generate slugs for IDs
 function getSlug(text: string, collegeId?: string): string {
@@ -13,6 +22,9 @@ function getSlug(text: string, collegeId?: string): string {
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireCourseConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("college_id");
@@ -34,6 +46,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   let cleanName = "";
   try {
+    const { errorResponse } = await requireCourseConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
     const { name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, sections } = body;
@@ -45,17 +60,38 @@ export async function POST(request: Request) {
     cleanName = name.trim();
     let targetCollegeId = college_id || null;
     if (!targetCollegeId) {
-      const firstCol = await db.get("SELECT id FROM colleges ORDER BY id ASC LIMIT 1");
-      targetCollegeId = firstCol?.id || null;
+      // Ambiguous campus would silently fall through to the "college_id IS NULL"
+      // uniqueness branch and allow duplicate courses per campus.
+      const colleges = await db.all("SELECT id FROM colleges ORDER BY id ASC LIMIT 2");
+      if (colleges.length === 1) {
+        targetCollegeId = colleges[0].id;
+      } else {
+        return NextResponse.json({
+          success: false,
+          message: "college_id is required — the course cannot be assigned to an ambiguous campus."
+        }, { status: 400 });
+      }
     }
 
-    // Check uniqueness scoped to college
-    let existing;
-    if (targetCollegeId) {
-      existing = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)", cleanName, targetCollegeId);
-    } else {
-      existing = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND college_id IS NULL", cleanName);
+    // Both probes key off the request body, so they leave as one round trip: the
+    // name check decides 409-vs-update, the slug check only decides whether the
+    // generated id needs a suffix. A failed probe must not read as "no duplicate".
+    let id = getSlug(cleanName, targetCollegeId || undefined);
+    const courseProbeFailures: QueryFailure[] = [];
+    const [existingRows, slugRows] = await db.multiQuery([
+      {
+        sql: "SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)",
+        params: [cleanName, targetCollegeId],
+      },
+      { sql: "SELECT id FROM courses WHERE id = ?", params: [id] },
+    ], courseProbeFailures);
+    if (courseProbeFailures.length > 0) {
+      return NextResponse.json({
+        success: false,
+        message: "Could not check this course against existing ones. Please try again."
+      }, { status: 500 });
     }
+    const existing = existingRows[0];
 
     // If creating a new course and a course with this name already exists in the campus, reject with an error
     if (existing && !body.id) {
@@ -142,12 +178,11 @@ export async function POST(request: Request) {
       });
     }
 
-    let id = getSlug(cleanName, targetCollegeId || undefined);
-
-    // Ensure ID uniqueness just in case
-    const existingId = await db.get("SELECT * FROM courses WHERE id = ?", id);
-    if (existingId) {
-      id = `${id}_${Date.now().toString(36)}`;
+    // Keep the id unique just in case. The base36 millisecond used to be the only
+    // suffix, so two requests in the same millisecond both survived the check and
+    // then collided on INSERT.
+    if (slugRows.length > 0) {
+      id = generateId(id);
     }
 
     try {
@@ -173,12 +208,19 @@ export async function POST(request: Request) {
       );
     } catch (insertErr: any) {
       if (insertErr.message && (insertErr.message.includes("UNIQUE constraint failed") || insertErr.message.includes("duplicate key"))) {
-        // Fallback: If a course with this name already exists, update it instead of crashing with 500
-        const conflictCourse = await db.get(
-          "SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)",
-          cleanName,
-          targetCollegeId
-        ) || await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", cleanName);
+        // Fallback: If a course with this name already exists, update it instead of crashing with 500.
+        // The scoped probe and the global fallback key off the same name, so one round trip answers
+        // both; the fallback still only applies where the scoped probe misses.
+        const conflictFailures: QueryFailure[] = [];
+        const [scopedConflicts, globalConflicts] = await db.multiQuery([
+          {
+            sql: "SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)",
+            params: [cleanName, targetCollegeId],
+          },
+          { sql: "SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", params: [cleanName] },
+        ], conflictFailures);
+        if (conflictFailures.length > 0) throw insertErr;
+        const conflictCourse = scopedConflicts[0] || globalConflicts[0];
 
         if (conflictCourse) {
           await db.run(
@@ -301,6 +343,9 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireCourseConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
     const { id, name, college_id, code, description, established_year, status, years, start_date, end_date, start_year, end_year, default_room, default_shift, shift_based, sections } = body;
@@ -504,6 +549,9 @@ function isDeptMatch(name: string, targetName: string, targetId: string): boolea
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireCourseConfigAccess(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -522,74 +570,99 @@ export async function DELETE(request: Request) {
       return isDeptMatch(deptOrGroup || "", courseName, id);
     };
 
-    // 1. Delete slots for this department/classGroup and cascade to student_attendance, handover records
-      const allSlots = await db.all("SELECT id, department, classGroup FROM slots");
-      const slotsToDelete = allSlots.filter(s => isMatch(s.department) || isMatch(s.classGroup));
-      const slotIds = slotsToDelete.map(s => s.id);
-      
+    // Course names are matched fuzzily by string, so without a campus filter a
+    // department that exists at two colleges wipes the other campus's slots,
+    // students, mentors and subjects. Untagged (NULL) rows keep matching.
+    const courseCollegeId: string | null = course?.college_id || null;
+    const campusWhere = courseCollegeId ? " WHERE (college_id = ? OR college_id IS NULL)" : "";
+    const campusArgs = courseCollegeId ? [courseCollegeId] : [];
+
+    // The whole cascade runs as one transaction: these sweeps are matched fuzzily
+    // by department name, so a failure half-way used to leave a course row gone
+    // while its students, mentors and subjects (and their logins) stayed behind —
+    // unrecoverable by retrying because the course that scoped the match is gone.
+    // ID lists are chunked so a large department cannot exceed Postgres' 65,535
+    // bind-parameter cap.
+    const deletedCounts = await db.transaction(async (tx) => {
+      const IN_CHUNK = 500;
+      const runInChunks = async (ids: any[], sqlFor: (placeholders: string) => string) => {
+        for (let i = 0; i < ids.length; i += IN_CHUNK) {
+          const chunk = ids.slice(i, i + IN_CHUNK);
+          await tx.run(sqlFor(chunk.map(() => "?").join(",")), ...chunk);
+        }
+      };
+
+      // 1. Delete slots for this department/classGroup and cascade to student_attendance, handover records
+      const allSlots = await tx.all(`SELECT id, department, classGroup FROM slots${campusWhere}`, ...campusArgs);
+      const slotsToDelete = allSlots.filter((s: any) => isMatch(s.department) || isMatch(s.classGroup));
+      const slotIds = slotsToDelete.map((s: any) => s.id);
+
       if (slotIds.length > 0) {
-        const placeholders = slotIds.map(() => "?").join(",");
-        await db.run(`UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${placeholders})`, ...slotIds).catch(() => {});
-        await db.run(`DELETE FROM handover_requests WHERE slotId IN (${placeholders})`, ...slotIds);
-        await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${placeholders})`, ...slotIds);
-        await db.run(`DELETE FROM slots WHERE id IN (${placeholders})`, ...slotIds);
+        await runInChunks(slotIds, (ph) => `UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${ph})`);
+        await runInChunks(slotIds, (ph) => `DELETE FROM handover_requests WHERE slotId IN (${ph})`);
+        await runInChunks(slotIds, (ph) => `DELETE FROM approved_handovers WHERE slotId IN (${ph})`);
+        await runInChunks(slotIds, (ph) => `DELETE FROM slots WHERE id IN (${ph})`);
       }
 
       // Also delete handover_requests where classGroup matches this course (Bug #26 fix)
       // classGroup format: "<CourseName> - SEM X"
-      const allHandovers = await db.all("SELECT id, classGroup FROM handover_requests");
+      const allHandovers = await tx.all("SELECT id, classGroup FROM handover_requests");
       const handoverIdsToDelete = allHandovers
-        .filter(h => h.classGroup && isMatch(h.classGroup))
-        .map(h => h.id);
+        .filter((h: any) => h.classGroup && isMatch(h.classGroup))
+        .map((h: any) => h.id);
       if (handoverIdsToDelete.length > 0) {
-        const placeholders = handoverIdsToDelete.map(() => "?").join(",");
-        await db.run(`DELETE FROM handover_requests WHERE id IN (${placeholders})`, ...handoverIdsToDelete);
+        await runInChunks(handoverIdsToDelete, (ph) => `DELETE FROM handover_requests WHERE id IN (${ph})`);
       }
-      
+
       // 2. Find student IDs in this department to clean up their records
-      const allStudents = await db.all("SELECT id, department, classGroup FROM students");
-      const studentsToDelete = allStudents.filter(s =>
+      const allStudents = await tx.all(`SELECT id, department, classGroup FROM students${campusWhere}`, ...campusArgs);
+      const studentsToDelete = allStudents.filter((s: any) =>
         isMatch(s.department) ||
         isMatch(s.classGroup) ||
         // Additional check: classGroup starts with course name (e.g. "B.Sc. CS AI - SEM I" matches "B.Sc. CS AI")
         (s.classGroup && s.classGroup.toLowerCase().startsWith(courseName.toLowerCase()))
       );
-      const studentIds = studentsToDelete.map(s => s.id);
-      
+      const studentIds = studentsToDelete.map((s: any) => s.id);
+
       if (studentIds.length > 0) {
-        const placeholders = studentIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM student_attendance WHERE studentId IN (${placeholders})`, ...studentIds);
+        await runInChunks(studentIds, (ph) => `DELETE FROM student_attendance WHERE studentId IN (${ph})`);
         // Bug #27 fix: clean up leave_requests for deleted students
-        await db.run(`DELETE FROM leave_requests WHERE studentId IN (${placeholders})`, ...studentIds);
-        await db.run(`DELETE FROM students WHERE id IN (${placeholders})`, ...studentIds);
-        await db.run(`DELETE FROM users WHERE role = 'student' AND reference_id IN (${placeholders})`, ...studentIds);
+        await runInChunks(studentIds, (ph) => `DELETE FROM leave_requests WHERE studentId IN (${ph})`);
+        await runInChunks(studentIds, (ph) => `DELETE FROM users WHERE role = 'student' AND reference_id IN (${ph})`);
+        await runInChunks(studentIds, (ph) => `DELETE FROM students WHERE id IN (${ph})`);
       }
 
       // 3. Delete mentors in this department and their user accounts
-      const allMentors = await db.all("SELECT id, department FROM mentors");
-      const mentorsToDelete = allMentors.filter(m => m.department && isMatch(m.department));
-      const mentorIds = mentorsToDelete.map(m => m.id);
+      const allMentors = await tx.all(`SELECT id, department FROM mentors${campusWhere}`, ...campusArgs);
+      const mentorsToDelete = allMentors.filter((m: any) => m.department && isMatch(m.department));
+      const mentorIds = mentorsToDelete.map((m: any) => m.id);
       if (mentorIds.length > 0) {
-        const placeholders = mentorIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM mentors WHERE id IN (${placeholders})`, ...mentorIds);
-        await db.run(`DELETE FROM users WHERE role = 'mentor' AND reference_id IN (${placeholders})`, ...mentorIds);
+        await runInChunks(mentorIds, (ph) => `DELETE FROM users WHERE role = 'mentor' AND reference_id IN (${ph})`);
+        await runInChunks(mentorIds, (ph) => `DELETE FROM mentors WHERE id IN (${ph})`);
       }
 
       // 4. Delete subjects associated with this department
-      const allSubjects = await db.all("SELECT id, department FROM subjects");
-      const subjectsToDelete = allSubjects.filter(s => s.department && isMatch(s.department));
-      const subjectIds = subjectsToDelete.map(s => s.id);
+      const allSubjects = await tx.all(`SELECT id, department FROM subjects${campusWhere}`, ...campusArgs);
+      const subjectsToDelete = allSubjects.filter((s: any) => s.department && isMatch(s.department));
+      const subjectIds = subjectsToDelete.map((s: any) => s.id);
       if (subjectIds.length > 0) {
-        const placeholders = subjectIds.map(() => "?").join(",");
-        await db.run(`DELETE FROM subjects WHERE id IN (${placeholders})`, ...subjectIds);
+        await runInChunks(subjectIds, (ph) => `DELETE FROM subjects WHERE id IN (${ph})`);
       }
 
       // 5. Finally delete the course and matching departments table rows
-      await db.run("DELETE FROM courses WHERE id = ?", id);
-      await db.run("DELETE FROM departments WHERE id = ? OR name = ?", id, courseName);
+      await tx.run("DELETE FROM courses WHERE id = ?", id);
+      await tx.run("DELETE FROM departments WHERE id = ? OR name = ?", id, courseName);
 
-      const deletedSummary = `Deleted: ${slotsToDelete.length} slots, ${studentsToDelete.length} students, ${mentorsToDelete.length} mentors, ${subjectsToDelete.length} subjects.`;
-      return NextResponse.json({ success: true, message: `Course and all associated data deleted successfully. ${deletedSummary}`, deletedCounts: { slots: slotsToDelete.length, students: studentsToDelete.length, mentors: mentorsToDelete.length, subjects: subjectsToDelete.length } });
+      return {
+        slots: slotsToDelete.length,
+        students: studentsToDelete.length,
+        mentors: mentorsToDelete.length,
+        subjects: subjectsToDelete.length,
+      };
+    });
+
+      const deletedSummary = `Deleted: ${deletedCounts.slots} slots, ${deletedCounts.students} students, ${deletedCounts.mentors} mentors, ${deletedCounts.subjects} subjects.`;
+      return NextResponse.json({ success: true, message: `Course and all associated data deleted successfully. ${deletedSummary}`, deletedCounts });
   } catch (error: any) {
     console.error("API DELETE Courses error:", error);
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

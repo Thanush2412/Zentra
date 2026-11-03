@@ -1,9 +1,8 @@
-// Pin to Mumbai (bom1) — co-located with DB
-export const preferredRegion = "bom1";
 export const maxDuration = 120;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import JSZip from "jszip";
 import {
   computeBatchReport,
@@ -20,6 +19,7 @@ import {
 } from "@/lib/report/chartRenderer";
 import fs from "fs";
 import path from "path";
+import { fetchWithTimeout } from "@/lib/net";
 
 /**
  * Monthly Skill Development Report (PPTX) — CM dashboard feature.
@@ -169,22 +169,32 @@ async function computeAllBatches(collegeId: string, month: number, year: number,
   const db = await getDb();
   const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
 
-  const students: StudentRow[] = await db.all(
-    "SELECT id, name, classGroup, classgroup, department, efset_score, hire_score, leetcode_link FROM students WHERE college_id = ?",
-    [collegeId]
-  ).catch(() => []);
+  // Roster, month attendance and the LeetCode mirror are independent, so one round trip
+  // feeds the whole report. Each read used to end in .catch(() => []), so a slice that
+  // failed produced a zero-metric deck that looked exactly like a measured result.
+  const reportFailures: QueryFailure[] = [];
+  const [studentRows, attendance, lcRows] = await db.multiQuery(
+    [
+      {
+        sql: "SELECT id, name, classGroup, classgroup, department, efset_score, hire_score, leetcode_link, email, register_number, roll_number FROM students WHERE college_id = ?",
+        params: [collegeId],
+      },
+      {
+        sql: `SELECT sa.studentId, sa.status, sa.dateStr
+              FROM student_attendance sa
+              WHERE sa.dateStr LIKE ? AND sa.studentId IN (SELECT id FROM students WHERE college_id = ?)`,
+        params: [`${monthPrefix}%`, collegeId],
+      },
+      { sql: "SELECT email, register_number, solved_total FROM lc_students" },
+    ],
+    reportFailures
+  );
+  if (reportFailures.length > 0) {
+    throw new Error(`Skill-development report inputs could not be read: ${reportFailures[0].error}`);
+  }
 
-  const attendance: AttendanceRow[] = await db.all(
-    `SELECT sa.studentId, sa.status, sa.dateStr
-     FROM student_attendance sa
-     WHERE sa.dateStr LIKE ? AND sa.studentId IN (SELECT id FROM students WHERE college_id = ?)`,
-    [`${monthPrefix}%`, collegeId]
-  ).catch(() => []);
+  const students: StudentRow[] = studentRows;
 
-  // LeetCode solved totals keyed by email / cleaned register number
-  const lcRows: any[] = await db.all(
-    "SELECT email, register_number, solved_total FROM lc_students"
-  ).catch(() => []);
   const cleanReg = (r: any) => String(r || "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const lcByEmail = new Map<string, number>();
   const lcByReg = new Map<string, number>();
@@ -194,10 +204,9 @@ async function computeAllBatches(collegeId: string, month: number, year: number,
     if (r.register_number) lcByReg.set(cleanReg(r.register_number), solved);
   });
 
-  const studentIds: any[] = await db.all(
-    "SELECT id, email, register_number, roll_number FROM students WHERE college_id = ?",
-    [collegeId]
-  ).catch(() => []);
+  // The roster read above already carries email / register_number / roll_number, so the
+  // second students scan it used to issue is the same rows.
+  const studentIds: any[] = studentRows;
   const leetcodeByStudentId = new Map<string, number>();
   studentIds.forEach((s: any) => {
     let solved = s.email ? lcByEmail.get(String(s.email).toLowerCase().trim()) : undefined;
@@ -259,10 +268,10 @@ async function fetchSupabaseMonthlyWorkflow(collegeId: string, month: number, ye
 
   try {
     const [raRes, csRes, tkRes, dlRes] = await Promise.all([
-      fetch(`${SUPABASE_REST_URL}/rest/v1/report_approvals?college=ilike.*${encCname}*&report_month=eq.${ym}&limit=1`, { headers }).catch(() => null),
-      fetch(`${SUPABASE_REST_URL}/rest/v1/classroom_snaps?college=ilike.*${encCname}*&observation_date=gte.${ym}-01&observation_date=lte.${ym}-31&select=id,overall_rating,satisfaction_status`, { headers }).catch(() => null),
-      fetch(`${SUPABASE_REST_URL}/rest/v1/tickets?college=ilike.*${encCname}*&created_at=gte.${ym}-01T00:00:00Z&created_at=lte.${ym}-31T23:59:59Z&select=id,status`, { headers }).catch(() => null),
-      fetch(`${SUPABASE_REST_URL}/rest/v1/daily_logs?college=ilike.*${encCname}*&log_date=gte.${ym}-01&log_date=lte.${ym}-31&order=log_date.desc,created_at.desc&select=id,log_date,manager_name,category,call_type,activity,progress_notes,reviewed,reviewed_by,reviewed_at`, { headers }).catch(() => null)
+      fetchWithTimeout(`${SUPABASE_REST_URL}/rest/v1/report_approvals?college=ilike.*${encCname}*&report_month=eq.${ym}&limit=1`, { headers }).catch(() => null),
+      fetchWithTimeout(`${SUPABASE_REST_URL}/rest/v1/classroom_snaps?college=ilike.*${encCname}*&observation_date=gte.${ym}-01&observation_date=lte.${ym}-31&select=id,overall_rating,satisfaction_status`, { headers }).catch(() => null),
+      fetchWithTimeout(`${SUPABASE_REST_URL}/rest/v1/tickets?college=ilike.*${encCname}*&created_at=gte.${ym}-01T00:00:00Z&created_at=lte.${ym}-31T23:59:59Z&select=id,status`, { headers }).catch(() => null),
+      fetchWithTimeout(`${SUPABASE_REST_URL}/rest/v1/daily_logs?college=ilike.*${encCname}*&log_date=gte.${ym}-01&log_date=lte.${ym}-31&order=log_date.desc,created_at.desc&select=id,log_date,manager_name,category,call_type,activity,progress_notes,reviewed,reviewed_by,reviewed_at`, { headers }).catch(() => null)
     ]);
 
     const raData = raRes ? await raRes.json().catch(() => []) : [];
@@ -334,6 +343,8 @@ async function fetchSupabaseMonthlyWorkflow(collegeId: string, month: number, ye
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm", "kam", "mentor"] });
+    if (errorResponse) return errorResponse;
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("collegeId") || "";
     const month = parseInt(searchParams.get("month") || String(new Date().getMonth()), 10);
@@ -368,6 +379,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm", "kam", "mentor"] });
+    if (errorResponse) return errorResponse;
     const body = await request.json();
     const collegeId = body.collegeId || "";
     const month = typeof body.month === "number" ? body.month : parseInt(body.month || String(new Date().getMonth()), 10);

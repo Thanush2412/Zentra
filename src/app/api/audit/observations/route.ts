@@ -1,10 +1,12 @@
-// Pin to Mumbai (bom1) — co-located with Supabase DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/authGuard";
 import { CLASSROOM_SNAPS, sbRest, sbHeaders, normCollegeName } from "@/lib/audit-sources";
-import { sendMail, renderEmailShell } from "@/lib/mail";
+import { fetchWithTimeout, UPLOAD_FETCH_TIMEOUT_MS } from "@/lib/net";
+import { renderEmailShell } from "@/lib/mail";
+import { sendMailAsync } from "@/lib/mailAsync";
+import { generateId } from "@/lib/id";
 
 // ── Classroom Observation Log — proxied from the legacy classroom_snaps table ──
 // GET  ?college=<name>            → list observations for a college (or all if omitted & allowed)
@@ -12,6 +14,8 @@ import { sendMail, renderEmailShell } from "@/lib/mail";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const { searchParams } = new URL(request.url);
     const college = (searchParams.get("college") || "").trim();
     const limit = Math.min(parseInt(searchParams.get("limit") || "60", 10) || 60, 200);
@@ -84,6 +88,8 @@ const RATING_FIELDS = [
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const contentType = request.headers.get("content-type") || "";
 
     let payload: ObsPayload;
@@ -119,15 +125,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Photo must be under 8MB" }, { status: 400 });
       }
       const ext = (photoFile.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-      const objectPath = `${payload.college || "unknown"}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const upRes = await fetch(
-        `${CLASSROOM_SNAPS.url}/storage/v1/object/${CLASSROOM_SNAPS.bucket}/${encodeURIComponent(objectPath)}`,
-        {
-          method: "POST",
-          headers: { ...sbHeaders(CLASSROOM_SNAPS.key), "cache-control": "3600", "x-upsert": "false" },
-          body: await photoFile.arrayBuffer()
-        }
-      );
+      const objectPath = `${payload.college || "unknown"}/${generateId("obs")}.${ext}`;
+      let upRes: Response;
+      try {
+        upRes = await fetchWithTimeout(
+          `${CLASSROOM_SNAPS.url}/storage/v1/object/${CLASSROOM_SNAPS.bucket}/${encodeURIComponent(objectPath)}`,
+          {
+            method: "POST",
+            headers: { ...sbHeaders(CLASSROOM_SNAPS.key), "cache-control": "3600", "x-upsert": "false" },
+            body: await photoFile.arrayBuffer()
+          },
+          UPLOAD_FETCH_TIMEOUT_MS
+        );
+      } catch (e: any) {
+        console.error("Photo upload timed out:", e?.message);
+        return NextResponse.json(
+          { success: false, message: "Photo upload timed out. Please retry." },
+          { status: 502 }
+        );
+      }
       if (!upRes.ok) {
         const t = await upRes.text().catch(() => "");
         console.error("Photo upload failed:", upRes.status, t.slice(0, 200));
@@ -166,27 +182,25 @@ export async function POST(request: Request) {
         const dimScores = RATING_FIELDS.map(f => ({ label: f.replace("rating_", "").replace(/_/g, " "), value: (payload as any)[f] }))
           .filter(d => d.value != null)
           .map(d => ({ label: d.label, value: `${d.value}/5` }));
-        try {
-          const htmlBody = renderEmailShell({
-            title: "Classroom Observation — Not Satisfied",
-            badgeText: "Escalation",
-            badgeColor: "rose",
-            description: `A campus observation logged for ${payload.college} was marked NOT SATISFIED and requires senior review.`,
-            details: [
-              { label: "Campus", value: payload.college, highlight: true },
-              { label: "Mentor / Teacher", value: payload.mentor_name || payload.teacher_name || "—" },
-              { label: "Class / Department", value: payload.department || payload.class_name || "—" },
-              { label: "Subject", value: payload.course_name || payload.subject || "—" },
-              { label: "Observation Date", value: payload.observation_date || "—" },
-              { label: "Overall Rating", value: `${payload.overall_rating}/5`, highlight: true },
-              ...dimScores,
-              { label: "Remarks", value: remarks || "—" }
-            ]
-          });
-          await sendMail({ to: recipient, subject: `⚠️ Not-Satisfied Observation — ${payload.college}`, htmlBody });
-        } catch (mailErr) {
-          console.warn("Observation escalation mail failed:", mailErr);
-        }
+        const htmlBody = renderEmailShell({
+          title: "Classroom Observation — Not Satisfied",
+          badgeText: "Escalation",
+          badgeColor: "rose",
+          description: `A campus observation logged for ${payload.college} was marked NOT SATISFIED and requires senior review.`,
+          details: [
+            { label: "Campus", value: payload.college, highlight: true },
+            { label: "Mentor / Teacher", value: payload.mentor_name || payload.teacher_name || "—" },
+            { label: "Class / Department", value: payload.department || payload.class_name || "—" },
+            { label: "Subject", value: payload.course_name || payload.subject || "—" },
+            { label: "Observation Date", value: payload.observation_date || "—" },
+            { label: "Overall Rating", value: `${payload.overall_rating}/5`, highlight: true },
+            ...dimScores,
+            { label: "Remarks", value: remarks || "—" }
+          ]
+        });
+        // The CM's save returns as soon as the row is written; the escalation itself
+        // goes out from after(), and a failure lands in audit_logs.
+        sendMailAsync({ to: recipient, subject: `⚠️ Not-Satisfied Observation — ${payload.college}`, htmlBody, context: "observation-escalation" });
       }
     }
 

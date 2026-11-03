@@ -1,12 +1,12 @@
-export const preferredRegion = "bom1";
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
 /**
  * Health check for uptime monitoring (API_OPTIMIZATION_PLAN item 21).
- * Intentionally unauthenticated (allowlisted in src/middleware.ts) so external
+ * Intentionally unauthenticated (allowlisted in src/proxy.ts) so external
  * monitors can reach it. Exposes no user data — only liveness + pool stats.
  */
 export async function GET() {

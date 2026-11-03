@@ -1,13 +1,18 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { hashPassword } from "@/lib/auth";
+import { getDb, chunkList, inPlaceholders } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStrOffset } from "@/lib/localDate";
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, {
+      allowedRoles: ["fee_manager", "admin"]
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const body = await request.json();
     const { rows } = body;
@@ -16,208 +21,213 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    // Load all students and colleges to do matching/creation in memory
-    const allStudents = await db.all("SELECT id, name, email, phone, college_id, register_number FROM students");
-    const colleges = await db.all("SELECT id, name FROM colleges");
-    
     let processedCount = 0;
     let skippedCount = 0;
     const skippedRows: any[] = [];
 
-    // Clean dates & inputs
     const now = new Date().toISOString();
-    const finalDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const finalDueDate = getInstitutionDateStrOffset(30);
 
-    // Read counter for receipts
-    const maxReceiptRow = await db.get("SELECT MAX(receipt_no) as maxR FROM fee_payments");
-    let receiptNum = 100001;
-    if (maxReceiptRow && maxReceiptRow.maxR) {
-      const match = maxReceiptRow.maxR.match(/\d+/);
-      if (match) {
-        receiptNum = parseInt(match[0]) + 1;
-      }
-    }
+    await db.transaction(async (tx) => {
+      // Load all students and colleges to do matching in memory
+      const allStudents = await tx.all("SELECT id, name, email, phone, college_id, register_number FROM students");
 
-    // Process rows sequentially
-    for (const row of rows) {
-      const rowEmail = (row.email || "").toLowerCase().trim();
-      const rowName = (row.studentName || "").toUpperCase().trim();
-      const rowPhone = String(row.phone || "").replace(/\D/g, "");
-      let rowReg = String(row.registerNumber || "").trim();
-      if (rowEmail && rowReg.toLowerCase() === rowEmail.split("@")[0].toLowerCase()) {
-        rowReg = "";
-      }
-
-      // Find student
-      let student = null;
-
-      // 1. Match by Registration Number if provided
-      if (rowReg) {
-        student = allStudents.find(s => s.register_number && String(s.register_number).trim() === rowReg);
-      }
-
-      // 2. Match by email
-      if (!student) {
-        student = allStudents.find(s => {
-          const dbEmail = (s.email || "").toLowerCase().trim();
-          if (rowEmail && dbEmail === rowEmail) return true;
-          if (rowEmail && rowEmail.includes('@') && dbEmail.startsWith(rowEmail.split('@')[0] + '@')) return true;
-          return false;
-        });
-      }
-
-      // 3. Fallback to name match
-      if (!student) {
-        student = allStudents.find(s => {
-          const dbName = (s.name || "").toUpperCase().trim();
-          return dbName === rowName;
-        });
-      }
-
-      // 4. Fallback to phone match
-      if (!student && rowPhone) {
-        student = allStudents.find(s => {
-          const dbPhone = String(s.phone || "").replace(/\D/g, "");
-          return dbPhone === rowPhone || (rowPhone.length >= 10 && dbPhone.endsWith(rowPhone.slice(-10)));
-        });
-      }
-
-      // If student is still not found, create new student and user account
-      if (!student) {
-        if (!row.studentName) {
-          skippedCount++;
-          skippedRows.push({ ...row, reason: "Missing student name in Excel row" });
-          continue;
-        }
-
-        try {
-          // 1. Resolve college_id from collegeName
-          const rowCollege = String(row.collegeName || "").toLowerCase().trim();
-          let collegeId = colleges[0]?.id || "Clg_sriAmaraavat";
-          const matchedCol = colleges.find(c => 
-            c.name.toLowerCase().includes(rowCollege) || 
-            rowCollege.includes(c.name.toLowerCase())
-          );
-          if (matchedCol) {
-            collegeId = matchedCol.id;
-          }
-
-          // 2. Generate safe unique email
-          let email = rowEmail;
-          if (!email || email.startsWith("@") || !email.includes("@")) {
-            const cleanName = rowName.toLowerCase().replace(/[^a-z0-9]/g, "");
-            email = `${cleanName}_${Math.floor(100 + Math.random() * 900)}@gmail.com`;
-          }
-
-          // Generate student ID
-          const newStudentId = `student_bulk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-          const dept = row.t && String(row.t).toLowerCase().includes("fintec") ? "B. Com(Fintech)" : (row.year || "B. Com");
-          const classGroup = `${dept} Year II`;
-
-          const defaultPassHash = hashPassword("123456");
-
-          // Insert into students table
-          await db.run(
-            `INSERT INTO students (id, name, email, classGroup, department, college_id, phone, register_number, password_hash, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [newStudentId, row.studentName, email, classGroup, dept, collegeId, row.phone || "", rowReg, defaultPassHash, now, now]
-          );
-
-          // Insert into users table
-          await db.run(
-            `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [newStudentId, email, defaultPassHash, "student", newStudentId, now, now]
-          );
-
-          // Assign to student reference for subsequent fee insertion
-          student = {
-            id: newStudentId,
-            name: row.studentName,
-            email: email,
-            phone: row.phone || "",
-            college_id: collegeId,
-            register_number: rowReg
-          };
-          
-          // Push to matched list in-memory to prevent duplicate creations within same run
-          allStudents.push(student);
-        } catch (e: any) {
-          skippedCount++;
-          skippedRows.push({ ...row, reason: "Database creation error: " + e.message });
-          continue;
+      // Read counter for receipts
+      // Quoted alias: Postgres folds bare identifiers to lowercase, so `as maxR` would
+      // arrive as `maxr` and the counter would silently restart at 100001 every import.
+      const maxReceiptRow = await tx.get('SELECT MAX(receipt_no) as "maxR" FROM fee_payments');
+      let receiptNum = 100001;
+      if (maxReceiptRow && maxReceiptRow.maxR) {
+        const match = String(maxReceiptRow.maxR).match(/\d+/);
+        if (match) {
+          receiptNum = parseInt(match[0]) + 1;
         }
       }
 
-      const amount = Number(row.amount) || 0; // College Fee Target
-      const fpcPaid = Number(row.paid) || 0; // FPC Fee Paid
-      const fpcPending = Number(row.pending) || 0; // FPC Fee Pending
-      const fpcAmount = fpcPaid + fpcPending; // FPC Fee Target
-      const feeStatus = fpcPaid >= fpcAmount ? 'paid' : fpcPaid > 0 ? 'partial' : 'unpaid';
+      // Pass 1: resolve every row to a student without touching the database.
+      // A per-row SELECT inside the transaction was ~2 round trips per accepted
+      // row (~400 for a 200-row sheet), which spent most of maxDuration before
+      // anything was written.
+      const resolved: Array<{
+        row: any;
+        student: any;
+        termName: string;
+        amount: number;
+        fpcPaid: number;
+        fpcAmount: number;
+        fpcPending: number;
+        feeStatus: string;
+      }> = [];
 
-      // Insert or Update student_fees
-      const feeId = `fee_${student.id}_bulk_${Date.now().toString(36)}`;
-      const rowTermName = row.semester 
-        ? (row.semester.toLowerCase().includes("tuition") ? row.semester : `${row.semester} Tuition Fee`) 
-        : "Semester I Tuition Fee";
-      
-      // Check if fee with same term already exists for student to update or insert
-      const existingFee = await db.get(
-        "SELECT id, amount, paid_amount, fpc_amount, fpc_pending FROM student_fees WHERE student_id = ? AND term_name = ?",
-        [student.id, rowTermName]
-      );
+      for (const row of rows) {
+        const rowEmail = (row.email || "").toLowerCase().trim();
+        const rowName = (row.studentName || "").toUpperCase().trim();
+        const rowPhone = String(row.phone || "").replace(/\D/g, "");
+        let rowReg = String(row.registerNumber || "").trim();
+        if (rowEmail && rowReg.toLowerCase() === rowEmail.split("@")[0].toLowerCase()) {
+          rowReg = "";
+        }
 
-      if (existingFee) {
-        // Update fee
-        await db.run(
-          "UPDATE student_fees SET amount = ?, paid_amount = ?, fpc_amount = ?, fpc_pending = ?, academic_year = ?, status = ?, pay_link = ?, updated_at = ? WHERE id = ?",
-          [amount, fpcPaid, fpcAmount, fpcPending, row.year || null, feeStatus, row.payLink || null, now, existingFee.id]
+        // Find student
+        let student = null;
+
+        // 1. Match by Registration Number if provided
+        if (rowReg) {
+          student = allStudents.find(s => s.register_number && String(s.register_number).trim() === rowReg);
+        }
+
+        // 2. Match by email
+        if (!student) {
+          student = allStudents.find(s => {
+            const dbEmail = (s.email || "").toLowerCase().trim();
+            if (rowEmail && dbEmail === rowEmail) return true;
+            if (rowEmail && rowEmail.includes('@') && dbEmail.startsWith(rowEmail.split('@')[0] + '@')) return true;
+            return false;
+          });
+        }
+
+        // 3. Fallback to name match
+        if (!student) {
+          student = allStudents.find(s => {
+            const dbName = (s.name || "").toUpperCase().trim();
+            return dbName === rowName;
+          });
+        }
+
+        // 4. Fallback to phone match
+        if (!student && rowPhone) {
+          student = allStudents.find(s => {
+            const dbPhone = String(s.phone || "").replace(/\D/g, "");
+            return dbPhone === rowPhone || (rowPhone.length >= 10 && dbPhone.endsWith(rowPhone.slice(-10)));
+          });
+        }
+
+        // Imports must never mint login accounts from a spreadsheet — unknown rows are reported back.
+        if (!student) {
+          skippedCount++;
+          skippedRows.push({
+            ...row,
+            reason: row.studentName
+              ? `No matching student record for "${row.studentName}". Add the student first, then re-import.`
+              : "Missing student name and no matching student record."
+          });
+          continue;
+        }
+
+        const amount = Number(row.amount) || 0; // College Fee Target
+        const fpcPaid = Number(row.paid) || 0; // FPC Fee Paid
+        const fpcPending = Number(row.pending) || 0; // FPC Fee Pending
+        const fpcAmount = fpcPaid + fpcPending; // FPC Fee Target
+        const feeStatus = fpcPaid >= fpcAmount ? 'paid' : fpcPaid > 0 ? 'partial' : 'unpaid';
+        const rowTermName = row.semester
+          ? (row.semester.toLowerCase().includes("tuition") ? row.semester : `${row.semester} Tuition Fee`)
+          : "Semester I Tuition Fee";
+
+        resolved.push({ row, student, termName: rowTermName, amount, fpcPaid, fpcAmount, fpcPending, feeStatus });
+      }
+
+      if (resolved.length === 0) return;
+
+      // Pass 2: prefetch the fee rows this upload can update.
+      type FeeKey = string;
+      const feeByKey = new Map<FeeKey, any>();
+      const studentIds = Array.from(new Set(resolved.map(r => r.student.id)));
+      for (const chunk of chunkList(studentIds, 400)) {
+        const fees = await tx.all(
+          `SELECT id, student_id, term_name, paid_amount FROM student_fees WHERE student_id IN (${inPlaceholders(chunk.length)})`,
+          chunk
         );
+        for (const f of fees) feeByKey.set(`${f.student_id}|${f.term_name}`, f);
+      }
 
-        // If new payments are specified, record payment transaction
-        if (fpcPaid > (existingFee.paid_amount || 0)) {
-          const extraPaid = fpcPaid - (existingFee.paid_amount || 0);
-          const payId = `pay_${student.id}_bulk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,5)}`;
-          const receiptNo = `RCPT-${receiptNum++}`;
-          const refNo = `REF-BULK-${Date.now().toString(36).toUpperCase()}`;
+      const feeInserts: any[][] = [];
+      const feeUpdates = new Map<string, any[]>();
+      const paymentInserts: any[][] = [];
 
-          await db.run(
-            `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [payId, existingFee.id, student.id, student.college_id, extraPaid, "online", refNo, receiptNo, now]
-          );
+      for (const r of resolved) {
+        const { row, student, termName, amount, fpcPaid, fpcAmount, fpcPending, feeStatus } = r;
+        const key = `${student.id}|${termName}`;
+        const existing = feeByKey.get(key);
+
+        if (existing) {
+          const previousPaid = Number(existing.paid_amount) || 0;
+          // If new payments are specified, record payment transaction
+          if (fpcPaid > previousPaid) {
+            const extraPaid = fpcPaid - previousPaid;
+            paymentInserts.push([
+              generateId(`pay_${student.id}_bulk`), existing.id, student.id, student.college_id,
+              extraPaid, "online", `REF-BULK-${generateId("r")}`, `RCPT-${receiptNum++}`, now
+            ]);
+          }
+          // One student can appear twice on one sheet; the map entry carries the
+          // merged state forward so the second row does not re-book the same money.
+          existing.paid_amount = fpcPaid;
+          feeUpdates.set(existing.id, [
+            existing.id, amount, fpcPaid, fpcAmount, fpcPending,
+            row.year || null, feeStatus, row.payLink || null, now
+          ]);
+        } else {
+          // One student can appear on several rows of the same upload; a clock-only
+          // suffix gave them all the same primary key and rolled the whole batch back.
+          const feeId = `fee_${student.id}_${generateId("bulk")}`;
+          feeInserts.push([
+            feeId, student.id, student.college_id, termName, amount, fpcPaid, fpcAmount,
+            fpcPending, row.year || null, finalDueDate, feeStatus, row.payLink || null, now, now
+          ]);
+          if (fpcPaid > 0) {
+            paymentInserts.push([
+              generateId(`pay_${student.id}_bulk`), feeId, student.id, student.college_id,
+              fpcPaid, "online", `REF-BULK-${generateId("r")}`, `RCPT-${receiptNum++}`, now
+            ]);
+          }
+          feeByKey.set(key, { id: feeId, paid_amount: fpcPaid });
         }
-      } else {
-        // Insert new fee
-        await db.run(
+
+        processedCount++;
+      }
+
+      // Rows are independent statements batched into one round trip per chunk.
+      for (const chunk of chunkList(feeInserts, 100)) {
+        const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+        await tx.run(
           `INSERT INTO student_fees (id, student_id, college_id, term_name, amount, paid_amount, fpc_amount, fpc_pending, academic_year, due_date, status, pay_link, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [feeId, student.id, student.college_id, rowTermName, amount, fpcPaid, fpcAmount, fpcPending, row.year || null, finalDueDate, feeStatus, row.payLink || null, now, now]
+           VALUES ${placeholders}`,
+          chunk.flat()
         );
-
-        // If paid, insert payment record
-        if (fpcPaid > 0) {
-          const payId = `pay_${student.id}_bulk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,5)}`;
-          const receiptNo = `RCPT-${receiptNum++}`;
-          const refNo = `REF-BULK-${Date.now().toString(36).toUpperCase()}`;
-
-          await db.run(
-            `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [payId, feeId, student.id, student.college_id, fpcPaid, "online", refNo, receiptNo, now]
-          );
-        }
       }
 
-      processedCount++;
-    }
+      const updates = Array.from(feeUpdates.values());
+      for (const chunk of chunkList(updates, 100)) {
+        const values = chunk
+          .map(() => "(?::varchar, ?::numeric, ?::numeric, ?::numeric, ?::numeric, ?::varchar, ?::varchar, ?::text, ?::timestamp)")
+          .join(", ");
+        await tx.run(
+          `UPDATE student_fees AS f
+           SET amount = v.amount, paid_amount = v.paid_amount, fpc_amount = v.fpc_amount,
+               fpc_pending = v.fpc_pending, academic_year = v.academic_year, status = v.status,
+               pay_link = v.pay_link, updated_at = v.updated_at
+           FROM (VALUES ${values}) AS v(id, amount, paid_amount, fpc_amount, fpc_pending, academic_year, status, pay_link, updated_at)
+           WHERE f.id = v.id`,
+          chunk.flat()
+        );
+      }
+
+      for (const chunk of chunkList(paymentInserts, 200)) {
+        const placeholders = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+        await tx.run(
+          `INSERT INTO fee_payments (id, fee_id, student_id, college_id, amount, payment_method, reference_no, receipt_no, payment_date)
+           VALUES ${placeholders}`,
+          chunk.flat()
+        );
+      }
+    });
 
     return NextResponse.json({
       success: true,
       processedCount,
       skippedCount,
       skippedRows,
-      message: `Successfully processed ${processedCount} records. Skipped ${skippedCount} unknown students.`
+      message: `Successfully processed ${processedCount} records. Skipped ${skippedCount} rows (unknown or invalid students).`
     });
   } catch (error: any) {
     console.error("POST /api/fees/bulk error:", error);

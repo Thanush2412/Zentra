@@ -4,9 +4,11 @@
  * Provides:
  * 1. Real Google Calendar Event creation via Google Apps Script Webhook
  * 2. 1-Click "Add to Google Calendar" URL generator (pre-populated with title, timings, Google Meet link & attendee emails)
- * 3. Standard Google Meet URL generator (3-4-3 lowercase alphabetic room codes, e.g. meet.google.com/abc-defg-hij)
- * 4. RFC-5545 compliant iCalendar (.ics) event string generator
+ * 3. RFC-5545 compliant iCalendar (.ics) event string generator
  */
+
+import { getInstitutionDateStr } from "@/lib/localDate";
+import { fetchWithTimeout } from "@/lib/net";
 
 export interface GoogleCalendarEventOptions {
   title: string;
@@ -20,33 +22,18 @@ export interface GoogleCalendarEventOptions {
 }
 
 export interface GoogleCalendarResult {
-  gmeet_link: string;
+  gmeet_link: string | null;
   gcal_link: string;
-  meet_id: string;
+  meet_id: string | null;
   ics_content: string;
   event_created?: boolean;
-}
-
-/**
- * Generate a standard Google Meet room code (strictly 3-4-3 lowercase letters)
- */
-export function generateGoogleMeetCode(seed?: string): string {
-  const letters = "abcdefghijklmnopqrstuvwxyz";
-  const getChunk = (len: number) => {
-    let res = "";
-    for (let i = 0; i < len; i++) {
-      res += letters[Math.floor(Math.random() * letters.length)];
-    }
-    return res;
-  };
-  return `${getChunk(3)}-${getChunk(4)}-${getChunk(3)}`;
 }
 
 /**
  * Parse human time (e.g. "08:20 AM" or "8.20 AM") on targetDate (YYYY-MM-DD) into ISO string for Google Calendar
  */
 export function formatGCalDateTime(dateStr: string, timeStr?: string): { startISO: string; endISO: string } {
-  const cleanDate = dateStr && dateStr.includes("-") ? dateStr : new Date().toISOString().slice(0, 10);
+  const cleanDate = dateStr && dateStr.includes("-") ? dateStr : getInstitutionDateStr();
   
   const parseHourMin = (t?: string, defaultHour = 9, defaultMin = 0) => {
     if (!t) return { hour: defaultHour, minute: defaultMin };
@@ -93,31 +80,30 @@ export async function createGoogleCalendarEvent(options: GoogleCalendarEventOpti
     interviewId = ""
   } = options;
 
-  // 1. Resolve standard Google Meet link (3-4-3 lowercase letters)
+  // 1. Only carry forward a link somebody actually created. A made-up 3-4-3 code opens
+  //    Google's "meeting link is not valid" page, so it must never be minted or persisted.
   let gmeetLink = existingMeetLink && existingMeetLink.includes("meet.google.com")
     ? existingMeetLink
-    : `https://meet.google.com/${generateGoogleMeetCode()}`;
+    : null;
 
   const { startISO, endISO } = formatGCalDateTime(targetDate, startTime);
 
-  // 2. Generate 1-Click "Add to Google Calendar" Template Link
-  const gcalDetails = `${description}\n\nJoin Google Meet: ${gmeetLink}`;
-  const gcalLink = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startISO}/${endISO}&details=${encodeURIComponent(gcalDetails)}&location=${encodeURIComponent(gmeetLink)}&add=${encodeURIComponent(attendees.filter(Boolean).join(","))}`;
-
-  // 3. Try to call Google Apps Script Webhook to create real Google Calendar Event if configured
+  // 2. Try to call Google Apps Script Webhook to create real Google Calendar Event if configured
   let eventCreated = false;
-  let effectiveGcalLink = gcalLink;
+  let effectiveGcalLink: string | null = null;
   const gasUrl = process.env.NEXT_PUBLIC_GAS_MAIL_URL || "";
   if (gasUrl) {
     try {
-      const response = await fetch(gasUrl, {
+      // Deadlined: this call sits on the accept/final-confirm write path, so a stalled
+      // Apps Script used to freeze the interview confirmation instead of degrading.
+      const response = await fetchWithTimeout(gasUrl, {
         method: "POST",
         redirect: "follow",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: "create_calendar_event",
           summary: title,
-          description: gcalDetails,
+          description: buildEventDescription(description, gmeetLink),
           start_date: targetDate,
           start_time: startTime,
           end_time: endTime,
@@ -144,11 +130,19 @@ export async function createGoogleCalendarEvent(options: GoogleCalendarEventOpti
     }
   }
 
+  // 3. Generate 1-Click "Add to Google Calendar" Template Link
+  const gcalDetails = buildEventDescription(description, gmeetLink);
+  const locationParam = gmeetLink ? `&location=${encodeURIComponent(gmeetLink)}` : "";
+  const gcalLink = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startISO}/${endISO}&details=${encodeURIComponent(gcalDetails)}${locationParam}&add=${encodeURIComponent(attendees.filter(Boolean).join(","))}`;
+
   // 4. Generate RFC-5545 iCalendar content
+  const conferenceLines = gmeetLink
+    ? [`LOCATION:${gmeetLink}`, `URL:${gmeetLink}`, `X-GOOGLE-CONFERENCE:${gmeetLink}`]
+    : [];
   const icsContent = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//FACE Prep//Zentra Interview System//EN",
+    "PRODID:-//FACE Prep//E-Campus Interview System//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:REQUEST",
     "BEGIN:VEVENT",
@@ -158,15 +152,13 @@ export async function createGoogleCalendarEvent(options: GoogleCalendarEventOpti
     `DTEND:${endISO}`,
     `SUMMARY:${title}`,
     `DESCRIPTION:${gcalDetails.replace(/\n/g, "\\n")}`,
-    `LOCATION:${gmeetLink}`,
-    `URL:${gmeetLink}`,
-    `X-GOOGLE-CONFERENCE:${gmeetLink}`,
+    ...conferenceLines,
     "STATUS:CONFIRMED",
     "END:VEVENT",
     "END:VCALENDAR"
   ].join("\r\n");
 
-  const meetId = gmeetLink.replace("https://meet.google.com/", "");
+  const meetId = gmeetLink ? gmeetLink.replace("https://meet.google.com/", "") : null;
 
   return {
     gmeet_link: gmeetLink,
@@ -175,6 +167,12 @@ export async function createGoogleCalendarEvent(options: GoogleCalendarEventOpti
     ics_content: icsContent,
     event_created: eventCreated
   };
+}
+
+function buildEventDescription(description: string, gmeetLink: string | null): string {
+  return gmeetLink
+    ? `${description}\n\nJoin Google Meet: ${gmeetLink}`
+    : `${description}\n\nGoogle Meet link will be shared by your evaluator once the session is scheduled.`;
 }
 
 /**
@@ -188,14 +186,15 @@ export function generateStudentGCalUrl(options: {
   targetDate: string;
   slotStartTime: string;
   slotEndTime: string;
-  gmeetLink: string;
+  gmeetLink?: string | null;
   mentorName?: string;
 }): string {
   const { studentName, studentEmail, subject, targetDate, slotStartTime, slotEndTime, gmeetLink, mentorName } = options;
   const { startISO, endISO } = formatGCalDateTime(targetDate, slotStartTime);
   const title = `Technical Interview: ${subject} - ${studentName}`;
-  const description = `1-on-1 Structured Evaluation Session\nSubject: ${subject}\nCandidate: ${studentName}\nEvaluator: ${mentorName || 'Faculty Panel'}\nSlot Time: ${slotStartTime} - ${slotEndTime}\n\nJoin Google Meet: ${gmeetLink}`;
+  const description = `1-on-1 Structured Evaluation Session\nSubject: ${subject}\nCandidate: ${studentName}\nEvaluator: ${mentorName || 'Faculty Panel'}\nSlot Time: ${slotStartTime} - ${slotEndTime}\n\n${buildEventDescription("", gmeetLink ?? null).trim()}`;
   const attendeesList = [studentEmail].filter(Boolean).join(",");
-  
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startISO}/${endISO}&details=${encodeURIComponent(description)}&location=${encodeURIComponent(gmeetLink)}${attendeesList ? `&add=${encodeURIComponent(attendeesList)}` : ""}`;
+  const locationParam = gmeetLink ? `&location=${encodeURIComponent(gmeetLink)}` : "";
+
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startISO}/${endISO}&details=${encodeURIComponent(description)}${locationParam}${attendeesList ? `&add=${encodeURIComponent(attendeesList)}` : ""}`;
 }

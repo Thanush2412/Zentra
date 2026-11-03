@@ -1,14 +1,46 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
 import { checkMentorAvailability, checkSmeAvailability } from "@/lib/availability";
+import { generateId } from "@/lib/id";
+import { sendMailAsync } from "@/lib/mailAsync";
+import { renderEmailShell, renderSwapOfferEmail, BRAND } from "@/lib/mail";
 
-export async function GET() {
+const DEMO_SWAP_ROLES: Role[] = ["mentor", "sme", "cm", "kam", "admin", "L and D"];
+
+export async function GET(request: Request) {
+  const { auth, errorResponse } = await requireAuth(request, {
+    allowedRoles: DEMO_SWAP_ROLES,
+    checkCsrf: false
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
+    const role = auth?.user?.role;
+    const selfIds = Array.from(
+      new Set([auth?.user?.reference_id, auth?.user?.id].filter(Boolean) as string[])
+    );
+
+    // demo_swap_requests carries no college_id, so the L&D/CM/KAM/admin queue stays global.
+    // Mentors and SMEs only ever see proposals that name them — previously they read every
+    // swap request on the platform, including other campuses' reasons and remarks.
+    if (role === "mentor" || role === "sme") {
+      if (selfIds.length === 0) {
+        return NextResponse.json({ success: true, requests: [] });
+      }
+      const ph = selfIds.map(() => "?").join(",");
+      const [ownerCol, proposedCol] =
+        role === "mentor" ? ["mentorId", "proposedMentorId"] : ["smeId", "proposedSmeId"];
+      const requests = await db.all(
+        `SELECT * FROM demo_swap_requests WHERE ${ownerCol} IN (${ph}) OR ${proposedCol} IN (${ph}) ORDER BY created_at DESC`,
+        [...selfIds, ...selfIds]
+      );
+      return NextResponse.json({ success: true, requests });
+    }
+
     const requests = await db.all("SELECT * FROM demo_swap_requests ORDER BY created_at DESC");
     return NextResponse.json({ success: true, requests });
   } catch (error: any) {
@@ -18,6 +50,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: DEMO_SWAP_ROLES });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const body = await request.json();
@@ -49,52 +84,43 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Missing required fields for swap request" }, { status: 400 });
       }
 
-      // Check Dual Availability: Proposed Mentor
-      if (proposedMentorId) {
-        const targetDate = proposedDateStr || dateStr;
-        const targetTime = proposedTimeSlot || timeSlot;
-        const mentorAvail = await checkMentorAvailability(db, {
-          mentorId: proposedMentorId,
-          dateStr: targetDate,
-          timeSlot: targetTime
-        });
+      // The dual availability gates and the pending-duplicate probe all key off the
+      // body and share no inputs, so they run together instead of one after another.
+      // The checks still report in the same order: mentor, SME, duplicate.
+      const targetDate = proposedDateStr || dateStr;
+      const targetTime = proposedTimeSlot || timeSlot;
+      const [mentorAvail, smeAvail, existingPending] = await Promise.all([
+        proposedMentorId
+          ? checkMentorAvailability(db, { mentorId: proposedMentorId, dateStr: targetDate, timeSlot: targetTime })
+          : Promise.resolve(null),
+        proposedSmeId
+          ? checkSmeAvailability(db, { smeId: proposedSmeId, dateStr: targetDate, timeSlot: targetTime })
+          : Promise.resolve(null),
+        db.get(
+          "SELECT id FROM demo_swap_requests WHERE sessionId = ? AND status IN ('pending', 'pending_peer', 'pending_sme')",
+          [sessionId]
+        ),
+      ]);
 
-        if (!mentorAvail.available) {
-          return NextResponse.json({
-            success: false,
-            message: `Proposed mentor ${proposedMentorName || proposedMentorId} is unavailable: ${mentorAvail.reason}`
-          }, { status: 400 });
-        }
+      if (mentorAvail && !mentorAvail.available) {
+        return NextResponse.json({
+          success: false,
+          message: `Proposed mentor ${proposedMentorName || proposedMentorId} is unavailable: ${mentorAvail.reason}`
+        }, { status: 400 });
       }
 
-      // Check Dual Availability: Proposed SME
-      if (proposedSmeId) {
-        const targetDate = proposedDateStr || dateStr;
-        const targetTime = proposedTimeSlot || timeSlot;
-        const smeAvail = await checkSmeAvailability(db, {
-          smeId: proposedSmeId,
-          dateStr: targetDate,
-          timeSlot: targetTime
-        });
-
-        if (!smeAvail.available) {
-          return NextResponse.json({
-            success: false,
-            message: `Proposed SME ${proposedSmeName || proposedSmeId} is unavailable: ${smeAvail.reason}`
-          }, { status: 400 });
-        }
+      if (smeAvail && !smeAvail.available) {
+        return NextResponse.json({
+          success: false,
+          message: `Proposed SME ${proposedSmeName || proposedSmeId} is unavailable: ${smeAvail.reason}`
+        }, { status: 400 });
       }
 
-      // Check if there is already a pending swap request for this session
-      const existingPending = await db.get(
-        "SELECT id FROM demo_swap_requests WHERE sessionId = ? AND status IN ('pending', 'pending_peer', 'pending_sme')",
-        [sessionId]
-      );
       if (existingPending) {
         return NextResponse.json({ success: false, message: "A swap request for this L&D session is already pending review." });
       }
 
-      const reqId = "dsr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+      const reqId = generateId("dsr");
       const createdAt = new Date().toISOString();
       const initialStatus = swapType === "internal" ? "pending_peer" : "pending";
 
@@ -111,7 +137,7 @@ export async function POST(request: Request) {
       );
 
       // Audit Log
-      const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+      const auditId = generateId("audit");
       const desc = swapType === "internal"
         ? `Internal swap proposal sent by Mentor ${mentorName} proposing replacement peer ${proposedMentorName}`
         : `L&D swap requested by SME ${smeName} for mentor ${mentorName} (Reason: ${reason})`;
@@ -127,6 +153,67 @@ export async function POST(request: Request) {
           createdAt
         ]
       );
+
+      // Notify the proposed replacement mentor / SME by email
+      try {
+        if (swapType === "internal" && proposedMentorId) {
+          const proposedMentor = await db.get(
+            "SELECT email, name FROM mentors WHERE id = ? LIMIT 1",
+            [proposedMentorId]
+          );
+          if (proposedMentor?.email) {
+            const swapDate = proposedDateStr || dateStr;
+            const swapTime = proposedTimeSlot || timeSlot;
+            const [dY, dM, dD] = swapDate.split("-").map(Number);
+            const dateFormatted = new Date(dY, dM - 1, dD, 12, 0, 0).toLocaleDateString("en-IN", {
+              weekday: "long", day: "2-digit", month: "short", year: "numeric"
+            });
+            sendMailAsync({
+              to: proposedMentor.email,
+              subject: `${BRAND.emailPrefix} Demo Swap Proposal — ${subject}`,
+              htmlBody: renderSwapOfferEmail({
+                requestorName:    mentorName,
+                targetMentorName: proposedMentor.name || proposedMentorName || "Mentor",
+                dateStr:          dateFormatted,
+                time:             swapTime,
+                course:           subject,
+                classGroup:       stream || "General",
+              }),
+              context: "demo-swap-request",
+            });
+          }
+        } else if (swapType !== "internal" && proposedSmeId) {
+          // External swap: notify proposed SME replacement
+          const proposedSme = await db.get(
+            "SELECT email, name FROM sme_users WHERE id = ? LIMIT 1",
+            [proposedSmeId]
+          );
+          if (proposedSme?.email) {
+            sendMailAsync({
+              to: proposedSme.email,
+              subject: `${BRAND.emailPrefix} L&D Swap Proposal — ${subject}`,
+              htmlBody: renderEmailShell({
+                title: "L&D Session Swap Proposed",
+                badgeText: "SWAP PROPOSAL",
+                badgeColor: "amber",
+                description: `SME <strong>${smeName}</strong> has proposed you as a replacement evaluator for an L&D session.`,
+                details: [
+                  { label: "Subject",         value: subject,                          highlight: true },
+                  { label: "Original Date",   value: dateStr },
+                  { label: "Proposed Date",   value: proposedDateStr || dateStr },
+                  { label: "Time Slot",        value: proposedTimeSlot || timeSlot },
+                  { label: "Stream",           value: stream },
+                  { label: "Requested By",    value: smeName },
+                  { label: "Reason",           value: reason },
+                ],
+                ctaText: "View L&D Dashboard →",
+                ctaUrl: `${BRAND.portalUrl}/sme/demo_list`,
+              }),
+              context: "demo-swap-sme-proposal",
+            });
+          }
+        }
+      } catch (_) {}
 
       return NextResponse.json({ success: true, message: "Swap request submitted successfully!" });
 
@@ -149,10 +236,24 @@ export async function POST(request: Request) {
       const resolvedAt = new Date().toISOString();
 
       if (status === "rejected") {
+        // The session row and the requestor's address both key off the request, so
+        // they leave as one group. Only the session slice feeds a write; the address
+        // slice only feeds mail, so a mail read failure must not block the rejection.
+        const rejectFailures: QueryFailure[] = [];
+        const [sessionRows, requestorRows] = await db.multiQuery([
+          { sql: "SELECT * FROM demo_sessions WHERE id = ?", params: [req.sessionId] },
+          req.swapType === "internal"
+            ? { sql: "SELECT email FROM mentors WHERE id = ? LIMIT 1", params: [req.mentorId] }
+            : { sql: "SELECT email FROM sme_users WHERE id = ? LIMIT 1", params: [req.smeId] },
+        ], rejectFailures);
+        if (rejectFailures.some(f => f.sql.includes("FROM demo_sessions"))) {
+          return NextResponse.json({ success: false, message: "Could not verify the L&D session before rejecting. Please try again." }, { status: 500 });
+        }
+        const session = sessionRows[0];
+        const requestorEmail = requestorRows[0]?.email || null;
+
         await db.run("UPDATE demo_swap_requests SET status = 'rejected' WHERE id = ?", [requestId]);
 
-        // Keep the demo session in 'reallocation_required' state so L&D/system can find another valid SME or slot
-        const session = await db.get("SELECT * FROM demo_sessions WHERE id = ?", [req.sessionId]);
         if (session && session.status !== "completed") {
           await db.run(
             "UPDATE demo_sessions SET status = 'reallocation_required' WHERE id = ?",
@@ -160,13 +261,37 @@ export async function POST(request: Request) {
           );
         }
 
-        // Audit Log
-        const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+        const auditId = generateId("audit");
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
            VALUES (?, 'swap_resolve', ?, 'System', 'L&D', ?)`,
           [auditId, `L&D reallocation request ${requestId} rejected by SME. Session remains in reallocation_required.`, resolvedAt]
         );
+
+        // Notify the original requestor (mentor or SME who raised the swap)
+        try {
+          if (requestorEmail) {
+            sendMailAsync({
+              to: requestorEmail,
+              subject: `${BRAND.emailPrefix} Demo Swap Declined — ${req.subject}`,
+              htmlBody: renderEmailShell({
+                title: "Demo Swap Request Declined",
+                badgeText: "SWAP DECLINED",
+                badgeColor: "rose",
+                description: `Your swap proposal for the L&D session could not be approved at this time. The session has been placed back in reallocation queue.`,
+                details: [
+                  { label: "Subject",         value: req.subject,                     highlight: true },
+                  { label: "Original Date",   value: req.dateStr },
+                  { label: "Proposed Mentor", value: req.proposedMentorName || req.proposedSmeName || "N/A" },
+                  { label: "Status",          value: "Declined — reallocation required", highlight: true },
+                ],
+                ctaText: "View Demo Sessions →",
+                ctaUrl: `${BRAND.portalUrl}/mentor/demo_evaluations`,
+              }),
+              context: "demo-swap-rejected",
+            });
+          }
+        } catch (_) {}
 
         return NextResponse.json({ success: true, message: "Reallocation request rejected. Session remains in reallocation_required." });
       }
@@ -176,7 +301,7 @@ export async function POST(request: Request) {
         await db.run("UPDATE demo_swap_requests SET status = 'pending_sme' WHERE id = ?", [requestId]);
 
         // Audit Log
-        const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+        const auditId = generateId("audit");
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
            VALUES (?, 'swap_resolve', ?, ?, 'Mentor', ?)`,
@@ -187,7 +312,6 @@ export async function POST(request: Request) {
       }
 
       if (status === "approved") {
-        // Update the main demo session with proposed values and set status to 'confirmed'
         await db.run(
           `UPDATE demo_sessions 
            SET mentorId = COALESCE(?, mentorId),
@@ -209,11 +333,9 @@ export async function POST(request: Request) {
           ]
         );
 
-        // Update the request status
         await db.run("UPDATE demo_swap_requests SET status = 'approved' WHERE id = ?", [requestId]);
 
-        // Audit Log
-        const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+        const auditId = generateId("audit");
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
            VALUES (?, 'swap_resolve', ?, 'System', 'L&D', ?)`,
@@ -223,6 +345,50 @@ export async function POST(request: Request) {
             resolvedAt
           ]
         );
+
+        // Notify BOTH parties — original mentor + proposed replacement
+        try {
+          const finalDate  = req.proposedDateStr  || req.dateStr;
+          const finalTime  = req.proposedTimeSlot || req.timeSlot;
+          const finalMentor = req.proposedMentorName || req.mentorName;
+          const finalSme    = req.proposedSmeName    || req.smeName;
+
+          const [origMentorRow, newMentorRow] = await Promise.all([
+            db.get("SELECT email FROM mentors WHERE id = ? LIMIT 1",   [req.mentorId]),
+            req.proposedMentorId
+              ? db.get("SELECT email FROM mentors WHERE id = ? LIMIT 1", [req.proposedMentorId])
+              : Promise.resolve(null),
+          ]);
+
+          const emailTargets = [origMentorRow?.email, newMentorRow?.email]
+            .filter((e): e is string => Boolean(e) && e.includes("@"));
+
+          const uniqueTargets = Array.from(new Set(emailTargets));
+
+          if (uniqueTargets.length > 0) {
+            sendMailAsync({
+              to: uniqueTargets.join(","),
+              subject: `${BRAND.emailPrefix} Demo Swap Approved — ${req.subject} on ${finalDate}`,
+              htmlBody: renderEmailShell({
+                title: "Demo Swap Approved — Session Confirmed",
+                badgeText: "SWAP APPROVED",
+                badgeColor: "emerald",
+                description: `The L&D session swap has been approved. The session is now confirmed with the updated details below.`,
+                details: [
+                  { label: "Subject",        value: req.subject,    highlight: true },
+                  { label: "Confirmed Date", value: finalDate,      highlight: true },
+                  { label: "Time Slot",      value: finalTime },
+                  { label: "Mentor",         value: finalMentor },
+                  { label: "SME Evaluator",  value: finalSme },
+                  { label: "Status",         value: "Confirmed" },
+                ],
+                ctaText: "View L&D Session →",
+                ctaUrl: `${BRAND.portalUrl}/mentor/demo_evaluations`,
+              }),
+              context: "demo-swap-approved",
+            });
+          }
+        } catch (_) {}
 
         return NextResponse.json({ success: true, message: "Swap request approved and L&D session confirmed!" });
       }

@@ -18,6 +18,8 @@ import {
   Sparkles
 } from "lucide-react";
 import { formatTimeLabel, isSubjectNameMatch } from "@/lib/utils";
+import { Dialog } from "@/components/ui/dialog";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 
 interface MentorProfileModalProps {
   mentor: Mentor | null;
@@ -106,9 +108,18 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
     if (cg.includes("sem i") || cg.includes("sem 1") || cg.includes("semester i") || cg.includes("semester 1")) return "1st Year";
     
     // 2. Check by cohort year in parentheses (fallback)
-    if (cg.includes("2026-2029")) return "1st Year";
-    if (cg.includes("2025-2028")) return "2nd Year";
-    if (cg.includes("2024-2027")) return "3rd Year";
+    const batchMatch = cg.match(/(20\d{2})\s*[-–]\s*(20\d{2})/);
+    if (batchMatch) {
+      const batchStart = parseInt(batchMatch[1], 10);
+      const batchEnd = parseInt(batchMatch[2], 10);
+      const now = new Date();
+      // Academic year starts in June; Jan–May still belongs to the previous academic year.
+      const academicYear = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+      const yearLabels = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+      const maxYear = Math.max(1, batchEnd - batchStart);
+      const yearOfStudy = academicYear - batchStart + 1;
+      return yearLabels[Math.min(Math.max(yearOfStudy, 1), maxYear) - 1] ?? "";
+    }
     
     // 3. Fallback to explicit year strings
     if (cg.includes("3rd year") || cg.includes("3rdyr") || cg.includes("3rd yr") || cg.includes("3nd year") || cg.includes("3ndyr")) return "3rd Year";
@@ -192,7 +203,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
     : [];
 
   const classesArray = mentor.classes
-    ? mentor.classes.split("\n").map(c => c.trim()).filter(Boolean)
+    ? mentor.classes.split(/\n|,|;/).map(c => c.trim()).filter(Boolean)
     : [];
 
   // Calculate target and covered minutes per subject dynamically
@@ -243,19 +254,24 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
 
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div 
-        className="relative bg-white w-full max-w-4xl rounded-xl shadow-xl overflow-y-auto md:overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-auto md:max-h-[90vh] border border-gray-150 animate-in fade-in zoom-in-95 duration-200 scroll-touch"
-        onClick={(e) => e.stopPropagation()}
+    <Dialog
+      open={isOpen}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      ariaLabel={`Mentor profile — ${mentor.name}`}
+      overlayClassName="bg-slate-900/40 backdrop-blur-xs p-2 sm:p-4"
+      panelClassName="max-w-4xl h-[90vh] max-h-[90vh] md:h-auto md:max-h-[90vh] p-0 space-y-0 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row border-gray-150 shadow-xl scroll-touch"
+    >
+      {/* Close Button */}
+      <button
+        onClick={onClose}
+        aria-label="Close profile"
+        className="absolute right-4 top-4 p-2 bg-white/80 hover:bg-red-50 hover:text-red-550 border border-gray-200/60 rounded-full transition-all text-gray-500 cursor-pointer z-10"
+        title="Close profile"
       >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 p-2 bg-white/80 hover:bg-red-50 hover:text-red-550 border border-gray-200/60 rounded-full transition-all text-gray-500 cursor-pointer z-10"
-          title="Close profile"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <X className="h-4 w-4" />
+      </button>
 
         {/* Left Panel: Profile Detail Overview */}
         <div className="w-full md:w-[32%] bg-slate-50 border-r border-slate-200/80 p-6 flex flex-col gap-5 select-none shrink-0">
@@ -330,7 +346,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                 <div className="flex-1 px-2 py-2 text-center">
                   <span className="flex items-center justify-center gap-1 mb-0.5">
                     <span className="inline-block w-2 h-2 rounded-full bg-teal-400"></span>
-                    <span className="text-[9px] font-extrabold text-slate-500 uppercase">Extra Cover</span>
+                    <span className="text-[9px] font-extrabold text-slate-500 uppercase">Extra Cover (this week)</span>
                   </span>
                   <span className="text-sm font-black text-teal-600">{extraMinutes > 0 ? `+${toHrs(extraMinutes)} hrs` : "—"}</span>
                   <span className="block text-[8px] text-slate-400">{coveredSlots.length} covered</span>
@@ -387,7 +403,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
               }`}
             >
               <History className="h-4 w-4" />
-              Handover Logs ({sentHandovers.length + coveredHandovers.length})
+              Handover Logs (All-time: {sentHandovers.length + coveredHandovers.length})
             </button>
           </div>
 
@@ -497,21 +513,21 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                 </div>
 
                 <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
-                  <table className="w-full border-collapse text-left text-xs min-w-[650px] table-fixed">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200">
-                        <th className="p-3 font-bold text-slate-500 uppercase text-[10px] w-[18%]">Hour / Time</th>
+                  <Table className="w-full border-collapse text-left text-xs min-w-[650px] table-fixed">
+                    <TableHeader>
+                      <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200">
+                        <TableHead className="p-3 font-bold text-slate-500 uppercase text-[10px] w-[18%]">Hour / Time</TableHead>
                         {daysOfWeek.map((day) => (
-                          <th key={day} className="p-3 font-bold text-slate-705 w-[16.4%]">{day}</th>
+                          <TableHead key={day} className="p-3 font-bold text-slate-705 w-[16.4%]">{day}</TableHead>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150 bg-white">
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-slate-150 bg-white">
                       {mentorTimeSlots.map((time) => (
-                        <tr key={time} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-3 font-bold text-slate-700 border-r border-slate-100 bg-slate-50/5">
+                        <TableRow key={time} className="hover:bg-slate-50/30 transition-colors">
+                          <TableCell className="p-3 font-bold text-slate-700 border-r border-slate-100 bg-slate-50/5">
                             {formatTimeLabel(time)}
-                          </td>
+                          </TableCell>
                           {daysOfWeek.map((day) => {
                             // 1. Check if the mentor owns this slot
                             const ownSlot = mentorSlots.find(
@@ -549,7 +565,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                               : [];
 
                             return (
-                              <td key={day} className="p-1.5 h-20 border-r border-slate-100 last:border-r-0">
+                              <TableCell key={day} className="p-1.5 h-20 border-r border-slate-100 last:border-r-0">
                                 {ownSlot ? (
                                   ownSlotHandovers.length > 0 ? (
                                     <div 
@@ -608,13 +624,13 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                     <span className="text-[9px] text-slate-350 font-bold uppercase tracking-wider">Free</span>
                                   </div>
                                 )}
-                              </td>
+                              </TableCell>
                             );
                           })}
-                        </tr>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             )}            {/* Handover Logs Subtab */}
@@ -704,25 +720,25 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
-                        <table className="w-full border-collapse text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                              <th className="p-3">Date</th>
-                              <th className="p-3">Course / Time</th>
-                              <th className="p-3">Covering Staff</th>
-                              <th className="p-3">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white">
+                        <Table className="w-full border-collapse text-left text-xs">
+                          <TableHeader>
+                            <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                              <TableHead className="p-3">Date</TableHead>
+                              <TableHead className="p-3">Course / Time</TableHead>
+                              <TableHead className="p-3">Covering Staff</TableHead>
+                              <TableHead className="p-3">Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-100 bg-white">
                             {sentHandovers.map((req) => (
-                              <tr key={req.id} className="hover:bg-slate-50/40 transition-colors text-slate-700">
-                                <td className="p-3 font-semibold">{req.dateFormatted}</td>
-                                <td className="p-3">
+                              <TableRow key={req.id} className="hover:bg-slate-50/40 transition-colors text-slate-700">
+                                <TableCell className="p-3 font-semibold">{req.dateFormatted}</TableCell>
+                                <TableCell className="p-3">
                                   <span className="font-bold block text-slate-900">{req.course}</span>
                                   <span className="text-[10px] text-slate-400">{req.day}, {formatTimeLabel(req.time)}</span>
-                                </td>
-                                <td className="p-3 font-bold text-slate-800">{req.targetStaffName}</td>
-                                <td className="p-3">
+                                </TableCell>
+                                <TableCell className="p-3 font-bold text-slate-800">{req.targetStaffName}</TableCell>
+                                <TableCell className="p-3">
                                   <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-black uppercase ${
                                     req.status === "approved" ? "bg-teal-100 text-teal-800" :
                                     req.status === "rejected" ? "bg-red-100 text-red-800" :
@@ -730,11 +746,11 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                   }`}>
                                     {req.status}
                                   </span>
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ))}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
@@ -748,22 +764,22 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
-                        <table className="w-full border-collapse text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                              <th className="p-3">Date</th>
-                              <th className="p-3">Class slot info</th>
-                              <th className="p-3">Original Mentor</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white">
+                        <Table className="w-full border-collapse text-left text-xs">
+                          <TableHeader>
+                            <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                              <TableHead className="p-3">Date</TableHead>
+                              <TableHead className="p-3">Class slot info</TableHead>
+                              <TableHead className="p-3">Original Mentor</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-100 bg-white">
                             {coveredHandovers.map((h, idx) => {
                               const originM = mentors.find(m => m.id === h.originalMentorId);
                               const slot = slots.find(s => s.id === h.slotId);
                               return (
-                                <tr key={idx} className="hover:bg-slate-50/40 transition-colors text-slate-700">
-                                  <td className="p-3 font-semibold">{h.dateStr}</td>
-                                  <td className="p-3">
+                                <TableRow key={idx} className="hover:bg-slate-50/40 transition-colors text-slate-700">
+                                  <TableCell className="p-3 font-semibold">{h.dateStr}</TableCell>
+                                  <TableCell className="p-3">
                                     {slot ? (
                                       <>
                                         <span className="font-bold block text-slate-900">{slot.course}</span>
@@ -774,15 +790,15 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                     ) : (
                                       <span className="text-slate-400 italic">Unknown class</span>
                                     )}
-                                  </td>
-                                  <td className="p-3 font-bold text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-bold text-slate-800">
                                     {originM?.name || "Staff"}
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               );
                             })}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
@@ -796,33 +812,33 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
-                        <table className="w-full border-collapse text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                              <th className="p-3">Month</th>
-                              <th className="p-3">Subject</th>
-                              <th className="p-3">Faculty Member</th>
-                              <th className="p-3 text-center">Classes Handed Over</th>
-                              <th className="p-3 text-center">Classes Covered</th>
-                              <th className="p-3 text-right">Balance</th>
-                              <th className="p-3 text-right">Compensation Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white">
+                        <Table className="w-full border-collapse text-left text-xs">
+                          <TableHeader>
+                            <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                              <TableHead className="p-3">Month</TableHead>
+                              <TableHead className="p-3">Subject</TableHead>
+                              <TableHead className="p-3">Faculty Member</TableHead>
+                              <TableHead className="p-3 text-center">Classes Handed Over</TableHead>
+                              <TableHead className="p-3 text-center">Classes Covered</TableHead>
+                              <TableHead className="p-3 text-right">Balance</TableHead>
+                              <TableHead className="p-3 text-right">Compensation Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-100 bg-white">
                             {ledgerList.map((row, idx) => {
                               const isPastMonth = row.month < currentMonthStr;
                               const isUnbalanced = row.balance !== 0;
                               return (
-                                <tr key={idx} className="hover:bg-slate-50/40 transition-colors text-slate-700">
-                                  <td className="p-3 font-semibold whitespace-nowrap">{formatMonthLabel(row.month)}</td>
-                                  <td className="p-3 font-medium text-slate-600">{row.subject}</td>
-                                  <td className="p-3 font-bold text-slate-805">{row.otherName}</td>
-                                  <td className="p-3 text-center font-semibold text-slate-550">{row.given}</td>
-                                  <td className="p-3 text-center font-semibold text-slate-550">{row.received}</td>
-                                  <td className={`p-3 text-right font-black text-xs whitespace-nowrap ${row.balance > 0 ? "text-emerald-600" : row.balance < 0 ? "text-rose-600" : "text-slate-600"}`}>
+                                <TableRow key={idx} className="hover:bg-slate-50/40 transition-colors text-slate-700">
+                                  <TableCell className="p-3 font-semibold whitespace-nowrap">{formatMonthLabel(row.month)}</TableCell>
+                                  <TableCell className="p-3 font-medium text-slate-600">{row.subject}</TableCell>
+                                  <TableCell className="p-3 font-bold text-slate-805">{row.otherName}</TableCell>
+                                  <TableCell className="p-3 text-center font-semibold text-slate-550">{row.given}</TableCell>
+                                  <TableCell className="p-3 text-center font-semibold text-slate-550">{row.received}</TableCell>
+                                  <TableCell className={`p-3 text-right font-black text-xs whitespace-nowrap ${row.balance > 0 ? "text-emerald-600" : row.balance < 0 ? "text-rose-600" : "text-slate-600"}`}>
                                     {row.balance > 0 ? `+${row.balance}` : row.balance < 0 ? `-${Math.abs(row.balance)}` : "0"}
-                                  </td>
-                                  <td className="p-3 text-right whitespace-nowrap">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-right whitespace-nowrap">
                                     {row.balance === 0 ? (
                                       <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-650 border border-slate-200 text-[9.5px] font-black uppercase inline-flex items-center">
                                         Balanced (0)
@@ -840,12 +856,12 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                         They owe you ({row.balance})
                                       </span>
                                     )}
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               );
                             })}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
@@ -854,7 +870,6 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
             })()}
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };

@@ -1,15 +1,20 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireKamScope, resolveScopeParams } from "@/lib/kamScope";
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("collegeId");
-    const kamId = searchParams.get("kamId");
+    const scoped = resolveScopeParams(scope!, searchParams.get("kamId"), searchParams.get("collegeId"));
+    if (scoped.errorResponse) return scoped.errorResponse;
+    const collegeId = scoped.collegeId;
+    const kamId = scoped.kamId;
 
     // Fetch colleges in scope
     let colleges: any[] = [];
@@ -32,7 +37,8 @@ export async function GET(request: Request) {
       });
     }
 
-    // Query academic_tracker records
+    // Query academic_tracker records. A failed slice fails the request rather than
+    // reporting an empty delivery map that looks like zero teaching happened.
     const collegePlaceholders = collegeIds.map(() => "?").join(",");
     const [trackerRows, subjectsList, slotsList] = await Promise.all([
       db.all(`
@@ -42,20 +48,20 @@ export async function GET(request: Request) {
         LEFT JOIN mentors m ON at.mentor_id = m.id
         WHERE at.college_id IN (${collegePlaceholders})
         ORDER BY at.date DESC
-      `, ...collegeIds).catch(() => []),
+      `, ...collegeIds),
       db.all(`
         SELECT s.*, c.name as college_name
         FROM subjects s
         LEFT JOIN colleges c ON s.college_id = c.id
         WHERE s.college_id IN (${collegePlaceholders})
-      `, ...collegeIds).catch(() => []),
+      `, ...collegeIds),
       db.all(`
         SELECT sl.*, c.name as college_name, m.name as mentor_name
         FROM slots sl
         LEFT JOIN colleges c ON sl.college_id = c.id
         LEFT JOIN mentors m ON sl.mentorId = m.id
         WHERE sl.college_id IN (${collegePlaceholders})
-      `, ...collegeIds).catch(() => [])
+      `, ...collegeIds)
     ]);
 
     // Calculate topics/syllabus progress per subject

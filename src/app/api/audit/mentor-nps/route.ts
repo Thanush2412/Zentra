@@ -1,9 +1,9 @@
-// Pin to Mumbai (bom1) — co-located with Supabase DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/authGuard";
 import { getDb } from "@/lib/db";
+import { DEFAULT_FETCH_TIMEOUT_MS, fetchWithTimeout as sharedFetchWithTimeout } from "@/lib/net";
 import {
   MENTOR_FEEDBACK_MONTHS,
   findTrendSheetForCollege,
@@ -94,16 +94,13 @@ function rowsToObjects(rows: string[][]): Record<string, string>[] {
 // sheet used to stall every request; repeated requests re-fetched live.
 const SHEETS_CACHE_TTL_MS = 5 * 60 * 1000;
 const sheetsCache = new Map<string, { at: number; rows: Record<string, string>[] }>();
-const SHEETS_FETCH_TIMEOUT_MS = 8000;
+const SHEETS_FETCH_TIMEOUT_MS = Math.max(
+  500,
+  Number(process.env.SHEETS_FETCH_TIMEOUT_MS || DEFAULT_FETCH_TIMEOUT_MS)
+);
 
-async function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), SHEETS_FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { cache: "no-store", signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+function fetchWithTimeout(url: string): Promise<Response> {
+  return sharedFetchWithTimeout(url, { cache: "no-store" }, SHEETS_FETCH_TIMEOUT_MS);
 }
 
 async function fetchCollegeRows(monthSheetId: string, collegeName: string): Promise<Record<string, string>[]> {
@@ -369,6 +366,8 @@ async function readCache(db: any, collegeName: string): Promise<any[]> {
 // ── Handler ──────────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "kam", "cm"] });
+  if (errorResponse) return errorResponse;
   try {
     const { searchParams } = new URL(request.url);
     const collegeName = (searchParams.get("college") || "").trim();

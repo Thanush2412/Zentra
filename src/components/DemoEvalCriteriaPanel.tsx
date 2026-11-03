@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/queryKeys";
+import { apiFetch } from "@/lib/apiFetch";
 import { Panel } from "./Panel";
 import {
   SlidersHorizontal,
@@ -42,18 +45,23 @@ export interface ChecklistEntry {
   met: boolean;
 }
 
-/** Fetch active criteria for a department (seeds defaults on first use). */
+/** Fetch active criteria for a department, seeding defaults only when none exist. */
 export async function fetchCriteriaForDepartment(department: string): Promise<DemoEvalCriterion[]> {
   if (!department) return [];
-  try {
-    await fetch("/api/demo-eval-criteria", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "seed", department })
-    });
-    const res = await fetch(`/api/demo-eval-criteria?department=${encodeURIComponent(department)}`);
-    const json = await res.json();
+  const getCriteria = async (): Promise<DemoEvalCriterion[]> => {
+    const json = await apiFetch<any>(`/api/demo-eval-criteria?department=${encodeURIComponent(department)}`);
     return json.success ? (json.criteria || []) : [];
+  };
+
+  try {
+    const existing = await getCriteria();
+    if (existing.length > 0) return existing;
+
+    await apiFetch("/api/demo-eval-criteria", {
+      method: "POST",
+      body: { action: "seed", department }
+    });
+    return await getCriteria();
   } catch (_) {
     return [];
   }
@@ -180,9 +188,15 @@ export function DemoEvalCriteriaPanel({
   departments: string[];
   smeName?: string;
 }) {
+  const queryClient = useQueryClient();
   const [selectedDept, setSelectedDept] = useState<string>(departments[0] || "General");
-  const [criteria, setCriteria] = useState<DemoEvalCriterion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const criteriaQuery = useQuery({
+    queryKey: qk.demoCriteria(selectedDept),
+    enabled: !!selectedDept,
+    queryFn: () => fetchCriteriaForDepartment(selectedDept),
+  });
+  const criteria = criteriaQuery.data || [];
+  const loading = criteriaQuery.isFetching;
   const [newLabel, setNewLabel] = useState("");
   const [newType, setNewType] = useState<"checkbox" | "score_rule">("checkbox");
   const [newThreshold, setNewThreshold] = useState<string>("3.5");
@@ -192,22 +206,15 @@ export function DemoEvalCriteriaPanel({
   const [editThreshold, setEditThreshold] = useState<string>("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async (dept: string) => {
-    setLoading(true);
-    const rows = await fetchCriteriaForDepartment(dept);
-    setCriteria(rows);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { load(selectedDept); }, [selectedDept, load]);
+  const load = (dept: string) =>
+    queryClient.invalidateQueries({ queryKey: qk.demoCriteria(dept) });
 
   const callApi = async (payload: any) => {
     setBusy(true);
     try {
-      await fetch("/api/demo-eval-criteria", {
+      await apiFetch("/api/demo-eval-criteria", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, createdBy: smeName, updatedBy: smeName, deletedBy: smeName })
+        body: { ...payload, createdBy: smeName, updatedBy: smeName, deletedBy: smeName }
       });
       await load(selectedDept);
     } finally {

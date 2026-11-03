@@ -1,5 +1,3 @@
-// Pin to Mumbai (bom1) — co-located with Supabase DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
@@ -10,7 +8,7 @@ import {
   renderHandoverRequestEmail,
   renderHandoverApprovalEmail,
   renderHandoverRejectionEmail,
-  renderDemoSwapEmail,
+  renderSwapOfferEmail,
   renderSmeEvaluationEmail,
   renderTimetableUpdateEmail,
   renderAnnouncementEmail,
@@ -29,7 +27,8 @@ const ALLOWED_TEMPLATES: Record<string, (data: any) => string> = {
   handover_request: renderHandoverRequestEmail,
   handover_approval: renderHandoverApprovalEmail,
   handover_rejection: renderHandoverRejectionEmail,
-  demo_swap: renderDemoSwapEmail,
+  demo_swap: (data) => renderSwapOfferEmail(data),
+  class_swap: (data) => renderSwapOfferEmail({ ...data, kind: "class" }),
   sme_evaluation: renderSmeEvaluationEmail,
   timetable_update: renderTimetableUpdateEmail,
   announcement: renderAnnouncementEmail,
@@ -47,20 +46,34 @@ const ALLOWED_TEMPLATES: Record<string, (data: any) => string> = {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function recipientIsKnownUser(db: any, email: string): Promise<boolean> {
-  const clean = email.toLowerCase().trim();
-  const checks = [
-    db.get("SELECT 1 FROM users WHERE LOWER(email) = ? AND status = 'Active'", [clean]),
-    db.get("SELECT 1 FROM mentors WHERE LOWER(email) = ?", [clean]),
-    db.get("SELECT 1 FROM students WHERE LOWER(email) = ?", [clean]),
-    db.get("SELECT 1 FROM sme_users WHERE LOWER(email) = ?", [clean]),
-    db.get("SELECT 1 FROM kam_users WHERE LOWER(email) = ?", [clean]),
-    db.get("SELECT 1 FROM campus_managers WHERE LOWER(email) = ?", [clean]),
-  ];
-  for (const check of checks) {
-    if (await check) return true;
-  }
-  return false;
+const KNOWN_USER_TABLES = [
+  "users",
+  "mentors",
+  "students",
+  "sme_users",
+  "kam_users",
+  "campus_managers",
+];
+
+/**
+ * One UNION query for the whole recipient list. The old shape opened a connection
+ * and ran six lookups per address, so a 10-recipient send cost 60 round-trips.
+ */
+async function unknownRecipients(db: any, emails: string[]): Promise<string[]> {
+  const clean = emails.map((e) => e.toLowerCase().trim());
+  const placeholders = clean.map(() => "?").join(",");
+  const arms = KNOWN_USER_TABLES.map((table) =>
+    table === "users"
+      ? `SELECT LOWER(email) AS email FROM users WHERE status = 'Active' AND LOWER(email) IN (${placeholders})`
+      : `SELECT LOWER(email) AS email FROM ${table} WHERE LOWER(email) IN (${placeholders})`
+  );
+  // One IN-list per UNION arm: the params have to repeat once per table, not once per
+  // address. The old shape supplied n*n values against 6*n placeholders, so Postgres
+  // rejected the bind and every send failed unless exactly six recipients were given.
+  const params = KNOWN_USER_TABLES.flatMap(() => clean);
+  const rows = await db.all(arms.join(" UNION "), params);
+  const known = new Set(rows.map((r: any) => r.email));
+  return clean.filter((email) => !known.has(email));
 }
 
 export async function POST(request: Request) {
@@ -102,13 +115,15 @@ export async function POST(request: Request) {
       if (!EMAIL_RE.test(email)) {
         return NextResponse.json({ success: false, message: `Invalid recipient address: ${email}` }, { status: 400 });
       }
-      const db = await getDbSafe();
-      if (!(await recipientIsKnownUser(db, email))) {
-        return NextResponse.json(
-          { success: false, message: `Recipient is not a known portal user: ${email}` },
-          { status: 403 }
-        );
-      }
+    }
+
+    const db = await getDbSafe();
+    const unknown = await unknownRecipients(db, requested);
+    if (unknown.length > 0) {
+      return NextResponse.json(
+        { success: false, message: `Recipient is not a known portal user: ${unknown.join(", ")}` },
+        { status: 403 }
+      );
     }
 
     const res = await sendMail({ to, subject, htmlBody: finalHtml });

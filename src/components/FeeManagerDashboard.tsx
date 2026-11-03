@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
 import { useApp } from "../context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -133,15 +136,23 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const [localActiveTab, setLocalActiveTab] = useState<TabType>("overview");
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = onTabChange || setLocalActiveTab;
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<{
+  const queryClient = useQueryClient();
+  const feesQuery = useQuery<{
     colleges: CollegeRecord[];
     students: StudentRecord[];
     fees: StudentFee[];
     payments: FeePayment[];
     cams: CamRecord[];
     stats: FeeStats;
-  } | null>(null);
+  } | null>({
+    queryKey: qk.fees("dashboard", "all", "all", ""),
+    queryFn: async () => {
+      const json = await apiFetch<any>("/api/fees?role=fee_manager");
+      return json?.success ? json : null;
+    },
+  });
+  const data = feesQuery.data ?? null;
+  const loading = feesQuery.isPending;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCollege, setFilterCollege] = useState("all");
@@ -177,8 +188,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
 
   // Add New Semester Fee Form State
   const [addingStudentFeeId, setAddingStudentFeeId] = useState<string | null>(null);
-  const [newTermName, setNewTermName] = useState<string>("Semester 1 Tuition Fee");
-  const [newAmount, setNewAmount] = useState<string>("25000");
+  const [newTermName, setNewTermName] = useState<string>("");
+  const [newAmount, setNewAmount] = useState<string>("");
   const [newPaidAmount, setNewPaidAmount] = useState<string>("0");
   const [newStatus, setNewStatus] = useState<string>("unpaid");
   const [newProofLink, setNewProofLink] = useState<string>("");
@@ -200,24 +211,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const [selectedTemplateSem, setSelectedTemplateSem] = useState("");
   const [selectedTemplateYear, setSelectedTemplateYear] = useState("");
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      // ROLE_UI_AUDIT F2: scope is derived from the session cookie server-side —
-      // the client must not pass its role as a query param.
-      const res = await fetch("/api/fees");
-      const json = await res.json();
-      if (json.success) setData(json);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const fetchData = () =>
+    queryClient.invalidateQueries({ queryKey: ["fees"] });
 
   useEffect(() => {
     if (data?.colleges?.length && !selectedTemplateCollege) {
@@ -521,19 +516,33 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
         setSheetHeaders(headers);
         setSheetRows(dataRows);
 
+        const lowerHeaders = headers.map((h) => h.toLowerCase());
+        const findHeader = (...tests: Array<(h: string) => boolean>) => {
+          for (const test of tests) {
+            const idx = lowerHeaders.findIndex(test);
+            if (idx !== -1) return idx;
+          }
+          return -1;
+        };
+        const isSettledColumn = (h: string) => h.includes("paid") || h.includes("pending");
+
         const autoIndices: Record<string, number> = {
-          register_number: headers.findIndex((h: string) => h.toLowerCase().includes("registration") || h.toLowerCase().includes("reg")),
-          college: headers.findIndex((h: string) => h.toLowerCase().includes("college")),
-          student: headers.findIndex((h: string) => h.toLowerCase().includes("student") || h.toLowerCase() === "name"),
-          year: headers.findIndex((h: string) => h.toLowerCase().includes("year") || h.toLowerCase().includes("batch")),
-          email: headers.findIndex((h: string) => h.toLowerCase().includes("email")),
-          phone: headers.findIndex((h: string) => h.toLowerCase().includes("mobile") || h.toLowerCase().includes("phone")),
-          t: headers.findIndex((h: string) => h.toLowerCase().includes("department") || h.toLowerCase().includes("dept")),
-          semester: headers.findIndex((h: string) => h.toLowerCase().includes("semester") || h.toLowerCase().includes("sem")),
-          paid: headers.findIndex((h: string) => h.toLowerCase().includes("paid")),
-          pending: headers.findIndex((h: string) => h.toLowerCase().includes("pending")),
-          amount: headers.findIndex((h: string) => h.toLowerCase().includes("amount") || h.toLowerCase().includes("fee")),
-          pay_link: headers.findIndex((h: string) => h.toLowerCase().includes("link"))
+          register_number: findHeader((h) => h.includes("registration"), (h) => h.includes("reg")),
+          college: findHeader((h) => h.includes("college")),
+          student: findHeader((h) => h.includes("student"), (h) => h === "name"),
+          year: findHeader((h) => h.includes("year"), (h) => h.includes("batch")),
+          email: findHeader((h) => h.includes("email")),
+          phone: findHeader((h) => h.includes("mobile"), (h) => h.includes("phone")),
+          t: findHeader((h) => h.includes("department"), (h) => h.includes("dept")),
+          semester: findHeader((h) => h.includes("semester"), (h) => h.includes("sem")),
+          paid: findHeader((h) => h.includes("paid")),
+          pending: findHeader((h) => h.includes("pending")),
+          // Target fee must never auto-map onto a "paid"/"pending" column.
+          amount: findHeader(
+            (h) => h.includes("amount") && !isSettledColumn(h),
+            (h) => (h.includes("fee") || h.includes("total") || h.includes("target")) && !isSettledColumn(h)
+          ),
+          pay_link: findHeader((h) => h.includes("link"))
         };
 
         setColIndices(autoIndices);
@@ -640,8 +649,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       const json = await res.json();
       if (json.success) {
         setAddingStudentFeeId(null);
-        setNewTermName("Semester 1 Tuition Fee");
-        setNewAmount("25000");
+        setNewTermName("");
+        setNewAmount("");
         setNewPaidAmount("0");
         setNewProofLink("");
         await fetchData();
@@ -1481,12 +1490,14 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                     <Input
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      aria-label="Search name, Reg No, email"
                       placeholder="Search name, Reg No, email..."
                       className="pl-9 pr-8"
                     />
                     {searchQuery && (
                       <button
                         onClick={() => setSearchQuery("")}
+                        aria-label="Clear search"
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -1651,7 +1662,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                 <Card className="p-4 border-[#D528A2]/30 bg-white dark:bg-[#131317] space-y-3">
                                   <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
                                     <span className="text-xs font-black text-[#D528A2]">Add New Semester Fee Record</span>
-                                    <button onClick={() => setAddingStudentFeeId(null)} className="text-slate-400 hover:text-slate-600">
+                                    <button onClick={() => setAddingStudentFeeId(null)} aria-label="Close add fee form" className="text-slate-400 hover:text-slate-600">
                                       <X className="h-3.5 w-3.5" />
                                     </button>
                                   </div>
@@ -1661,6 +1672,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                       <Input
                                         value={newTermName}
                                         onChange={(e) => setNewTermName(e.target.value)}
+                                        aria-label="Term / Description"
                                         placeholder="e.g. Semester 2 Fee"
                                         className="h-8 text-xs font-bold"
                                       />
@@ -1671,6 +1683,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                         type="number"
                                         value={newAmount}
                                         onChange={(e) => setNewAmount(e.target.value)}
+                                        aria-label="Target Amount (₹)"
+                                        placeholder="e.g. 25000"
                                         className="h-8 text-xs font-bold"
                                       />
                                     </div>
@@ -1680,12 +1694,14 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                         type="number"
                                         value={newPaidAmount}
                                         onChange={(e) => setNewPaidAmount(e.target.value)}
+                                        aria-label="Paid Amount (₹)"
                                         className="h-8 text-xs font-bold"
                                       />
                                     </div>
                                     <div>
                                       <label className="text-[9px] text-slate-400 font-bold block mb-1">Status</label>
                                       <select
+                                        aria-label="Status"
                                         value={newStatus}
                                         onChange={(e) => setNewStatus(e.target.value)}
                                         className="w-full h-8 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131317] text-xs font-bold"
@@ -1701,6 +1717,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                     <Input
                                       value={newProofLink}
                                       onChange={(e) => setNewProofLink(e.target.value)}
+                                      aria-label="Online Payment Link / Proof URL (Optional)"
                                       placeholder="https://rzp.io/l/sample or https://drive.google.com/..."
                                       className="h-8 text-xs font-mono"
                                     />
@@ -1796,6 +1813,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                                 <Input
                                                   value={editTermName}
                                                   onChange={(e) => setEditTermName(e.target.value)}
+                                                  aria-label="Term Name"
                                                   className="h-8 text-xs font-bold"
                                                 />
                                               </div>
@@ -1805,6 +1823,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                                   type="number"
                                                   value={editTotalAmount}
                                                   onChange={(e) => setEditTotalAmount(e.target.value)}
+                                                  aria-label="Target Amount (₹)"
                                                   className="h-8 text-xs font-bold"
                                                 />
                                               </div>
@@ -1814,12 +1833,14 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                                   type="number"
                                                   value={editPaidAmount}
                                                   onChange={(e) => setEditPaidAmount(e.target.value)}
+                                                  aria-label="Paid Amount (₹)"
                                                   className="h-8 text-xs font-bold"
                                                 />
                                               </div>
                                               <div>
                                                 <label className="text-[9px] text-slate-400 font-bold block mb-1">Status</label>
                                                 <select
+                                                  aria-label="Status"
                                                   value={editStatus}
                                                   onChange={(e) => setEditStatus(e.target.value)}
                                                   className="w-full h-8 px-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131317] text-xs font-bold"
@@ -1835,6 +1856,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                               <Input
                                                 value={editProofLink}
                                                 onChange={(e) => setEditProofLink(e.target.value)}
+                                                aria-label="Proof of Payment Link URL"
                                                 placeholder="https://drive.google.com/proof-receipt.pdf"
                                                 className="h-8 text-xs font-mono"
                                               />
@@ -1944,7 +1966,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
           </DialogHeader>
 
           {uploadError && (
-            <div className="p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl flex items-center gap-3 text-xs text-rose-600 dark:text-rose-400 font-semibold">
+            <div role="alert" className="p-4 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl flex items-center gap-3 text-xs text-rose-600 dark:text-rose-400 font-semibold">
               <AlertCircle className="h-5 w-5 shrink-0" />
               <p>{uploadError}</p>
             </div>
@@ -1994,6 +2016,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                   <div>
                     <label className="text-[9px] text-slate-400 font-bold uppercase block mb-1">College</label>
                     <select
+                      aria-label="College"
                       value={selectedTemplateCollege}
                       onChange={(e) => setSelectedTemplateCollege(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#181820] font-bold outline-none focus:ring-1 focus:ring-[#D528A2] cursor-pointer"
@@ -2007,6 +2030,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                   <div>
                     <label className="text-[9px] text-slate-400 font-bold uppercase block mb-1">Department</label>
                     <select
+                      aria-label="Department"
                       value={selectedTemplateDept}
                       onChange={(e) => setSelectedTemplateDept(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#181820] font-bold outline-none focus:ring-1 focus:ring-[#D528A2] cursor-pointer"
@@ -2037,6 +2061,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                   <input
                     type="file"
                     accept=".xlsx, .xls, .csv"
+                    aria-label="Excel File Upload"
                     onChange={handleFileChange}
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                   />

@@ -55,18 +55,20 @@ export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString("base64url");
 }
 
-/** Ensures the user_sessions table exists in the database */
+/** Ensures the user_sessions table exists in the database (once per process). */
+let sessionTableReady: Promise<void> | null = null;
+
 export async function ensureSessionTable(db: any): Promise<void> {
-  try {
-    await db.exec(`
+  if (!sessionTableReady) {
+    sessionTableReady = db.exec(`
       CREATE TABLE IF NOT EXISTS user_sessions (
         session_id_hash VARCHAR(128) PRIMARY KEY,
         user_id VARCHAR(128) NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        last_activity_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_activity_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMPTZ NOT NULL,
         is_revoked BOOLEAN DEFAULT FALSE,
-        revoked_at TIMESTAMP,
+        revoked_at TIMESTAMPTZ,
         revoked_reason VARCHAR(255),
         csrf_secret VARCHAR(128) NOT NULL,
         ip_address VARCHAR(64) DEFAULT 'Unknown',
@@ -74,10 +76,31 @@ export async function ensureSessionTable(db: any): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
       CREATE INDEX IF NOT EXISTS idx_user_sessions_validity ON user_sessions(session_id_hash, is_revoked, expires_at);
-    `);
-  } catch (err) {
-    console.warn("Session table ensure notice:", err);
+      -- Session timestamps are always written as UTC ISO strings. Plain TIMESTAMP
+      -- columns make the pg driver read that wall time in the host's timezone,
+      -- which shifts last_activity_at by the local UTC offset (e.g. 5.5h in IST)
+      -- and expires every session as idle. Convert any legacy table in place.
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'user_sessions'
+            AND column_name = 'last_activity_at'
+            AND data_type = 'timestamp without time zone'
+        ) THEN
+          ALTER TABLE user_sessions
+            ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC',
+            ALTER COLUMN last_activity_at TYPE TIMESTAMPTZ USING last_activity_at AT TIME ZONE 'UTC',
+            ALTER COLUMN expires_at TYPE TIMESTAMPTZ USING expires_at AT TIME ZONE 'UTC',
+            ALTER COLUMN revoked_at TYPE TIMESTAMPTZ USING revoked_at AT TIME ZONE 'UTC';
+        END IF;
+      END $$;
+    `).catch((err: any) => {
+      sessionTableReady = null;
+      console.warn("Session table ensure notice:", err);
+    });
   }
+  await sessionTableReady;
 }
 
 /**

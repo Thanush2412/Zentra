@@ -1,6 +1,8 @@
 import React from "react";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
-interface PanelProps {
+export interface PanelProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   className?: string;
   title?: string;
@@ -9,6 +11,10 @@ interface PanelProps {
   headerActions?: React.ReactNode;
 }
 
+/**
+ * Standard Panel Component
+ * Wraps shadcn Card with a structured header and action slot.
+ */
 export const Panel: React.FC<PanelProps> = ({
   children,
   className = "",
@@ -16,28 +22,28 @@ export const Panel: React.FC<PanelProps> = ({
   subtitle,
   actions,
   headerActions,
+  ...props
 }) => {
   const rightSlot = headerActions ?? actions;
+
   return (
-    <div className={`bg-white dark:bg-[#131317] border border-gray-200 dark:border-slate-800 rounded-xl shadow-xs hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-300 ${className}`}>
+    <Card className={cn("overflow-hidden", className)} {...props}>
       {(title || subtitle || rightSlot) && (
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-x-3 gap-y-2 px-5 py-3.5 border-b border-gray-100 dark:border-slate-800">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-100 dark:border-slate-800">
           <div className="min-w-0">
-            {title && (
-              <h3 className="text-[10px] font-black text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-                {title}
-              </h3>
-            )}
-            {subtitle && (
-              <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">{subtitle}</p>
-            )}
+            {title && <CardTitle>{title}</CardTitle>}
+            {subtitle && <CardDescription className="mt-0.5">{subtitle}</CardDescription>}
           </div>
           {rightSlot && (
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">{rightSlot}</div>
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
+              {rightSlot}
+            </div>
           )}
-        </div>
+        </CardHeader>
       )}
-      <div className="p-5">{children}</div>
-    </div>
+      <CardContent className="p-5">{children}</CardContent>
+    </Card>
   );
 };
+
+export default Panel;

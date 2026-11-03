@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import pg from "pg";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-const HR_LC_DB_URL =
-  process.env.HACKERRANK_LEETCODE_DB_URL ||
-  "postgresql://postgres.obtuzeqstivzrcmtkzvp:9n3qeEFHrZHt%258F@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres";
+// Same external HackerRank/LeetCode project as /api/coding-stats: config only, never
+// a committed connection string with credentials in it.
+const HR_LC_DB_URL = process.env.HACKERRANK_LEETCODE_DB_URL || "";
 
 // Dedicated connection pool for external HackerRank & LeetCode database
 let externalPool: pg.Pool | null = null;
 
-function getExternalPool(): pg.Pool {
+function getExternalPool(): pg.Pool | null {
+  if (!HR_LC_DB_URL) return null;
   if (!externalPool) {
     externalPool = new pg.Pool({
       connectionString: HR_LC_DB_URL,
@@ -81,6 +84,8 @@ function normalizeCollegeKey(name: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const { errorResponse } = await requireAuth(req);
+  if (errorResponse) return errorResponse;
   try {
     const { searchParams } = req.nextUrl;
     const collegeId = searchParams.get("collegeId") || "";
@@ -111,6 +116,12 @@ export async function GET(req: NextRequest) {
     }
 
     const pool = getExternalPool();
+    if (!pool) {
+      return NextResponse.json(
+        { success: false, message: "Contest links are not configured. Set HACKERRANK_LEETCODE_DB_URL." },
+        { status: 503 }
+      );
+    }
     const client = await pool.connect();
 
     try {

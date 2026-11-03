@@ -2,9 +2,11 @@ import { useState, useMemo } from "react";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { Clock, CheckCircle2, XCircle, Search, CalendarRange, MapPin, Inbox, ShieldCheck, FileText, ChevronRight, Check, Loader2 } from "lucide-react";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
 
 export function CMApprovalsHub() {
-  const { requests, mentors, colleges, currentCAM, approvedHandovers } = useApp();
+  const { requests, mentors, colleges, currentCAM, approvedHandovers, handleRequest } = useApp();
   const { toast } = useToast();
   
   // Filter state
@@ -57,6 +59,14 @@ export function CMApprovalsHub() {
     }).sort((a: any, b: any) => new Date(b.approvedAt || 0).getTime() - new Date(a.approvedAt || 0).getTime()).reverse();
   }, [approvedHandovers, mentors, activeCollegeId]);
 
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(15);
+
+  const paginatedApproved = useMemo(() => {
+    const start = (historyPage - 1) * historyPageSize;
+    return campusApproved.slice(start, start + historyPageSize);
+  }, [campusApproved, historyPage, historyPageSize]);
+
   const selectedRequest = pendingRequests.find((r: any) => r.id === selectedRequestId);
 
   const getStatusIcon = (category?: string) => {
@@ -83,14 +93,12 @@ export function CMApprovalsHub() {
     try {
       let finalCourseName = selectedRequest.course;
       let finalTargetStaffId = selectedRequest.targetStaffId;
-      let finalTargetStaffName = selectedRequest.targetStaffName;
 
       if (status === "approved" && selectedRequest.reasonCategory === "Substitution") {
         if (selectedCoverMentorId) {
           const m = mentors.find(m => m.id === selectedCoverMentorId);
           if (m) {
             finalTargetStaffId = m.id;
-            finalTargetStaffName = m.name;
           }
         }
         
@@ -103,24 +111,17 @@ export function CMApprovalsHub() {
         }
       }
 
-      const payload = {
-        id,
-        status,
-        camRemark: reviewReason,
-        approverName: currentCAM?.name || "Campus Manager",
-        coverStaffId: finalTargetStaffId,
-        coverStaffName: finalTargetStaffName,
-        course: finalCourseName
-      };
+      const shouldReassign =
+        status === "approved" &&
+        selectedRequest.reasonCategory === "Substitution" &&
+        !!selectedCoverMentorId &&
+        !!finalTargetStaffId;
 
-      const res = await fetch(`/api/handovers`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+      await handleRequest(id, status, reviewReason, "Campus Manager", finalCourseName, {
+        action: shouldReassign ? "cm_reassign" : undefined,
+        targetStaffId: shouldReassign ? finalTargetStaffId : undefined
       });
-      
-      if (!res.ok) throw new Error("Failed to process request");
-      
+
       toast(`Request ${status} successfully.`, "success");
       setSelectedRequestId(null);
       setReviewReason("");
@@ -179,52 +180,67 @@ export function CMApprovalsHub() {
       </div>
 
       {activeTab === "history" ? (
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs tracking-wider">
-                  <th className="p-4 border-r border-slate-100">Date</th>
-                  <th className="p-4 border-r border-slate-100">Class & Time</th>
-                  <th className="p-4 border-r border-slate-100">Original Mentor</th>
-                  <th className="p-4 border-r border-slate-100">Covering Mentor</th>
-                  <th className="p-4">Subject Taught</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {campusApproved.map((h: any) => {
+            <Table className="w-full border-collapse text-left text-sm">
+              <TableHeader>
+                <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs tracking-wider hover:bg-slate-50">
+                  <TableHead className="p-4 border-r border-slate-100">Date</TableHead>
+                  <TableHead className="p-4 border-r border-slate-100">Class & Time</TableHead>
+                  <TableHead className="p-4 border-r border-slate-100">Original Mentor</TableHead>
+                  <TableHead className="p-4 border-r border-slate-100">Covering Mentor</TableHead>
+                  <TableHead className="p-4">Subject Taught</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-slate-100">
+                {paginatedApproved.map((h: any) => {
                   const req = campusRequests.find((r: any) => r.id === h.requestId);
                   const originalMentor = mentors.find(m => m.id === h.originalMentorId);
                   return (
-                    <tr key={h.requestId} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="p-4 font-bold text-slate-800 border-r border-slate-100">{h.dateStr}</td>
-                      <td className="p-4 border-r border-slate-100">
+                    <TableRow key={h.requestId} className="hover:bg-slate-50/50 transition-colors">
+                      <TableCell className="p-4 font-bold text-slate-800 border-r border-slate-100">{h.dateStr}</TableCell>
+                      <TableCell className="p-4 border-r border-slate-100">
                         <div className="font-bold text-slate-800">{req?.classGroup || "-"}</div>
                         <div className="text-xs text-slate-500 mt-0.5">{req?.time || "-"}</div>
-                      </td>
-                      <td className="p-4 text-slate-600 font-bold border-r border-slate-100">{originalMentor?.name || "Unknown"}</td>
-                      <td className="p-4 font-black text-indigo-700 border-r border-slate-100">{h.coverStaffName}</td>
-                      <td className="p-4 font-bold text-slate-800">
+                      </TableCell>
+                      <TableCell className="p-4 text-slate-600 font-bold border-r border-slate-100">{originalMentor?.name || "Unknown"}</TableCell>
+                      <TableCell className="p-4 font-black text-indigo-700 border-r border-slate-100">{h.coverStaffName}</TableCell>
+                      <TableCell className="p-4 font-bold text-slate-800">
                         {h.course}
                         {req && req.course !== h.course && (
                           <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-200">
                             Custom Subject
                           </span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
                 {campusApproved.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="p-12 text-center text-slate-400 font-semibold italic">
+                  <TableRow>
+                    <TableCell colSpan={5} className="p-12 text-center text-slate-400 font-semibold italic">
                       No approved handovers logged for this campus.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
+
+          {campusApproved.length > 0 && (
+            <div className="bg-white p-3 rounded-xl border border-slate-200">
+              <Pagination
+                currentPage={historyPage}
+                totalItems={campusApproved.length}
+                pageSize={historyPageSize}
+                onPageChange={setHistoryPage}
+                onPageSizeChange={(newSize) => {
+                  setHistoryPageSize(newSize);
+                  setHistoryPage(1);
+                }}
+              />
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden">

@@ -311,10 +311,10 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
             <p className="text-xs font-medium text-slate-400">Real-time status of each supervised college and assigned Campus Manager</p>
           </div>
           <button
-            onClick={() => onNavigateTab("campuses")}
+            onClick={() => onNavigateTab("reports")}
             className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
           >
-            All Campuses <ChevronRight className="h-4 w-4" />
+            Portfolio Analytics <ChevronRight className="h-4 w-4" />
           </button>
         </div>
 

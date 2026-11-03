@@ -1,8 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp, Slot, StudentAttendance } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { Dialog } from "@/components/ui/dialog";
 import { Button } from "./Button";
 import {
   Calendar,
@@ -44,6 +48,7 @@ import {
 } from "lucide-react";
 import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatch, isCohortMatching, getDeptFromClassGroup, isSubjectNameMatch, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { CourseInfoButton } from "./CourseInfoModal";
 
 // Library Books Interface
@@ -122,6 +127,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
     gradeStudentAcademicTask
   } = useApp();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [localActiveTab, setLocalActiveTab] = useState<"dashboard" | "schedule" | "exams" | "materials" | "library" | "fees" | "profile" | "tracker" | "interviews" | "more_menu">("dashboard");
 
@@ -311,87 +317,56 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // State for Dues payment
   const [paidFees, setPaidFees] = useState<Record<string, boolean>>({});
 
-  const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
-  const [studentExamsList, setStudentExamsList] = useState<any[]>([]);
-  const [studentMarksList, setStudentMarksList] = useState<any[]>([]);
-  const [examsLoading, setExamsLoading] = useState<boolean>(false);
   const [examSubTab, setExamSubTab] = useState<"schedule" | "results">("results");
   const [marksTypeFilter, setMarksTypeFilter] = useState<string>("all");
   const [marksSearchTerm, setMarksSearchTerm] = useState<string>("");
 
-  const fetchStudentExamsAndMarks = async () => {
-    if (!currentStudent?.college_id) return;
-    setExamsLoading(true);
-    try {
-      const dept = currentStudent.department || "";
-      const classGroup = currentStudent.classGroup || "";
-      const semester = currentStudent.semester || "";
+  const studentExamScope = `${currentStudent?.department || ""}|${currentStudent?.classGroup || ""}|${currentStudent?.semester || ""}`;
+  const studentExamsQuery = useQuery({
+    queryKey: qk.studentExams(currentStudent?.id || "none", currentStudent?.college_id || "none", studentExamScope),
+    enabled: !!currentStudent?.id && !!currentStudent?.college_id,
+    queryFn: async () => {
       const params = new URLSearchParams({
-        college_id: currentStudent.college_id,
-        department: dept,
+        college_id: currentStudent!.college_id!,
+        department: currentStudent!.department || "",
       });
-      if (classGroup) params.set("class_group", classGroup);
-      if (semester) params.set("semester", semester);
-
-      const [examsRes, marksRes] = await Promise.all([
-        fetch(`/api/exams?${params.toString()}`),
-        fetch(`/api/exams/marks?student_id=${encodeURIComponent(currentStudent.id)}`)
+      if (currentStudent!.classGroup) params.set("class_group", currentStudent!.classGroup);
+      if (currentStudent!.semester) params.set("semester", currentStudent!.semester);
+      const [examsData, marksData] = await Promise.all([
+        apiFetch(`/api/exams?${params.toString()}`),
+        apiFetch(`/api/exams/marks?student_id=${encodeURIComponent(currentStudent!.id)}`),
       ]);
-      const examsData = await examsRes.json();
-      const marksData = await marksRes.json();
-      if (examsData.success) {
-        setStudentExamsList(examsData.exams || []);
-      }
-      if (marksData.success) {
-        setStudentMarksList(marksData.marks || []);
-      }
-    } catch (e) {
-      console.error("Error fetching exams & marks:", e);
-    } finally {
-      setExamsLoading(false);
-    }
-  };
+      return {
+        exams: examsData?.success ? (examsData.exams || []) : [],
+        marks: marksData?.success ? (marksData.marks || []) : [],
+      };
+    },
+  });
+  const studentExamsList = studentExamsQuery.data?.exams || [];
+  const studentMarksList = studentExamsQuery.data?.marks || [];
+  const examsLoading = studentExamsQuery.isFetching;
+
+  const dailyConfigsQuery = useQuery({
+    queryKey: qk.dailyConfigs(currentStudent?.college_id || colleges[0]?.id || ""),
+    queryFn: async () => {
+      const data = await apiFetch(`/api/daily-configs?college_id=${encodeURIComponent(currentStudent?.college_id || colleges[0]?.id || "")}`);
+      return data?.success ? (data.configs || []) : [];
+    },
+  });
+  const dailyConfigsList = dailyConfigsQuery.data || [];
 
   useEffect(() => {
-    const collegeId = currentStudent?.college_id || "college_1";
-    fetch(`/api/daily-configs?college_id=${encodeURIComponent(collegeId)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.configs) {
-          setDailyConfigsList(data.configs);
-        }
-      })
-      .catch(err => console.error("Error fetching daily configs:", err));
-
-    fetchStudentExamsAndMarks();
-
     const handleUpdates = () => {
-      fetchStudentExamsAndMarks();
-      fetch(`/api/daily-configs?college_id=${encodeURIComponent(collegeId)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.configs) {
-            setDailyConfigsList(data.configs);
-          }
-        })
-        .catch(() => { });
+      queryClient.invalidateQueries({ queryKey: ["student-exams"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-configs"] });
     };
-
     window.addEventListener("fp_exams_updated", handleUpdates);
     window.addEventListener("fp_schedule_updated", handleUpdates);
     return () => {
       window.removeEventListener("fp_exams_updated", handleUpdates);
       window.removeEventListener("fp_schedule_updated", handleUpdates);
     };
-  }, [currentStudent?.college_id, currentStudent?.department, currentStudent?.id]);
-
-  // Re-fetch exams & marks whenever the student navigates to the exams tab
-  useEffect(() => {
-    if (activeTab === "exams") {
-      fetchStudentExamsAndMarks();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [queryClient]);
 
   const [payingFeeId, setPayingFeeId] = useState<string | null>(null);
 
@@ -402,7 +377,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [editId, setEditId] = useState(currentStudent?.id || "");
   const [editDepartment, setEditDepartment] = useState(currentStudent?.department || "");
   const [editClassGroup, setEditClassGroup] = useState(currentStudent?.classGroup || "");
-  const [editCollegeId, setEditCollegeId] = useState(currentStudent?.college_id || "college_1");
+  const [editCollegeId, setEditCollegeId] = useState(currentStudent?.college_id || colleges[0]?.id || "");
   const [editRegisterNumber, setEditRegisterNumber] = useState(currentStudent?.register_number || "");
   const [editRollNumber, setEditRollNumber] = useState(currentStudent?.roll_number || "");
   const [editTenthMark, setEditTenthMark] = useState(currentStudent?.tenth_mark || "");
@@ -421,7 +396,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [editHackerrankLink, setEditHackerrankLink] = useState(currentStudent?.hackerrank_link || "");
   const [editLeetcodeLink, setEditLeetcodeLink] = useState(currentStudent?.leetcode_link || "");
   const [editFigmaLink, setEditFigmaLink] = useState(currentStudent?.figma_link || "");
-  const [allowedProfileEditClasses, setAllowedProfileEditClasses] = useState<string[]>([]);
+
+  const profileEditPolicyQuery = useQuery<{ classes: string[] }>({
+    queryKey: ["profile-edit-policy"],
+    queryFn: async () => {
+      const data = await apiFetch("/api/profile-edit-policy");
+      return { classes: data?.success && Array.isArray(data.classes) ? data.classes : [] };
+    },
+    staleTime: 60_000,
+  });
+  const allowedProfileEditClasses = profileEditPolicyQuery.data?.classes || [];
 
   // State for Bunk Target Slider
   const [bunkTarget, setBunkTarget] = useState(75);
@@ -433,169 +417,85 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   // State for Class Attendance Calendar Month Navigation
   const [attendanceMonthOffset, setAttendanceMonthOffset] = useState<number>(0);
 
-  const [studentInterviews, setStudentInterviews] = useState<any[]>([]);
-  const [studentAchievements, setStudentAchievements] = useState<any[]>([]);
-  const [loadingStudentAchievements, setLoadingStudentAchievements] = useState(false);
+  const studentInterviewsQuery = useQuery<any[]>({
+    queryKey: qk.studentInterviews(
+      currentStudent?.id || "none",
+      `${currentStudent?.classGroup || ""}|${currentStudent?.college_id || ""}`
+    ),
+    enabled: !!currentStudent?.id,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/interviews?role=student&studentId=${encodeURIComponent(currentStudent!.id)}&classGroup=${encodeURIComponent(currentStudent!.classGroup || "")}&collegeId=${encodeURIComponent(currentStudent!.college_id || "")}`);
+      return data?.success ? (data.interviews || []) : [];
+    },
+  });
+  const studentInterviews = studentInterviewsQuery.data || [];
 
-  useEffect(() => {
-    if (currentStudent?.id && (activeTab === "interviews" || studentInterviews.length === 0)) {
-      fetch(`/api/interviews?role=student&studentId=${currentStudent.id}&classGroup=${encodeURIComponent(currentStudent.classGroup || "")}&collegeId=${currentStudent.college_id || ""}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
-            setStudentInterviews(data.interviews || []);
-          }
-        })
-        .catch(() => { });
-    }
-  }, [currentStudent?.id, currentStudent?.classGroup, currentStudent?.college_id, activeTab]);
-
-  useEffect(() => {
-    if (!currentStudent?.id) return;
-    let cancelled = false;
-    (async () => {
-      setLoadingStudentAchievements(true);
-      try {
-        const res = await fetch(`/api/achievements?studentId=${encodeURIComponent(currentStudent.id)}`);
-        const data = await res.json();
-        if (!cancelled && data.success && Array.isArray(data.records)) {
-          setStudentAchievements(data.records);
-        }
-      } catch (err) {
-        console.error("Failed to fetch student achievements:", err);
-      } finally {
-        if (!cancelled) setLoadingStudentAchievements(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [currentStudent?.id]);
+  const studentAchievementsQuery = useQuery({
+    queryKey: qk.studentAchievements(currentStudent?.id || "none"),
+    enabled: !!currentStudent?.id,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/achievements?studentId=${encodeURIComponent(currentStudent!.id)}`);
+      return data?.success && Array.isArray(data.records) ? (data.records as any[]) : [];
+    },
+  });
+  const studentAchievements = studentAchievementsQuery.data || [];
+  const loadingStudentAchievements = studentAchievementsQuery.isFetching;
 
   // HackerRank & LeetCode Contest links (Fetched dynamically per college from external database)
-  const [contestData, setContestData] = useState<{
-    collegeMatched?: string;
-    hackerrank?: {
-      hasContest: boolean;
-      contestUrl: string;
-      contestName: string;
-      allContests?: Array<{ id: string; name: string; contestUrl: string; slug?: string }>;
-    };
-    leetcode?: {
-      hasContest: boolean;
-      contestUrl: string;
-      viewToken?: string;
-      practiceCount?: number;
-    };
-  } | null>(null);
-  const [loadingContests, setLoadingContests] = useState(false);
+  const contestQuery = useQuery({
+    queryKey: qk.contestLinks(
+      currentStudent?.college_id || "",
+      colleges?.find(c => c.id === currentStudent?.college_id)?.name || "",
+      currentStudent?.department || "",
+      currentStudent?.classGroup || ""
+    ),
+    enabled: !!currentStudent,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (currentStudent!.college_id) params.set("collegeId", currentStudent!.college_id);
+      const clgObj = colleges?.find(c => c.id === currentStudent!.college_id);
+      if (clgObj?.name) params.set("collegeName", clgObj.name);
+      if (currentStudent!.department) params.set("department", currentStudent!.department);
+      if (currentStudent!.classGroup) params.set("classGroup", currentStudent!.classGroup);
+      const data = await apiFetch(`/api/student/contest-links?${params.toString()}`);
+      return data?.success ? data : null;
+    },
+  });
+  const contestData = contestQuery.data || null;
+  const loadingContests = contestQuery.isFetching;
 
   // Live LeetCode & HackerRank student performance data
-  const [codingStatsData, setCodingStatsData] = useState<{
-    collegeMatched?: string;
-    student?: { registerNumber: string; name: string; email: string };
-    leetcode?: {
-      found: boolean;
-      username?: string | null;
-      profileUrl?: string | null;
-      ranking?: number | null;
-      solvedTotal: number;
-      solvedEasy: number;
-      solvedMedium: number;
-      solvedHard: number;
-      lastSyncedAt?: string | null;
-    };
-    hackerrank?: {
-      found: boolean;
-      contestName?: string;
-      contestSlug?: string | null;
-      rank?: number | null;
-      solved: number;
-      attempted: number;
-      computedScore: number;
-      totalQuestions: number;
-      username?: string | null;
-      profileUrl?: string | null;
-      lastScrapedAt?: string | null;
-    };
-  } | null>(null);
-  const [loadingCodingStats, setLoadingCodingStats] = useState(false);
-
-  useEffect(() => {
-    if (!currentStudent) return;
-    let cancelled = false;
-    (async () => {
-      setLoadingContests(true);
-      try {
-        const params = new URLSearchParams();
-        if (currentStudent.college_id) params.set("collegeId", currentStudent.college_id);
-        const clgObj = colleges?.find(c => c.id === currentStudent.college_id);
-        if (clgObj?.name) params.set("collegeName", clgObj.name);
-        if (currentStudent.department) params.set("department", currentStudent.department);
-        if (currentStudent.classGroup) params.set("classGroup", currentStudent.classGroup);
-
-        const res = await fetch(`/api/student/contest-links?${params.toString()}`);
-        const data = await res.json();
-        if (!cancelled && data.success) {
-          setContestData(data);
-        }
-      } catch (err) {
-        console.error("Failed to load student contest links:", err);
-      } finally {
-        if (!cancelled) setLoadingContests(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [currentStudent?.id, currentStudent?.college_id, currentStudent?.department, currentStudent?.classGroup, colleges]);
-
-  useEffect(() => {
-    if (!currentStudent) return;
-    let cancelled = false;
-    (async () => {
-      setLoadingCodingStats(true);
-      try {
-        const params = new URLSearchParams();
-        if (currentStudent.id) params.set("studentId", currentStudent.id);
-        const reg = currentStudent.register_number || currentStudent.roll_number;
-        if (reg) params.set("registerNumber", reg);
-        if (currentStudent.email) params.set("email", currentStudent.email);
-        if (currentStudent.name) params.set("name", currentStudent.name);
-        if (currentStudent.college_id) params.set("collegeId", currentStudent.college_id);
-        const clgObj = colleges?.find(c => c.id === currentStudent.college_id);
-        if (clgObj?.name) params.set("collegeName", clgObj.name);
-        if (currentStudent.leetcode_link) params.set("leetcodeUrl", currentStudent.leetcode_link);
-        if (currentStudent.hackerrank_link) params.set("hackerrankUrl", currentStudent.hackerrank_link);
-
-        const res = await fetch(`/api/coding-stats?${params.toString()}`);
-        const data = await res.json();
-        if (!cancelled && data.success) {
-          setCodingStatsData(data);
-        }
-      } catch (err) {
-        console.error("Failed to load student coding statistics:", err);
-      } finally {
-        if (!cancelled) setLoadingCodingStats(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [
-    currentStudent?.id,
-    currentStudent?.register_number,
-    currentStudent?.roll_number,
-    currentStudent?.email,
-    currentStudent?.name,
-    currentStudent?.college_id,
-    currentStudent?.leetcode_link,
-    currentStudent?.hackerrank_link,
-    colleges
-  ]);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("fp_allowed_profile_edit_classes");
-      if (saved) {
-        setAllowedProfileEditClasses(JSON.parse(saved));
-      }
-    } catch (_) { }
-  }, []);
+  const codingStatsQuery = useQuery({
+    queryKey: qk.studentCodingStats(
+      currentStudent?.id || "none",
+      [
+        currentStudent?.register_number || currentStudent?.roll_number || "",
+        currentStudent?.email || "",
+        currentStudent?.name || "",
+        currentStudent?.college_id || "",
+        currentStudent?.leetcode_link || "",
+        currentStudent?.hackerrank_link || "",
+      ].join("|")
+    ),
+    enabled: !!currentStudent,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (currentStudent!.id) params.set("studentId", currentStudent!.id);
+      const reg = currentStudent!.register_number || currentStudent!.roll_number;
+      if (reg) params.set("registerNumber", reg);
+      if (currentStudent!.email) params.set("email", currentStudent!.email);
+      if (currentStudent!.name) params.set("name", currentStudent!.name);
+      if (currentStudent!.college_id) params.set("collegeId", currentStudent!.college_id);
+      const clgObj = colleges?.find(c => c.id === currentStudent!.college_id);
+      if (clgObj?.name) params.set("collegeName", clgObj.name);
+      if (currentStudent!.leetcode_link) params.set("leetcodeUrl", currentStudent!.leetcode_link);
+      if (currentStudent!.hackerrank_link) params.set("hackerrankUrl", currentStudent!.hackerrank_link);
+      const data = await apiFetch(`/api/coding-stats?${params.toString()}`);
+      return data?.success ? data : null;
+    },
+  });
+  const codingStatsData = codingStatsQuery.data || null;
+  const loadingCodingStats = codingStatsQuery.isFetching;
 
   useEffect(() => {
     if (currentStudent) {
@@ -604,7 +504,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       setEditId(currentStudent.id);
       setEditDepartment(currentStudent.department || "");
       setEditClassGroup(currentStudent.classGroup || "");
-      setEditCollegeId(currentStudent.college_id || "college_1");
+      setEditCollegeId(currentStudent.college_id || colleges[0]?.id || "");
       setEditRegisterNumber(currentStudent.register_number || "");
       setEditRollNumber(currentStudent.roll_number || "");
       setEditTenthMark(currentStudent.tenth_mark || "");
@@ -633,7 +533,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       setEditId(currentStudent.id);
       setEditDepartment(currentStudent.department || "");
       setEditClassGroup(currentStudent.classGroup || "");
-      setEditCollegeId(currentStudent.college_id || "college_1");
+      setEditCollegeId(currentStudent.college_id || colleges[0]?.id || "");
       setEditRegisterNumber(currentStudent.register_number || "");
       setEditRollNumber(currentStudent.roll_number || "");
       setEditTenthMark(currentStudent.tenth_mark || "");
@@ -1347,8 +1247,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   });
 
   // Real fee state from /api/fees
-  const [feeData, setFeeData] = useState<any>(null);
-  const [feeLoading, setFeeLoading] = useState(false);
+  const feeQuery = useQuery({
+    queryKey: qk.studentFees(currentStudent?.id || "none"),
+    enabled: !!currentStudent?.id,
+    queryFn: async () => apiFetch(`/api/fees?role=student&studentId=${encodeURIComponent(currentStudent!.id)}`),
+  });
+  const feeData = feeQuery.data || null;
+  const feeLoading = feeQuery.isFetching;
   const [feePayModal, setFeePayModal] = useState<any | null>(null);
   const [feePayAmount, setFeePayAmount] = useState("");
   const [feePayMethod, setFeePayMethod] = useState("online");
@@ -1356,52 +1261,31 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const [feePaySuccess, setFeePaySuccess] = useState<string | null>(null);
 
   // Subject Materials (Unit-Wise Study Hub) Real State
-  const [materialsList, setMaterialsList] = useState<any[]>([]);
-  const [materialsLoading, setMaterialsLoading] = useState(false);
   const [selectedMaterialSubject, setSelectedMaterialSubject] = useState<string>("");
   const [selectedMaterialUnit, setSelectedMaterialUnit] = useState<number | "all">("all");
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string>("all");
   const [materialSearchQuery, setMaterialSearchQuery] = useState("");
   const [previewMaterial, setPreviewMaterial] = useState<any | null>(null);
 
-  const fetchSubjectMaterials = async (subj?: string) => {
-    setMaterialsLoading(true);
-    try {
-      const targetSubj = subj || selectedMaterialSubject || (studentSubjects[0]?.name || "");
-      const res = await fetch(`/api/materials?subject=${encodeURIComponent(targetSubj)}`);
-      const data = await res.json();
-      if (data.success) {
-        setMaterialsList(data.materials || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setMaterialsLoading(false);
-    }
-  };
+  const materialsQuery = useQuery<any[]>({
+    queryKey: qk.studentMaterials(currentStudent?.college_id || "all", selectedMaterialSubject || "none"),
+    enabled: activeTab === "materials" && !!selectedMaterialSubject,
+    queryFn: async () => {
+      const params = new URLSearchParams({ subject: selectedMaterialSubject });
+      if (currentStudent?.college_id) params.set("collegeId", currentStudent.college_id);
+      const data = await apiFetch(`/api/materials?${params.toString()}`);
+      return data?.success ? (data.materials || []) : [];
+    },
+    placeholderData: (prev) => prev,
+  });
+  const materialsList = materialsQuery.data || [];
+  const materialsLoading = materialsQuery.isFetching;
 
   useEffect(() => {
     if (studentSubjects.length > 0 && !selectedMaterialSubject) {
       setSelectedMaterialSubject(studentSubjects[0].name);
     }
   }, [studentSubjects, selectedMaterialSubject]);
-
-  useEffect(() => {
-    if (selectedMaterialSubject) {
-      fetchSubjectMaterials(selectedMaterialSubject);
-    }
-  }, [selectedMaterialSubject]);
-
-  const fetchFeeData = async () => {
-    if (!currentStudent?.id) return;
-    setFeeLoading(true);
-    try {
-      const res = await fetch(`/api/fees?role=student&studentId=${encodeURIComponent(currentStudent.id)}`);
-      const json = await res.json();
-      if (json.success) setFeeData(json);
-    } catch (e) { console.error(e); }
-    finally { setFeeLoading(false); }
-  };
 
   const handleFeePayment = async () => {
     if (!feePayModal || !feePayAmount || !currentStudent) return;
@@ -1419,37 +1303,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
       });
       const json = await res.json();
       if (json.success) {
-        setFeePaySuccess(json.receiptNo);
-        await fetchFeeData();
+        setFeePaySuccess(json.receiptNo || "Recorded");
+        await feeQuery.refetch();
+      } else {
+        toast(json.message || "Payment could not be recorded.", "error");
       }
+    } catch (err: any) {
+      toast(err?.message || "Payment could not be recorded.", "error");
     } finally { setFeePaySubmitting(false); }
   };
 
-  // Student Interview Hub State
-  const [studentInterviewsList, setStudentInterviewsList] = useState<any[]>([]);
-  const [loadingStudentInterviews, setLoadingStudentInterviews] = useState(false);
-
-  const fetchStudentInterviews = async () => {
-    if (!currentStudent?.id) return;
-    setLoadingStudentInterviews(true);
-    try {
-      const res = await fetch(`/api/interviews?role=student&studentId=${encodeURIComponent(currentStudent.id)}&classGroup=${encodeURIComponent(currentStudent.classGroup || "")}&collegeId=${encodeURIComponent(currentStudent.college_id || "")}`);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.interviews)) {
-        setStudentInterviewsList(json.interviews);
-      }
-    } catch (e) {
-      console.error("Error fetching student interviews:", e);
-    } finally {
-      setLoadingStudentInterviews(false);
-    }
-  };
-
-  useEffect(() => {
-    if (currentStudent?.id) {
-      fetchStudentInterviews();
-    }
-  }, [currentStudent?.id, currentStudent?.classGroup, currentStudent?.college_id]);
+  // Student Interview Hub reads the same cached query as the calendar widgets.
+  const studentInterviewsList = studentInterviews;
+  const loadingStudentInterviews = studentInterviewsQuery.isFetching;
 
   return (
     <div className="flex-1 flex flex-col md:flex-row bg-warm-canvas text-slate-800 h-full overflow-hidden">
@@ -1496,7 +1362,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         if (tab.id === "tracker") {
                           setStudentTrackerCategory("skill");
                         }
-                        window.location.href = `/student/${tab.id}`;
+                        setActiveTab(tab.id as typeof activeTab);
                       }}
                       className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
                         } ${isActive
@@ -1573,7 +1439,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   if (t.id === "tracker") {
                     setStudentTrackerCategory("skill");
                   }
-                  window.location.href = `/student/${t.id}`;
+                  setActiveTab(t.id as typeof activeTab);
                 }}
                 className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${isActive ? "text-indigo-600" : "text-slate-400"
                   }`}
@@ -1674,7 +1540,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 onClick={(e) => {
                   if (e.ctrlKey || e.metaKey || e.button === 1) return;
                   e.preventDefault();
-                  window.location.href = "/student/interviews";
+                  setActiveTab("interviews");
                 }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
@@ -1692,7 +1558,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 onClick={(e) => {
                   if (e.ctrlKey || e.metaKey || e.button === 1) return;
                   e.preventDefault();
-                  window.location.href = "/student/exams";
+                  setActiveTab("exams");
                 }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
@@ -1710,7 +1576,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 onClick={(e) => {
                   if (e.ctrlKey || e.metaKey || e.button === 1) return;
                   e.preventDefault();
-                  window.location.href = "/student/materials";
+                  setActiveTab("materials");
                 }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
               >
@@ -1724,11 +1590,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </a>
 
               <a
+                href="/student/fees"
+                onClick={(e) => {
+                  if (e.ctrlKey || e.metaKey || e.button === 1) return;
+                  e.preventDefault();
+                  setActiveTab("fees");
+                }}
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/25 flex items-center justify-center text-emerald-600 shrink-0 group-hover:scale-105 transition-transform">
+                  <CreditCard className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Fees</span>
+                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">
+                    {(feeData?.stats?.unpaidCount || 0) > 0
+                      ? `${feeData?.stats?.unpaidCount} fee record${feeData?.stats?.unpaidCount === 1 ? "" : "s"} pending`
+                      : "Semester fees, receipts & payment links"}
+                  </span>
+                </div>
+              </a>
+
+              <a
                 href="/student/profile"
                 onClick={(e) => {
                   if (e.ctrlKey || e.metaKey || e.button === 1) return;
                   e.preventDefault();
-                  window.location.href = "/student/profile";
+                  setActiveTab("profile");
                 }}
                 className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
               >
@@ -1836,7 +1724,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      window.location.href = "/student/tracker?category=skill";
+                      setStudentTrackerCategory("skill");
+                      setActiveTab("tracker");
                     }}
                     className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-extrabold cursor-pointer shadow-xs transition-all hover:scale-105"
                   >
@@ -1902,7 +1791,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                window.location.href = `/student/tracker?category=skill&subject=${encodeURIComponent(task.subject)}&week=${task.week_number}`;
+                                window.dispatchEvent(new CustomEvent("fp_navigate_target", {
+                                  detail: { url: `/student/tracker?category=skill&subject=${encodeURIComponent(task.subject)}&week=${task.week_number}` }
+                                }));
+                                setActiveTab("tracker");
                               }}
                               className="p-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs transition-colors"
                               title="Go to submission"
@@ -1921,7 +1813,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          window.location.href = "/student/tracker?category=skill";
+                          setStudentTrackerCategory("skill");
+                          setActiveTab("tracker");
                         }}
                         className="mt-3 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs cursor-pointer inline-flex items-center gap-1.5"
                       >
@@ -2120,7 +2013,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     const isInternal = todayInterview.type === "internal" || mySlot?.mode === "in_person";
                     const meetLink = !isInternal ? (mySlot?.gmeet_link || todayInterview.gmeet_link) : null;
                     const evaluator = mySlot?.mentor_name || todayInterview.mentor_name || "Faculty Evaluator";
-                    const timing = mySlot?.slot_start_time || todayInterview.preferred_start_time || "8:20 AM - 8:35 AM";
+                    const timing = mySlot?.slot_start_time || todayInterview.preferred_start_time || "Time TBA";
 
                     return (
                       <div className="p-4 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center justify-between gap-4 shadow-xs">
@@ -2145,9 +2038,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             >
                               <Video className="w-3 h-3" /> Join Room
                             </a>
-                          ) : (
+                          ) : isInternal ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-800 rounded-lg text-[9.5px] font-bold border border-purple-200">
                               <User className="w-3 h-3 text-purple-600" /> In-Person
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9.5px] font-bold border border-slate-200">
+                              <Video className="w-3 h-3 text-slate-400" /> Link not shared yet
                             </span>
                           )}
                         </div>
@@ -2155,7 +2052,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     );
                   })()}
 
-                  {myClassSlots.slice(0, 3).map((slot, index) => {
+                  {myClassSlots.map((slot, index) => {
                     const mentor = mentors.find(m => m.id === slot.mentorId);
                     const teacherName = mentor?.name || (slot.department ? `${slot.department} Faculty` : "Faculty Instructor");
                     const initial = teacherName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "FA";
@@ -2358,7 +2255,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             const isInternal = interviewForSlot.type === "internal" || mySlot?.mode === "in_person";
                             const meetLink = !isInternal ? (mySlot?.gmeet_link || interviewForSlot.gmeet_link) : null;
                             const evaluatorName = mySlot?.mentor_name || interviewForSlot.mentor_name || "Faculty Evaluator";
-                            const slotTiming = mySlot?.slot_start_time || interviewForSlot.preferred_start_time || "8:20 AM - 8:35 AM";
+                            const slotTiming = mySlot?.slot_start_time || interviewForSlot.preferred_start_time || "Time TBA";
 
                             return (
                               <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
@@ -2586,7 +2483,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                       const isInternal = inv.type === "internal" || mySlot?.mode === "in_person";
                       const isAllocated = Boolean(mySlot) || (!inv.student_slots?.length && inv.status === "assigned");
-                      const assignedTime = mySlot ? `${mySlot.slot_start_time} - ${mySlot.slot_end_time}` : (inv.preferred_start_time || "09:00 AM");
+                      const assignedTime = mySlot ? `${mySlot.slot_start_time} - ${mySlot.slot_end_time}` : (inv.preferred_start_time || "Time TBA");
                       const assignedMentor = mySlot?.mentor_name || inv.mentor_name || "Assigned Faculty Evaluator";
                       const meetLink = !isInternal ? (mySlot?.gmeet_link || inv.gmeet_link) : null;
                       const isVerified = inv.status === "completed";
@@ -2638,7 +2535,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                     <User className="w-3 h-3 text-indigo-600" /> In-Person Evaluation (Faculty Cabin)
                                   </span>
                                 </div>
-                              ) : null}
+                              ) : (
+                                <div className="pt-1 flex items-center justify-between">
+                                  <span className="text-[10px] font-semibold text-slate-400">Virtual Meeting Room:</span>
+                                  <span className="text-[10px] font-bold text-slate-500">Link will be shared by your evaluator</span>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-center text-[11px] font-semibold text-amber-800">
@@ -3097,19 +2999,19 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           {/* Group Subject Scorecards Table */}
                           <div className="overflow-x-auto scroll-touch">
-                            <table className="w-full border-collapse text-left text-xs min-w-[700px]">
-                              <thead>
-                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                                  <th className="p-3">Subject Details</th>
-                                  <th className="p-3">Test Date</th>
-                                  <th className="p-3 text-center">Marks Scored</th>
-                                  <th className="p-3 text-center">Score %</th>
-                                  <th className="p-3 text-center">Grade</th>
-                                  <th className="p-3 text-center">Status</th>
-                                  <th className="p-3">Evaluator & Remarks</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                            <Table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                              <TableHeader>
+                                <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                                  <TableHead className="p-3">Subject Details</TableHead>
+                                  <TableHead className="p-3">Test Date</TableHead>
+                                  <TableHead className="p-3 text-center">Marks Scored</TableHead>
+                                  <TableHead className="p-3 text-center">Score %</TableHead>
+                                  <TableHead className="p-3 text-center">Grade</TableHead>
+                                  <TableHead className="p-3 text-center">Status</TableHead>
+                                  <TableHead className="p-3">Evaluator & Remarks</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody className="divide-y divide-slate-150 bg-white font-medium">
                                 {/* 1. Evaluated Marks */}
                                 {group.typeMarks.map((m: any, idx: number) => {
                                   const isAbs = Boolean(m.is_absent);
@@ -3259,8 +3161,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                     </tr>
                                   );
                                 })}
-                              </tbody>
-                            </table>
+                              </TableBody>
+                            </Table>
                           </div>
                         </div>
                       );
@@ -3346,33 +3248,33 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         <span className="text-[11px] text-indigo-600 font-bold">Prepare well for your assessments!</span>
                       </div>
                       <div className="overflow-x-auto scroll-touch">
-                        <table className="w-full border-collapse text-left text-xs min-w-[650px]">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                              <th className="p-3">Exam / Assessment</th>
-                              <th className="p-3">Subject Details</th>
-                              <th className="p-3">Exam Date & Day Order</th>
-                              <th className="p-3">Session & Timings</th>
-                              <th className="p-3">Total Marks</th>
-                              <th className="p-3 text-center">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                        <Table className="w-full border-collapse text-left text-xs min-w-[650px]">
+                          <TableHeader>
+                            <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                              <TableHead className="p-3">Exam / Assessment</TableHead>
+                              <TableHead className="p-3">Subject Details</TableHead>
+                              <TableHead className="p-3">Exam Date & Day Order</TableHead>
+                              <TableHead className="p-3">Session & Timings</TableHead>
+                              <TableHead className="p-3">Total Marks</TableHead>
+                              <TableHead className="p-3 text-center">Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-150 bg-white font-medium">
                             {examsLoading ? (
-                              <tr>
-                                <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
+                              <TableRow>
+                                <TableCell colSpan={6} className="p-8 text-center text-slate-400 font-bold">
                                   Loading your assessment schedule...
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ) : upcomingExams.length === 0 ? (
-                              <tr>
-                                <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                              <TableRow>
+                                <TableCell colSpan={6} className="p-8 text-center text-slate-400 italic">
                                   No upcoming examination schedules published for your enrolled courses.
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ) : examTableRows(upcomingExams, false)}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     </div>
 
@@ -3384,21 +3286,21 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[9px] font-black">{pastExams.length}</span>
                         </div>
                         <div className="overflow-x-auto scroll-touch">
-                          <table className="w-full border-collapse text-left text-xs min-w-[650px]">
-                            <thead>
-                              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
-                                <th className="p-3">Exam / Assessment</th>
-                                <th className="p-3">Subject Details</th>
-                                <th className="p-3">Exam Date & Day Order</th>
-                                <th className="p-3">Session & Timings</th>
-                                <th className="p-3">Total Marks</th>
-                                <th className="p-3 text-center">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-150 bg-white font-medium">
+                          <Table className="w-full border-collapse text-left text-xs min-w-[650px]">
+                            <TableHeader>
+                              <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] whitespace-nowrap">
+                                <TableHead className="p-3">Exam / Assessment</TableHead>
+                                <TableHead className="p-3">Subject Details</TableHead>
+                                <TableHead className="p-3">Exam Date & Day Order</TableHead>
+                                <TableHead className="p-3">Session & Timings</TableHead>
+                                <TableHead className="p-3">Total Marks</TableHead>
+                                <TableHead className="p-3 text-center">Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-slate-150 bg-white font-medium">
                               {examTableRows(pastExams, true)}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
                       </div>
                     )}
@@ -3435,7 +3337,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => fetchSubjectMaterials(selectedMaterialSubject)}
+                    onClick={() => materialsQuery.refetch()}
                     className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 cursor-pointer shadow-2xs transition-colors"
                     title="Refresh Materials"
                   >
@@ -3666,16 +3568,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab 7: Fees & Dues (Real Data) */}
         {activeTab === "fees" && (() => {
-          if (!feeData && !feeLoading) fetchFeeData();
           const fmtR = (n: number) => "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
-          if (feeLoading) return <div className="py-16 text-center text-sm text-slate-400">Loading your fee details…</div>;
+          if (feeLoading && !feeData) return <div className="py-16 text-center text-sm text-slate-400">Loading your fee details…</div>;
 
           if (!feeData) return (
             <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm font-sans">
               <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Fees & Online Payments</h2>
               <p className="text-[11px] text-slate-450 mt-1">Could not load fee data. Try refreshing.</p>
-              <button onClick={fetchFeeData} className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold cursor-pointer">Retry</button>
+              <button onClick={() => feeQuery.refetch()} className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold cursor-pointer">Retry</button>
             </div>
           );
 
@@ -3700,7 +3601,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 shadow-sm">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider">Fee Breakdown</h3>
-                  <button onClick={fetchFeeData} className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:text-[#D528A2] cursor-pointer transition-colors"><RefreshCw className="h-3 w-3" /></button>
+                  <button onClick={() => feeQuery.refetch()} className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:text-[#D528A2] cursor-pointer transition-colors"><RefreshCw className="h-3 w-3" /></button>
                 </div>
                 {fees.map((fee: any) => (
                   <div key={fee.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-150 bg-slate-50/50 gap-3">
@@ -3771,8 +3672,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               )}
 
               {feePayModal && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-7">
+                <Dialog
+                  open={true}
+                  onOpenChange={(next) => { if (!next) setFeePayModal(null); }}
+                  ariaLabel="Pay fee online"
+                  overlayClassName="bg-black/40 backdrop-blur-sm"
+                  panelClassName="max-w-md max-h-[90vh] p-7 space-y-0"
+                >
                     {feePaySuccess ? (
                       <div className="text-center space-y-4">
                         <div className="h-14 w-14 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
@@ -3789,7 +3695,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             <h3 className="text-base font-extrabold text-slate-800">Pay Fee Online</h3>
                             <p className="text-xs text-slate-500 mt-0.5">{feePayModal.term_name}</p>
                           </div>
-                          <button onClick={() => setFeePayModal(null)} className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:bg-slate-200"><X className="h-4 w-4 text-slate-500" /></button>
+                          <button onClick={() => setFeePayModal(null)} aria-label="Close payment dialog" className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer hover:bg-slate-200"><X className="h-4 w-4 text-slate-500" /></button>
                         </div>
                         <div className="space-y-4">
                           <div className="flex justify-between text-sm p-3 rounded-xl bg-slate-50 border border-slate-100">
@@ -3798,7 +3704,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           </div>
                           <div>
                             <label className="text-[11px] font-bold text-slate-600 block mb-1">Amount (₹)</label>
-                            <input type="number" value={feePayAmount} onChange={e => setFeePayAmount(e.target.value)} max={feePayModal.amount - feePayModal.paid_amount} placeholder="Enter amount" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#D528A2]/50" />
+                            <input aria-label="Amount (₹)" type="number" value={feePayAmount} onChange={e => setFeePayAmount(e.target.value)} max={feePayModal.amount - feePayModal.paid_amount} placeholder="Enter amount" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#D528A2]/50" />
                           </div>
                           <div>
                             <label className="text-[11px] font-bold text-slate-600 block mb-1">Payment Method</label>
@@ -3817,8 +3723,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         </div>
                       </>
                     )}
-                  </div>
-                </div>
+                </Dialog>
               )}
             </div>
           );
@@ -4345,6 +4250,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       <div className="space-y-1.5 flex-grow max-w-md">
                         <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Select Skill Subject</label>
                         <select
+                          aria-label="Select Skill Subject"
                           value={studentTrackerSubject}
                           onChange={(e) => setStudentTrackerSubject(e.target.value)}
                           className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
@@ -4780,7 +4686,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Full Name</span>
                       {isEditingProfile ? (
-                        <input
+                        <input aria-label="Full Name"
                           type="text"
                           value={editName}
                           onChange={e => setEditName(e.target.value)}
@@ -4827,7 +4733,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Date of Birth (DOB)</span>
                       {isEditingProfile ? (
-                        <input
+                        <input aria-label="Date of Birth"
                           type="date"
                           value={editDob}
                           onChange={e => setEditDob(e.target.value)}
@@ -4841,7 +4747,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Blood Group</span>
                       {isEditingProfile ? (
-                        <select
+                        <select aria-label="Blood Group"
                           value={editBloodGroup}
                           onChange={e => setEditBloodGroup(e.target.value)}
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800 cursor-pointer"
@@ -4869,7 +4775,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div className="space-y-1 sm:col-span-2">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Primary Email</span>
                       {isEditingProfile ? (
-                        <input
+                        <input aria-label="Primary Email"
                           type="email"
                           value={editEmail}
                           onChange={e => setEditEmail(e.target.value)}
@@ -4924,7 +4830,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div className="space-y-1 sm:col-span-2 lg:col-span-2">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Course Department</span>
                       {isEditingProfile ? (
-                        <input
+                        <input aria-label="Course Department"
                           type="text"
                           value={editDepartment}
                           onChange={e => setEditDepartment(e.target.value)}
@@ -5002,7 +4908,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     <div className="space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Medium of Study</span>
                       {isEditingProfile ? (
-                        <select
+                        <select aria-label="Medium of Study"
                           value={editMedium}
                           onChange={e => setEditMedium(e.target.value)}
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800 cursor-pointer"
@@ -5568,7 +5474,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <div className="flex items-center gap-2.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => fetchStudentInterviews()}
+                    onClick={() => studentInterviewsQuery.refetch()}
                     disabled={loadingStudentInterviews}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
                   >

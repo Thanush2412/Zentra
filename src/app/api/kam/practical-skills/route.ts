@@ -1,15 +1,20 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireKamScope, resolveScopeParams } from "@/lib/kamScope";
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("collegeId");
-    const kamId = searchParams.get("kamId");
+    const scoped = resolveScopeParams(scope!, searchParams.get("kamId"), searchParams.get("collegeId"));
+    if (scoped.errorResponse) return scoped.errorResponse;
+    const collegeId = scoped.collegeId;
+    const kamId = scoped.kamId;
 
     let colleges: any[] = [];
     if (collegeId && collegeId !== "all") {
@@ -26,7 +31,7 @@ export async function GET(request: Request) {
 
     const [weeklyTasks, studentTrackerRows, mentorsList, subjectsList] = await Promise.all([
       collegeIds.length > 0
-        ? db.all(`SELECT * FROM weekly_tasks WHERE college_id IN ${inClause} ORDER BY week_number ASC`, ...collegeIds).catch(() => [])
+        ? db.all(`SELECT * FROM weekly_tasks WHERE college_id IN ${inClause} ORDER BY week_number ASC`, ...collegeIds)
         : Promise.resolve([]),
       collegeIds.length > 0
         ? db.all(`
@@ -35,13 +40,13 @@ export async function GET(request: Request) {
           JOIN students s ON st.student_id = s.id
           WHERE s.college_id IN ${inClause}
           ORDER BY st.updated_at DESC
-        `, ...collegeIds).catch(() => [])
+        `, ...collegeIds)
         : Promise.resolve([]),
       collegeIds.length > 0
-        ? db.all(`SELECT * FROM mentors WHERE college_id IN ${inClause}`, ...collegeIds).catch(() => [])
+        ? db.all(`SELECT * FROM mentors WHERE college_id IN ${inClause}`, ...collegeIds)
         : Promise.resolve([]),
       collegeIds.length > 0
-        ? db.all(`SELECT * FROM subjects WHERE college_id IN ${inClause}`, ...collegeIds).catch(() => [])
+        ? db.all(`SELECT * FROM subjects WHERE college_id IN ${inClause}`, ...collegeIds)
         : Promise.resolve([])
     ]);
 

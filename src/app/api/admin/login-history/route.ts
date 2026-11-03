@@ -1,14 +1,16 @@
-// Pin to Mumbai (bom1) — co-located with DB
-export const preferredRegion = "bom1";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
+export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const rows = await db.all(
       "SELECT id, user_id, login_time, logout_time, ip, device FROM login_history ORDER BY login_time DESC LIMIT 50"

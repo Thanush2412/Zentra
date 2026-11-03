@@ -1,23 +1,33 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
 export const maxDuration = 60;
 
-import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { sendMail, renderEmailShell } from "@/lib/mail";
-import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
+import { NextResponse, after } from "next/server";
+import { requireAuth } from "@/lib/authGuard";
+import { getDb, readInChunks } from "@/lib/db";
+import { renderEmailShell } from "@/lib/mail";
+import { dispatchMail } from "@/lib/mailAsync";
+import { notifyExternalInterviewsAfterResponse } from "@/lib/interview-notifications";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStrOffset } from "@/lib/localDate";
 
 
 export async function GET(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
-    const mentorId = searchParams.get("mentorId");
-    const collegeId = searchParams.get("collegeId");
-    const role = searchParams.get("role") || "mentor";
+    const user = auth!.user;
+
+    // The visibility branch used to be chosen from ?role= alone, so any signed-in
+    // account could ask for the admin view and receive every interview. Staff keep
+    // the requested view; everyone else is pinned to their own session role.
+    const FULL_INTERVIEW_VIEW_ROLES = new Set(["admin", "L and D", "sme", "hr", "fee_manager"]);
+    const requestedRole = (searchParams.get("role") || "mentor").toLowerCase();
+    const role = FULL_INTERVIEW_VIEW_ROLES.has(user.role) ? requestedRole : user.role;
+
     const type = searchParams.get("type");
 
     let query = "SELECT * FROM student_interviews WHERE 1=1";
@@ -28,7 +38,33 @@ export async function GET(request: Request) {
       params.push(type);
     }
 
-    const kamId = searchParams.get("kamId");
+    let mentorId = searchParams.get("mentorId");
+    let collegeId = searchParams.get("collegeId");
+    let kamId = searchParams.get("kamId");
+
+    if (user.role === "mentor") {
+      mentorId = user.reference_id;
+    } else if (user.role === "cm") {
+      collegeId = user.college_id || null;
+      if (!collegeId) {
+        return NextResponse.json(
+          { success: false, message: "No campus is linked to this account." },
+          { status: 403 }
+        );
+      }
+    } else if (user.role === "kam") {
+      const kam = await db.get(
+        "SELECT id FROM kam_users WHERE id = ? OR LOWER(email) = ? LIMIT 1",
+        [user.reference_id, String(user.email || "").toLowerCase()]
+      );
+      if (!kam) {
+        return NextResponse.json(
+          { success: false, message: "No KAM portfolio is linked to this account." },
+          { status: 403 }
+        );
+      }
+      kamId = kam.id;
+    }
 
     // Role-scoped filtering
     if (role === "mentor" && mentorId) {
@@ -80,9 +116,19 @@ export async function GET(request: Request) {
       )`;
       params.push(kamId, kamId, kamId);
     } else if (role === "student") {
-      const studentId = searchParams.get("studentId");
-      const classGroup = searchParams.get("classGroup");
-      const colId = searchParams.get("collegeId");
+      let studentId = searchParams.get("studentId");
+      let classGroup = searchParams.get("classGroup");
+      let colId = searchParams.get("collegeId");
+
+      if (user.role === "student") {
+        const studentRow = await db.get(
+          "SELECT id, classGroup, college_id FROM students WHERE id = ? OR LOWER(email) = ? LIMIT 1",
+          [user.reference_id, String(user.email || "").toLowerCase()]
+        );
+        studentId = studentRow?.id || user.reference_id;
+        classGroup = studentRow?.classGroup || "";
+        colId = studentRow?.college_id || "";
+      }
 
       query += ` AND (
         (status IN ('assigned', 'completed', 'pending_verification')) AND (
@@ -105,13 +151,21 @@ export async function GET(request: Request) {
 
     if (interviews.length > 0) {
       const interviewIds = interviews.map((i: any) => i.id);
-      const placeholders = interviewIds.map(() => "?").join(",");
+
+      // Chunked IN-list: an admin's interview feed is unbounded, and binding every id
+      // into one statement grows the parse plan with it. Per-chunk order is preserved,
+      // which is all the grouping below needs.
+      const byInterviews = (table: string, orderBy: string) =>
+        readInChunks(db, interviewIds, (chunk, ph) => ({
+          sql: `SELECT * FROM ${table} WHERE interview_id IN (${ph}) ORDER BY ${orderBy}`,
+          params: [...chunk]
+        }));
 
       const [allAllocs, allCamResponses, allStudentSlots, allEvals] = await Promise.all([
-        db.all(`SELECT * FROM interview_allocations WHERE interview_id IN (${placeholders}) ORDER BY start_time ASC`, ...interviewIds),
-        db.all(`SELECT * FROM cam_capacity_responses WHERE interview_id IN (${placeholders}) ORDER BY created_at ASC`, ...interviewIds),
-        db.all(`SELECT * FROM student_interview_slots WHERE interview_id IN (${placeholders}) ORDER BY slot_start_time ASC`, ...interviewIds),
-        db.all(`SELECT * FROM interview_evaluations WHERE interview_id IN (${placeholders}) ORDER BY created_at DESC`, ...interviewIds)
+        byInterviews("interview_allocations", "start_time ASC"),
+        byInterviews("cam_capacity_responses", "created_at ASC"),
+        byInterviews("student_interview_slots", "slot_start_time ASC"),
+        byInterviews("interview_evaluations", "created_at DESC")
       ]);
 
       const allocsMap = new Map<string, any[]>();
@@ -179,16 +233,12 @@ export async function GET(request: Request) {
           conductedStatus = "not_conducted";
         }
 
-        let effectiveGmeet = inv.gmeet_link;
+        // Inherit a link only when an evaluator or CM really saved one. A GET must never
+        // mint a Meet code from the interview id: the fabricated URL renders as a working
+        // "Join" button and lands students on Google's invalid-link page.
+        let effectiveGmeet: string | null = inv.gmeet_link || null;
         if (!effectiveGmeet && inv.type === "external") {
-          const matchFromSlot = studentSlots.find((s: any) => s.gmeet_link);
-          if (matchFromSlot && matchFromSlot.gmeet_link) {
-            effectiveGmeet = matchFromSlot.gmeet_link;
-          } else {
-            const safeCode = (inv.subject || "tech").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 3) || "fpz";
-            effectiveGmeet = `https://meet.google.com/${safeCode}-${inv.id.slice(0, 4)}-${inv.id.slice(4, 7)}`;
-          }
-          db.run("UPDATE student_interviews SET gmeet_link = ? WHERE id = ? AND (gmeet_link IS NULL OR gmeet_link = '')", [effectiveGmeet, inv.id]).catch(() => {});
+          effectiveGmeet = studentSlots.find((s: any) => s.gmeet_link)?.gmeet_link || null;
         }
 
         const enrichedSlots = (studentSlots || []).map((s: any) => ({
@@ -245,6 +295,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "sme", "L and D", "cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
 
@@ -281,21 +333,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // Rule 2: Date must be at least 2 days after current date
-    const reqDate = new Date(target_date);
-    const minAllowedDate = new Date();
-    minAllowedDate.setHours(0, 0, 0, 0);
-    minAllowedDate.setDate(minAllowedDate.getDate() + 2);
+    // Rule 2: Date must be at least 2 days after the institution's current date.
+    // Compared as YYYY-MM-DD: the Vercel clock runs UTC, so a Date-derived "today"
+    // rolls over 5h30m after IST midnight and would allow/reject the wrong day.
+    const requestedDateStr = String(target_date).split("T")[0].trim();
+    const minAllowedDateStr = getInstitutionDateStrOffset(2);
 
-    if (isNaN(reqDate.getTime()) || reqDate < minAllowedDate) {
-      const minStr = minAllowedDate.toISOString().split("T")[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDateStr) || isNaN(new Date(requestedDateStr).getTime())) {
       return NextResponse.json(
-        { success: false, message: `Interview target date must be at least 2 days in advance (on or after ${minStr}).` },
+        { success: false, message: "Interview target date must be a valid date in YYYY-MM-DD format." },
         { status: 400 }
       );
     }
 
-    const interviewId = id || `int_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    if (requestedDateStr < minAllowedDateStr) {
+      return NextResponse.json(
+        { success: false, message: `Interview target date must be at least 2 days in advance (on or after ${minAllowedDateStr}).` },
+        { status: 400 }
+      );
+    }
+
+    const interviewId = id || generateId("int");
     const now = new Date().toISOString();
     const resolvedCollegeId = college_id || origin_college_id || "";
 
@@ -334,7 +392,7 @@ export async function POST(request: Request) {
         mentor_name || "Mentor",
         origin_college_id || "",
         resolvedCollegeId,
-        type === "external" ? "pending_external_cm" : "pending_cm",
+        type === "external" ? "pending_origin_cm" : "pending_cm",
         notes,
         mentor_name || "",
         "mentor",
@@ -346,60 +404,59 @@ export async function POST(request: Request) {
     );
 
     // Notify Campus Manager via email & in-app
-    try {
-      if (type === "external") {
-        await dispatchExternalInterviewNotifications({
-          interviewId,
-          subject,
-          classGroup: class_group,
-          targetDate: target_date,
-          type: "external",
-          topics,
-          studentCount: Number(student_count) || 0,
-          mentorName: mentor_name,
-          originCollegeId: origin_college_id || resolvedCollegeId,
-          notes,
-          actionType: "created"
-        });
-      } else {
+    if (type === "external") {
+      notifyExternalInterviewsAfterResponse({
+        interviewId,
+        subject,
+        classGroup: class_group,
+        targetDate: target_date,
+        type: "external",
+        topics,
+        studentCount: Number(student_count) || 0,
+        mentorName: mentor_name,
+        originCollegeId: origin_college_id || resolvedCollegeId,
+        notes,
+        actionType: "created"
+      });
+    } else {
+      // Deferred with its own lookup so the mentor's request is answered as soon as
+      // the row exists instead of waiting on a CM read plus a relay leg.
+      after(async () => {
         const cms = await db.all(
           "SELECT * FROM campus_managers WHERE college_id = ?",
           [resolvedCollegeId]
         );
-        if (cms && cms.length > 0) {
-          const cmEmails = cms.map((cm: any) => cm.email).filter(Boolean).join(", ");
-          if (cmEmails) {
-            await sendMail({
-              to: cmEmails,
-              subject: `[New Interview Request] ${subject} — ${class_group} by ${mentor_name}`,
-              htmlBody: renderEmailShell({
-                title: "New Interview Request Raised",
-                badgeText: "Internal Interview",
-                badgeColor: "amber",
-                description: `<strong>${mentor_name || "A mentor"}</strong> has raised a new internal interview request and it is awaiting your allocation.`,
-                details: [
-                  { label: "Subject", value: subject, highlight: true },
-                  { label: "Class Group", value: class_group || "All Classes" },
-                  { label: "Target Date", value: target_date },
-                  { label: "Type", value: "INTERNAL" },
-                  { label: "Topics", value: topics || "General Review" },
-                  { label: "Requested By", value: mentor_name || "Mentor" },
-                ],
-                ctaText: "Open Campus Manager Dashboard →",
-              }),
-            });
-          }
+        const cmEmails = (cms || []).map((cm: any) => cm.email).filter(Boolean).join(", ");
+        if (cmEmails) {
+          await dispatchMail({
+            to: cmEmails,
+            subject: `[New Interview Request] ${subject} — ${class_group} by ${mentor_name}`,
+            htmlBody: renderEmailShell({
+              title: "New Interview Request Raised",
+              badgeText: "Internal Interview",
+              badgeColor: "amber",
+              description: `<strong>${mentor_name || "A mentor"}</strong> has raised a new internal interview request and it is awaiting your allocation.`,
+              details: [
+                { label: "Subject", value: subject, highlight: true },
+                { label: "Class Group", value: class_group || "All Classes" },
+                { label: "Target Date", value: target_date },
+                { label: "Type", value: "INTERNAL" },
+                { label: "Topics", value: topics || "General Review" },
+                { label: "Requested By", value: mentor_name || "Mentor" },
+              ],
+              ctaText: "Open Campus Manager Dashboard →",
+            }),
+            context: "interview-created-cm"
+          });
         }
-      }
-    } catch (mailErr) {
-      console.warn("Interview notification failed:", mailErr);
+      });
     }
 
     const createdRecord = await db.get("SELECT * FROM student_interviews WHERE id = ?", [interviewId]);
 
     return NextResponse.json({
       success: true,
-      message: "Interview request raised successfully. Campus Manager has been notified.",
+      message: "Interview request raised successfully. The Campus Manager is being notified.",
       interview: createdRecord
     });
   } catch (error: any) {
@@ -410,17 +467,74 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin", "L and D"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { interview_id, status, cm_name } = body;
+    const actor = auth!.user;
 
     if (!interview_id || !status) {
       return NextResponse.json({ success: false, message: "Missing interview_id or status" }, { status: 400 });
     }
 
+    // This endpoint used to write any caller-supplied string for any of six roles,
+    // so a mentor could mark an interview 'completed' and skip CM verification.
+    const PATCHABLE_STATUSES = new Set(["completed", "pending_verification", "declined", "cancelled"]);
+    if (!PATCHABLE_STATUSES.has(String(status))) {
+      return NextResponse.json(
+        { success: false, message: `Status '${status}' cannot be set through this endpoint.` },
+        { status: 400 }
+      );
+    }
+
     const interview = await db.get("SELECT * FROM student_interviews WHERE id = ?", [interview_id]);
     if (!interview) {
       return NextResponse.json({ success: false, message: "Interview not found" }, { status: 404 });
+    }
+
+    if (status === "completed" && interview.status !== "pending_verification") {
+      return NextResponse.json(
+        { success: false, message: "Only interviews awaiting verification can be marked completed." },
+        { status: 409 }
+      );
+    }
+
+    if (actor.role === "cm" || actor.role === "kam") {
+      const involvedColleges = new Set(
+        [interview.college_id, interview.origin_college_id, interview.target_college_id]
+          .filter(Boolean)
+          .map(String)
+      );
+      let allowed = false;
+      if (actor.role === "cm") {
+        const ownCollege = actor.college_id ? String(actor.college_id) : "";
+        allowed = !!ownCollege && involvedColleges.has(ownCollege);
+        if (!allowed && ownCollege) {
+          const responded = await db
+            .get("SELECT 1 AS ok FROM cam_capacity_responses WHERE interview_id = ? AND college_id = ? LIMIT 1", [
+              interview_id,
+              ownCollege,
+            ])
+            .catch(() => null);
+          allowed = !!responded;
+        }
+      } else {
+        const kam = await db.get(
+          "SELECT id FROM kam_users WHERE id = ? OR LOWER(email) = ? LIMIT 1",
+          [actor.reference_id, String(actor.email || "").toLowerCase()]
+        );
+        if (kam) {
+          const portfolio = await db.all("SELECT id FROM colleges WHERE kam_id = ?", [kam.id]);
+          allowed = portfolio.some((c: any) => involvedColleges.has(String(c.id)));
+        }
+      }
+      if (!allowed) {
+        return NextResponse.json(
+          { success: false, message: "This interview is outside your assigned campus or portfolio." },
+          { status: 403 }
+        );
+      }
     }
 
     const now = new Date().toISOString();
@@ -431,25 +545,27 @@ export async function PATCH(request: Request) {
 
     // If marking as completed, notify students in the class group
     if (status === "completed") {
-      try {
-        const classGroup = interview.class_group;
-        let studentEmails: string[] = [];
+      // A class roster means one send per ten students, all of it after the CM has
+      // already been told the interview is closed.
+      after(async () => {
+        try {
+          const classGroup = interview.class_group;
+          let studentEmails: string[] = [];
 
-        if (classGroup) {
-          const studentsInClass = await db.all(
-            "SELECT email, name FROM students WHERE (classgroup = ? OR classGroup = ?) AND email IS NOT NULL AND email != ''",
-            [classGroup, classGroup]
-          );
-          studentEmails = studentsInClass.map((s: any) => s.email).filter(Boolean);
-        }
+          if (classGroup) {
+            const studentsInClass = await db.all(
+              "SELECT email, name FROM students WHERE (classgroup = ? OR classGroup = ?) AND email IS NOT NULL AND email != ''",
+              [classGroup, classGroup]
+            );
+            studentEmails = studentsInClass.map((s: any) => s.email).filter(Boolean);
+          }
 
-        if (studentEmails.length > 0) {
-          // Send in batches to avoid large TO lists
+          // Results mail: every address goes in BCC so no student sees the class roster.
           const batchSize = 10;
           for (let i = 0; i < studentEmails.length; i += batchSize) {
             const batch = studentEmails.slice(i, i + batchSize);
-            await sendMail({
-              to: batch.join(", "),
+            await dispatchMail({
+              bcc: batch,
               subject: `[Interview Results Ready] ${interview.subject} — ${classGroup}`,
               htmlBody: renderEmailShell({
                 title: "Your Interview Evaluation Results Are Ready",
@@ -461,22 +577,23 @@ export async function PATCH(request: Request) {
                   { label: "Class Group", value: classGroup || "Your Class" },
                   { label: "Target Date", value: interview.target_date || "" },
                   { label: "Status", value: "Verified & Completed" },
-                  { label: "Reviewed By", value: cm_name || "Campus Manager" },
+                  { label: "Reviewed By", value: cm_name || actor.name || "Campus Manager" },
                 ],
                 ctaText: "View My Interview Performance →",
               }),
+              context: "interview-results-students"
             });
           }
+        } catch (mailErr) {
+          console.warn("Student notification email failed:", mailErr);
         }
-      } catch (mailErr) {
-        console.warn("Student notification email failed:", mailErr);
-      }
+      });
     }
 
     return NextResponse.json({
       success: true,
       message: status === "completed"
-        ? "Interview marked as completed. Students have been notified."
+        ? "Interview marked as completed. Students are being notified."
         : `Interview status updated to '${status}'.`
     });
   } catch (error: any) {
@@ -487,17 +604,22 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm", "kam", "L and D"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     const clearAll = searchParams.get("all") === "true";
 
     if (clearAll) {
-      await db.run("DELETE FROM student_interviews");
-      await db.run("DELETE FROM interview_allocations");
-      await db.run("DELETE FROM cam_capacity_responses");
-      await db.run("DELETE FROM student_interview_slots");
-      await db.run("DELETE FROM interview_evaluations");
+      // Children first so a failure cannot strand evaluation rows whose interview is gone.
+      await db.transaction(async (tx) => {
+        await tx.run("DELETE FROM interview_evaluations");
+        await tx.run("DELETE FROM student_interview_slots");
+        await tx.run("DELETE FROM interview_allocations");
+        await tx.run("DELETE FROM cam_capacity_responses");
+        await tx.run("DELETE FROM student_interviews");
+      });
       return NextResponse.json({ success: true, message: "All interview records deleted successfully" });
     }
 
@@ -505,11 +627,13 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "Missing interview id" }, { status: 400 });
     }
 
-    await db.run("DELETE FROM student_interviews WHERE id = ?", [id]);
-    await db.run("DELETE FROM interview_allocations WHERE interview_id = ?", [id]);
-    await db.run("DELETE FROM cam_capacity_responses WHERE interview_id = ?", [id]);
-    await db.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [id]);
-    await db.run("DELETE FROM interview_evaluations WHERE interview_id = ?", [id]);
+    await db.transaction(async (tx) => {
+      await tx.run("DELETE FROM interview_evaluations WHERE interview_id = ?", [id]);
+      await tx.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [id]);
+      await tx.run("DELETE FROM interview_allocations WHERE interview_id = ?", [id]);
+      await tx.run("DELETE FROM cam_capacity_responses WHERE interview_id = ?", [id]);
+      await tx.run("DELETE FROM student_interviews WHERE id = ?", [id]);
+    });
     return NextResponse.json({ success: true, message: "Interview deleted successfully" });
   } catch (error: any) {
     console.error("DELETE /api/interviews error:", error);

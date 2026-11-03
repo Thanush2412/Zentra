@@ -42,6 +42,9 @@ import {
   ReferenceLine
 } from "recharts";
 import { exportToExcel, exportToPrintablePDF, PDFKpi } from "@/lib/report-export";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
+import { Badge } from "@/components/ui/badge";
 
 export interface CampusAnalyticsItem {
   id: string;
@@ -110,6 +113,10 @@ export const KAMAnalytics: React.FC<KAMAnalyticsProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "attendance" | "health" | "students" | "faculty">("attendance");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Pagination for Campus Matrix
+  const [campusPage, setCampusPage] = useState(1);
+  const [campusPageSize, setCampusPageSize] = useState(10);
 
   // Filtered and sorted campuses
   const filteredCampuses = useMemo(() => {
@@ -590,94 +597,114 @@ export const KAMAnalytics: React.FC<KAMAnalyticsProps> = ({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                    <th className="py-3.5 px-4">Campus Name</th>
-                    <th className="py-3.5 px-3">Code</th>
-                    <th className="py-3.5 px-3 text-center">Students</th>
-                    <th className="py-3.5 px-3 text-center">Faculty</th>
-                    <th className="py-3.5 px-3 text-center">Ratio</th>
-                    <th className="py-3.5 px-3 text-center">Avg Attendance</th>
-                    <th className="py-3.5 px-3 text-center">Open Issues</th>
-                    <th className="py-3.5 px-3 text-center">Health Score</th>
-                    <th className="py-3.5 px-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/80 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                    <TableHead className="py-3.5 px-4">Campus Name</TableHead>
+                    <TableHead className="py-3.5 px-3">Code</TableHead>
+                    <TableHead className="py-3.5 px-3 text-center">Students</TableHead>
+                    <TableHead className="py-3.5 px-3 text-center">Faculty</TableHead>
+                    <TableHead className="py-3.5 px-3 text-center">Ratio</TableHead>
+                    <TableHead className="py-3.5 px-3 text-center">Avg Attendance</TableHead>
+                    <TableHead className="py-3.5 px-3 text-center">Open Issues</TableHead>
+                    <TableHead className="py-3.5 px-3 text-center">Health Score</TableHead>
+                    <TableHead className="py-3.5 px-4 text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700">
                   {filteredCampuses.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="py-8 text-center text-slate-400 font-bold italic">
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-8 text-center text-slate-400 font-bold italic">
                         No campuses found matching search filter.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
-                    filteredCampuses.map(c => {
-                      const ratio = c.activeFaculty > 0 ? `1 : ${Math.round(c.totalStudents / c.activeFaculty)}` : "—";
-                      return (
-                        <tr key={c.id} className="hover:bg-slate-50/80 transition-colors group">
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs shrink-0">
-                                <Building2 className="h-4 w-4" />
+                    filteredCampuses
+                      .slice((campusPage - 1) * campusPageSize, campusPage * campusPageSize)
+                      .map(c => {
+                        const ratio = c.activeFaculty > 0 ? `1 : ${Math.round(c.totalStudents / c.activeFaculty)}` : "—";
+                        return (
+                          <TableRow key={c.id} className="hover:bg-slate-50/80 transition-colors group">
+                            <TableCell className="py-3.5 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs shrink-0">
+                                  <Building2 className="h-4 w-4" />
+                                </div>
+                                <div>
+                                  <span
+                                    onClick={() => onSelectCampus && onSelectCampus(c.id)}
+                                    className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors cursor-pointer block"
+                                  >
+                                    {c.name}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium">{c.location || "Campus Center"}</span>
+                                </div>
                               </div>
-                              <div>
-                                <span
-                                  onClick={() => onSelectCampus && onSelectCampus(c.id)}
-                                  className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors cursor-pointer block"
-                                >
-                                  {c.name}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-medium">{c.location || "Campus Center"}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3.5 px-3 font-mono font-bold text-slate-500">{c.code}</td>
-                          <td className="py-3.5 px-3 text-center font-bold text-slate-800">{c.totalStudents}</td>
-                          <td className="py-3.5 px-3 text-center font-bold text-slate-800">{c.activeFaculty}</td>
-                          <td className="py-3.5 px-3 text-center font-bold text-slate-600 text-[11px]">{ratio}</td>
-                          <td className="py-3.5 px-3 text-center">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-black ${
-                              c.attendancePct >= 85
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : c.attendancePct >= 75
-                                  ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                                  : "bg-rose-50 text-rose-700 border border-rose-200"
-                            }`}>
-                              {c.attendancePct}%
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3 text-center">
-                            <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                              c.openIssues === 0
-                                ? "bg-slate-100 text-slate-600"
-                                : "bg-amber-50 text-amber-700 border border-amber-200"
-                            }`}>
-                              {c.openIssues} {c.openIssues === 1 ? "issue" : "issues"}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-3 text-center">
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              {c.healthScore}%
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right">
-                            <button
-                              type="button"
-                              onClick={() => onSelectCampus && onSelectCampus(c.id)}
-                              className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1"
-                            >
-                              <span>Inspect</span>
-                              <ChevronRight className="h-3 w-3" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
+                            </TableCell>
+                            <TableCell className="py-3.5 px-3 font-mono font-bold text-slate-500">{c.code}</TableCell>
+                            <TableCell className="py-3.5 px-3 text-center font-bold text-slate-800">{c.totalStudents}</TableCell>
+                            <TableCell className="py-3.5 px-3 text-center font-bold text-slate-800">{c.activeFaculty}</TableCell>
+                            <TableCell className="py-3.5 px-3 text-center font-bold text-slate-600 text-[11px]">{ratio}</TableCell>
+                            <TableCell className="py-3.5 px-3 text-center">
+                              <Badge
+                                variant={
+                                  c.attendancePct >= 85
+                                    ? "success"
+                                    : c.attendancePct >= 75
+                                    ? "brand"
+                                    : "destructive"
+                                }
+                                className="text-xs font-black"
+                              >
+                                {c.attendancePct}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3.5 px-3 text-center">
+                              <Badge
+                                variant={c.openIssues === 0 ? "secondary" : "warning"}
+                                className="text-[10px] font-bold"
+                              >
+                                {c.openIssues} {c.openIssues === 1 ? "issue" : "issues"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3.5 px-3 text-center">
+                              <Badge variant="success" className="text-[10px] font-extrabold">
+                                {c.healthScore}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3.5 px-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => onSelectCampus && onSelectCampus(c.id)}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <span>Inspect</span>
+                                <ChevronRight className="h-3 w-3" />
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
+
+            {/* Pagination for Campus Matrix */}
+            {filteredCampuses.length > 0 && (
+              <div className="p-3 border-t border-slate-100 bg-slate-50/50">
+                <Pagination
+                  currentPage={campusPage}
+                  totalItems={filteredCampuses.length}
+                  pageSize={campusPageSize}
+                  onPageChange={setCampusPage}
+                  onPageSizeChange={(newSize) => {
+                    setCampusPageSize(newSize);
+                    setCampusPage(1);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}

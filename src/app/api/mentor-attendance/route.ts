@@ -1,21 +1,23 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
 
     const collegeId = searchParams.get("collegeId");
     const kamId = searchParams.get("kamId");
     const mentorId = searchParams.get("mentorId");
-    const dateStr = searchParams.get("dateStr") || new Date().toISOString().split("T")[0];
+    const dateStr = searchParams.get("dateStr") || getInstitutionDateStr();
 
     // 1. Fetch attendance history for a single mentor
     if (mentorId && !collegeId && !kamId) {
@@ -37,23 +39,42 @@ export async function GET(request: Request) {
       const endDate = searchParams.get("endDate");
       const isRange = Boolean(startDate && endDate);
 
-      const mentors = await db.all(
-        `SELECT m.id, m.name, m.email, m.department, m.college_id, m.subject_group, m.mentor_group
-         FROM mentors m
-         WHERE LOWER(m.college_id) = LOWER(?)
-         ORDER BY m.name ASC`,
-        [collegeId]
+      // Roster and punches are independent, so one round trip serves both — and a
+      // failed slice would render every mentor as "Not Punched".
+      const attendanceSlice = isRange
+        ? {
+            sql: `SELECT * FROM mentor_attendance 
+                  WHERE (LOWER(college_id) = LOWER(?) OR mentor_id IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?)))
+                    AND date_str >= ? AND date_str <= ?
+                  ORDER BY date_str ASC`,
+            params: [collegeId, collegeId, startDate, endDate],
+          }
+        : {
+            sql: `SELECT * FROM mentor_attendance 
+                  WHERE (LOWER(college_id) = LOWER(?) OR mentor_id IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?))) 
+                    AND date_str = ?`,
+            params: [collegeId, collegeId, dateStr],
+          };
+
+      const rosterFailures: QueryFailure[] = [];
+      const [mentors, attendanceRecords] = await db.multiQuery(
+        [
+          {
+            sql: `SELECT m.id, m.name, m.email, m.department, m.college_id, m.subject_group, m.mentor_group
+                  FROM mentors m
+                  WHERE LOWER(m.college_id) = LOWER(?)
+                  ORDER BY m.name ASC`,
+            params: [collegeId],
+          },
+          attendanceSlice,
+        ],
+        rosterFailures
       );
+      if (rosterFailures.length > 0) {
+        return NextResponse.json({ success: false, error: "Could not load mentor attendance. Please try again." }, { status: 500 });
+      }
 
       if (isRange) {
-        const attendanceRecords = await db.all(
-          `SELECT * FROM mentor_attendance 
-           WHERE (LOWER(college_id) = LOWER(?) OR mentor_id IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?)))
-             AND date_str >= ? AND date_str <= ?
-           ORDER BY date_str ASC`,
-          [collegeId, collegeId, startDate, endDate]
-        );
-
         // Group attendance by mentor_id
         const mentorAttMap = new Map<string, any[]>();
         const distinctDates = Array.from(new Set(attendanceRecords.map(r => r.date_str))).sort();
@@ -120,13 +141,6 @@ export async function GET(request: Request) {
       }
 
       // Single Date logic
-      const attendanceRecords = await db.all(
-        `SELECT * FROM mentor_attendance 
-         WHERE (LOWER(college_id) = LOWER(?) OR mentor_id IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?))) 
-           AND date_str = ?`,
-        [collegeId, collegeId, dateStr]
-      );
-
       const attendanceMap = new Map(attendanceRecords.map(r => [r.mentor_id, r]));
 
       const combined = mentors.map(m => {
@@ -177,19 +191,27 @@ export async function GET(request: Request) {
       }
 
       const placeholders = collegeIds.map(() => "?").join(",");
-      const mentors = await db.all(
-        `SELECT m.id, m.name, m.email, m.department, m.college_id, c.name as collegeName
-         FROM mentors m
-         LEFT JOIN colleges c ON m.college_id = c.id
-         WHERE m.college_id IN (${placeholders})
-         ORDER BY c.name ASC, m.name ASC`,
-        collegeIds
+      const kamFailures: QueryFailure[] = [];
+      const [mentors, attendanceRecords] = await db.multiQuery(
+        [
+          {
+            sql: `SELECT m.id, m.name, m.email, m.department, m.college_id, c.name as collegeName
+                  FROM mentors m
+                  LEFT JOIN colleges c ON m.college_id = c.id
+                  WHERE m.college_id IN (${placeholders})
+                  ORDER BY c.name ASC, m.name ASC`,
+            params: collegeIds,
+          },
+          {
+            sql: `SELECT * FROM mentor_attendance WHERE date_str = ? AND college_id IN (${placeholders})`,
+            params: [dateStr, ...collegeIds],
+          },
+        ],
+        kamFailures
       );
-
-      const attendanceRecords = await db.all(
-        `SELECT * FROM mentor_attendance WHERE date_str = ? AND college_id IN (${placeholders})`,
-        [dateStr, ...collegeIds]
-      );
+      if (kamFailures.length > 0) {
+        return NextResponse.json({ success: false, error: "Could not load mentor attendance. Please try again." }, { status: 500 });
+      }
 
       const attendanceMap = new Map(attendanceRecords.map(r => [r.mentor_id, r]));
 
@@ -246,6 +268,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
+    const actor = auth!.user;
     const db = await getDb();
     const body = await request.json();
     const { action } = body;
@@ -259,8 +284,14 @@ export async function POST(request: Request) {
 
     // 1. Bulk mark all unpunched mentors in a college as Present
     if (action === "bulk_present") {
-      const { collegeId, dateStr, markedBy, markedById } = body;
+      const { collegeId, dateStr } = body;
 
+      if (actor.role === "mentor") {
+        return NextResponse.json(
+          { success: false, message: "Only Campus Managers or admins can bulk-mark a campus." },
+          { status: 403 }
+        );
+      }
       if (!collegeId || !dateStr) {
         return NextResponse.json({ success: false, message: "Missing collegeId or dateStr" }, { status: 400 });
       }
@@ -277,14 +308,14 @@ export async function POST(request: Request) {
             const id = `att_${m.id}_${dateStr}`;
             await tx.run(
               `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, punch_in_time, marked_by, marked_by_id, updated_at)
-               VALUES (?, ?, ?, ?, 'Present', ?, ?, ?, NOW())
+               VALUES (?, ?, ?, ?, 'Present', ?, ?, ?, CURRENT_TIMESTAMP)
                ON CONFLICT(mentor_id, date_str) DO UPDATE SET
                status = excluded.status,
                punch_in_time = COALESCE(mentor_attendance.punch_in_time, excluded.punch_in_time),
                marked_by = excluded.marked_by,
                marked_by_id = excluded.marked_by_id,
-               updated_at = NOW()`,
-              [id, m.id, collegeId, dateStr, currentTime, markedBy || "cm", markedById || "cm"]
+               updated_at = CURRENT_TIMESTAMP`,
+              [id, m.id, collegeId, dateStr, currentTime, actor.name, actor.reference_id]
             );
             count++;
           }
@@ -306,31 +337,52 @@ export async function POST(request: Request) {
       status,
       punchInTime,
       reason,
-      markedBy,
-      markedById
     } = body;
 
     if (!mentorId || !status) {
       return NextResponse.json({ success: false, message: "Missing mentorId or status" }, { status: 400 });
     }
 
-    const effectiveDate = dateStr || new Date().toISOString().split("T")[0];
+    // Self vs proxy used to come from the request body, so a mentor could send
+    // markedBy:"cm" and edit an already-locked punch (or another mentor's record).
+    const isSelf = actor.role === "mentor";
+    if (isSelf && String(mentorId) !== String(actor.reference_id)) {
+      return NextResponse.json(
+        { success: false, message: "Mentors can only punch their own attendance." },
+        { status: 403 }
+      );
+    }
+    const markedBy = isSelf ? "self" : actor.name;
+    const markedById = actor.reference_id;
+
+    const effectiveDate = dateStr || getInstitutionDateStr();
     const recordId = `att_${mentorId}_${effectiveDate}`;
 
-    // Get mentor's college_id if not explicitly provided
-    let effectiveCollegeId = collegeId;
-    if (!effectiveCollegeId) {
-      const mentor = await db.get("SELECT college_id FROM mentors WHERE id = ?", [mentorId]);
-      effectiveCollegeId = mentor?.college_id || "general";
+    // The mentor's college (only needed when the caller did not send one) and the day's
+    // existing punch record (only consulted for self-punches) are independent reads, so
+    // the common path costs one round trip instead of two. Both gate the write below,
+    // so a failed slice aborts rather than punching over a locked day.
+    const punchFailures: QueryFailure[] = [];
+    const [mentorRows, existingRows] = await db.multiQuery(
+      [
+        collegeId
+          ? { sql: "SELECT 1 WHERE 1=0" }
+          : { sql: "SELECT college_id FROM mentors WHERE id = ?", params: [mentorId] },
+        isSelf
+          ? { sql: `SELECT id, status, punch_in_time FROM mentor_attendance WHERE mentor_id = ? AND date_str = ?`, params: [mentorId, effectiveDate] }
+          : { sql: "SELECT 1 WHERE 1=0" },
+      ],
+      punchFailures
+    );
+    if (punchFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not check this punch against today's record. Please try again." }, { status: 500 });
     }
 
+    const effectiveCollegeId = collegeId || mentorRows[0]?.college_id || "general";
+
     // Prevent mentors from changing status once punched (self-punch is locked)
-    const isSelf = markedBy === "self" || !markedBy;
     if (isSelf) {
-      const existing = await db.get(
-        `SELECT id, status, punch_in_time FROM mentor_attendance WHERE mentor_id = ? AND date_str = ?`,
-        [mentorId, effectiveDate]
-      );
+      const existing = existingRows[0] || null;
       if (existing && existing.status && existing.status !== "Not Punched") {
         return NextResponse.json({
           success: false,
@@ -343,14 +395,14 @@ export async function POST(request: Request) {
 
     await db.run(
       `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, punch_in_time, reason, marked_by, marked_by_id, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
        ON CONFLICT(mentor_id, date_str) DO UPDATE SET
        status = excluded.status,
        punch_in_time = COALESCE(excluded.punch_in_time, mentor_attendance.punch_in_time),
        reason = excluded.reason,
        marked_by = excluded.marked_by,
        marked_by_id = excluded.marked_by_id,
-       updated_at = NOW()`,
+       updated_at = CURRENT_TIMESTAMP`,
       [
         recordId,
         mentorId,

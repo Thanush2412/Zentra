@@ -156,6 +156,23 @@ describe("Persistent Database Sessions", () => {
     expect(validation.csrfSecret).toBeDefined();
   });
 
+  it("validates sessions whose timestamps come back as Date objects (timestamptz columns)", async () => {
+    const { rawToken } = await createUserSession(db, "user_106");
+    const hash = Array.from(db.sessions.keys())[0];
+    const stored = db.sessions.get(hash)!;
+    db.sessions.set(hash, {
+      ...stored,
+      created_at: new Date(stored.created_at) as any,
+      last_activity_at: new Date() as any,
+      expires_at: new Date(Date.now() + 60 * 1000) as any,
+      revoked_at: null
+    });
+
+    const validation = await validateSession(db, rawToken);
+    expect(validation.isValid).toBe(true);
+    expect(validation.userId).toBe("user_106");
+  });
+
   it("rejects invalid or non-existent raw tokens", async () => {
     const validation = await validateSession(db, "non_existent_raw_token_value");
     expect(validation.isValid).toBe(false);

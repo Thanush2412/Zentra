@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import pg from "pg";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 export const dynamic = "force-dynamic";
+// Queries a second (external) Postgres project, so it needs more than the
+// platform default but less than the 120s the bulk writers get.
+export const maxDuration = 60;
 
-const HR_LC_DB_URL =
-  process.env.HACKERRANK_LEETCODE_DB_URL ||
-  "postgresql://postgres.obtuzeqstivzrcmtkzvp:9n3qeEFHrZHt%258F@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres";
+// HackerRank & LeetCode analytics live in a separate Supabase project. The URL is
+// configuration only — it must never be committed with credentials baked in.
+const HR_LC_DB_URL = process.env.HACKERRANK_LEETCODE_DB_URL || "";
 
 // Dedicated connection pool for external HackerRank & LeetCode database
 let externalPool: pg.Pool | null = null;
 
-function getExternalPool(): pg.Pool {
+function getExternalPool(): pg.Pool | null {
+  if (!HR_LC_DB_URL) return null;
   if (!externalPool) {
     externalPool = new pg.Pool({
       connectionString: HR_LC_DB_URL,
@@ -105,6 +110,8 @@ function extractUsernameFromUrl(url: string | null | undefined): string {
 }
 
 export async function GET(req: NextRequest) {
+  const { errorResponse } = await requireAuth(req);
+  if (errorResponse) return errorResponse;
   try {
     const { searchParams } = req.nextUrl;
     const studentId = searchParams.get("studentId") || "";
@@ -166,6 +173,12 @@ export async function GET(req: NextRequest) {
     }
 
     const pool = getExternalPool();
+    if (!pool) {
+      return NextResponse.json(
+        { success: false, message: "Coding stats are not configured. Set HACKERRANK_LEETCODE_DB_URL." },
+        { status: 503 }
+      );
+    }
     const client = await pool.connect();
 
     try {

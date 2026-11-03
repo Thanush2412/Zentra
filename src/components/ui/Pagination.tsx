@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useId } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { DEFAULT_PAGE_SIZE_OPTIONS, getPageNumbers, getPaginationRange, withActivePageSize } from "@/lib/pagination";
 
 export interface PaginationProps {
   currentPage: number;
@@ -9,7 +10,11 @@ export interface PaginationProps {
   onPageSizeChange?: (pageSize: number) => void;
   pageSizeOptions?: number[];
   className?: string;
+  ariaLabel?: string;
 }
+
+const navButtonClass =
+  "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white";
 
 export const Pagination: React.FC<PaginationProps> = ({
   currentPage,
@@ -17,142 +22,150 @@ export const Pagination: React.FC<PaginationProps> = ({
   pageSize,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [10, 25, 50, 100],
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
   className = "",
+  ariaLabel = "Pagination",
 }) => {
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const safePage = Math.min(Math.max(1, currentPage), totalPages);
-
-  const startItem = totalItems === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const endItem = Math.min(safePage * pageSize, totalItems);
-
-  // Generate page numbers with ellipses
-  const getPageNumbers = () => {
-    const pages: (number | string)[] = [];
-    const maxVisible = 5;
-
-    if (totalPages <= maxVisible + 2) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      let leftBound = Math.max(2, safePage - 1);
-      let rightBound = Math.min(totalPages - 1, safePage + 1);
-
-      if (safePage <= 3) {
-        leftBound = 2;
-        rightBound = 4;
-      } else if (safePage >= totalPages - 2) {
-        leftBound = totalPages - 3;
-        rightBound = totalPages - 1;
-      }
-
-      if (leftBound > 2) pages.push("...");
-      for (let i = leftBound; i <= rightBound; i++) pages.push(i);
-      if (rightBound < totalPages - 1) pages.push("...");
-      pages.push(totalPages);
-    }
-    return pages;
-  };
+  const pageSizeId = useId();
+  const { safePage, totalPages, startItem, endItem } = getPaginationRange(totalItems, currentPage, pageSize);
+  const sizes = withActivePageSize(pageSizeOptions, pageSize);
 
   if (totalItems === 0) return null;
 
-  return (
-    <div
-      className={`flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 rounded-b-xl select-none ${className}`}
-    >
-      {/* Entries Summary & Page Size */}
-      <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium">
-        <span>
-          Showing <strong className="font-extrabold text-slate-800 dark:text-white">{startItem}</strong> to{" "}
-          <strong className="font-extrabold text-slate-800 dark:text-white">{endItem}</strong> of{" "}
-          <strong className="font-extrabold text-slate-800 dark:text-white">{totalItems.toLocaleString()}</strong> entries
-        </span>
+  const goTo = (page: number) => {
+    const next = Math.min(Math.max(1, page), totalPages);
+    if (next !== safePage) onPageChange(next);
+  };
 
-        {onPageSizeChange && (
-          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-slate-800">
-            <span className="text-[11px] text-slate-400">Rows:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                onPageSizeChange(Number(e.target.value));
-                onPageChange(1);
-              }}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#D528A2]/30 focus:border-[#D528A2] cursor-pointer"
-            >
-              {pageSizeOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+  const rangeLabel = (
+    <>
+      <span className="hidden sm:inline">
+        Showing <strong className="font-extrabold text-slate-800 dark:text-white">{startItem}</strong> to{" "}
+        <strong className="font-extrabold text-slate-800 dark:text-white">{endItem}</strong> of{" "}
+        <strong className="font-extrabold text-slate-800 dark:text-white">{totalItems.toLocaleString()}</strong> entries
+      </span>
+      <span className="sm:hidden">
+        <strong className="font-extrabold text-slate-800 dark:text-white">{startItem}–{endItem}</strong> of{" "}
+        <strong className="font-extrabold text-slate-800 dark:text-white">{totalItems.toLocaleString()}</strong>
+      </span>
+    </>
+  );
 
-      {/* Page Navigation Buttons */}
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => onPageChange(1)}
-          disabled={safePage <= 1}
-          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer"
-          title="First Page"
-        >
-          <ChevronsLeft className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onPageChange(safePage - 1)}
-          disabled={safePage <= 1}
-          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer"
-          title="Previous Page"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-
-        {/* Page Pills */}
-        <div className="flex items-center gap-1 px-1">
-          {getPageNumbers().map((p, idx) =>
-            p === "..." ? (
-              <span key={`ell-${idx}`} className="px-2 text-xs text-slate-400 font-bold">
-                ...
-              </span>
-            ) : (
-              <button
-                key={`page-${p}`}
-                type="button"
-                onClick={() => onPageChange(Number(p))}
-                className={`min-w-[28px] h-7 px-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                  safePage === p
-                    ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-xs"
-                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800"
-                }`}
-              >
-                {p}
-              </button>
-            )
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onPageChange(safePage + 1)}
-          disabled={safePage >= totalPages}
-          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer"
-          title="Next Page"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onPageChange(totalPages)}
-          disabled={safePage >= totalPages}
-          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer"
-          title="Last Page"
-        >
-          <ChevronsRight className="h-4 w-4" />
-        </button>
-      </div>
+  const pageSizeControl = onPageSizeChange ? (
+    <div className="flex items-center gap-1.5 border-slate-200 pl-2 sm:border-l dark:border-slate-800">
+      <label htmlFor={pageSizeId} className="text-[11px] text-slate-400">
+        Rows:
+      </label>
+      <select
+        id={pageSizeId}
+        value={pageSize}
+        onChange={(e) => {
+          onPageSizeChange(Number(e.target.value));
+          onPageChange(1);
+        }}
+        className="cursor-pointer rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 focus:border-[#D528A2] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+      >
+        {sizes.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
     </div>
+  ) : null;
+
+  return (
+    <nav
+      aria-label={ariaLabel}
+      className={`flex flex-col items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 select-none sm:flex-row dark:border-slate-800 dark:bg-slate-900 ${className}`}
+    >
+      <div className="flex w-full flex-wrap items-center justify-between gap-3 text-xs font-medium text-slate-500 sm:w-auto sm:justify-start dark:text-slate-400">
+        {rangeLabel}
+        {pageSizeControl}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => goTo(1)}
+            disabled={safePage <= 1}
+            className={navButtonClass}
+            aria-label="First page"
+            title="First page"
+          >
+            <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => goTo(safePage - 1)}
+            disabled={safePage <= 1}
+            className={navButtonClass}
+            aria-label="Previous page"
+            title="Previous page"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+
+          <span className="px-2 text-xs font-bold text-slate-500 sm:hidden dark:text-slate-400">
+            Page {safePage} of {totalPages}
+          </span>
+
+          <div className="hidden items-center gap-1 px-1 sm:flex">
+            {getPageNumbers(safePage, totalPages).map((p, idx) =>
+              p === "..." ? (
+                <span
+                  key={`ell-${idx}`}
+                  aria-hidden="true"
+                  className="px-2 text-xs font-bold text-slate-400"
+                >
+                  …
+                </span>
+              ) : (
+                <button
+                  key={`page-${p}`}
+                  type="button"
+                  onClick={() => goTo(p)}
+                  aria-label={`Page ${p}`}
+                  aria-current={safePage === p ? "page" : undefined}
+                  className={`h-8 min-w-[32px] rounded-lg px-1.5 text-xs font-extrabold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 ${
+                    safePage === p
+                      ? "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white shadow-xs"
+                      : "border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {p}
+                </button>
+              )
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => goTo(safePage + 1)}
+            disabled={safePage >= totalPages}
+            className={navButtonClass}
+            aria-label="Next page"
+            title="Next page"
+          >
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => goTo(totalPages)}
+            disabled={safePage >= totalPages}
+            className={navButtonClass}
+            aria-label="Last page"
+            title="Last page"
+          >
+            <ChevronsRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      <span className="sr-only" aria-live="polite">
+        Page {safePage} of {totalPages}
+      </span>
+    </nav>
   );
 };

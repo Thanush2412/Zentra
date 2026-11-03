@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
 import {
   CalendarCheck2,
   Clock,
@@ -17,6 +20,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import { Pagination } from "@/components/ui/Pagination";
+import { Dialog } from "@/components/ui/dialog";
 import { parseTimeToMinutes } from "@/lib/utils";
 
 export interface CMPunchAndLeaveWidgetProps {
@@ -33,13 +37,32 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
   onRefreshParent
 }) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const effectiveCollegeId = collegeId || currentCAM?.college_id || currentCAM?.collegeId || "";
+  const camId = currentCAM?.id || "";
 
   const [activeSubTab, setActiveSubTab] = useState<"leaves" | "punches">("leaves");
-  const [loading, setLoading] = useState(true);
-  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
-  const [punchLogs, setPunchLogs] = useState<any[]>([]);
+
+  const leaveQuery = useQuery({
+    queryKey: qk.cmLeave(camId || "none"),
+    enabled: !!camId,
+    queryFn: async () => {
+      const json = await apiFetch(`/api/cm-leave?camId=${encodeURIComponent(camId)}`);
+      return json?.success && Array.isArray(json.records) ? (json.records as any[]) : [];
+    },
+  });
+  const punchQuery = useQuery({
+    queryKey: qk.cmPunch(camId || "none", effectiveCollegeId || "all"),
+    enabled: !!camId,
+    queryFn: async () => {
+      const json = await apiFetch(`/api/cm-attendance?camId=${encodeURIComponent(camId)}`);
+      return json?.success && Array.isArray(json.records) ? (json.records as any[]) : [];
+    },
+  });
+  const leaveRequests = leaveQuery.data || [];
+  const punchLogs = punchQuery.data || [];
+  const loading = leaveQuery.isFetching || punchQuery.isFetching;
 
   // Modals
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -109,29 +132,13 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
     return punchLogs.find((p) => p.date_str === todayStr) || null;
   }, [punchLogs, todayStr]);
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!currentCAM?.id) return;
-    setLoading(true);
-    try {
-      const [leaveRes, punchRes] = await Promise.all([
-        fetch(`/api/cm-leave?camId=${encodeURIComponent(currentCAM.id)}`),
-        fetch(`/api/cm-attendance?camId=${encodeURIComponent(currentCAM.id)}`)
-      ]);
-
-      const [leaveJson, punchJson] = await Promise.all([leaveRes.json(), punchRes.json()]);
-
-      if (leaveJson.success) setLeaveRequests(leaveJson.records || []);
-      if (punchJson.success) setPunchLogs(punchJson.records || []);
-    } catch (err) {
-      console.error("Failed to load CM attendance/leaves:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentCAM?.id]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["cm-leave"] }),
+      queryClient.invalidateQueries({ queryKey: ["cm-attendance"] })
+    ]);
+  };
 
   // Handle Leave Submission (Always sent to KAM)
   const handleSubmitLeave = async (e: React.FormEvent) => {
@@ -635,11 +642,14 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
 
       {/* MODAL: APPLY LEAVE / OD (Strictly 4 categories, reason for KAM) */}
       {showLeaveModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <form
-            onSubmit={handleSubmitLeave}
-            className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp"
-          >
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setShowLeaveModal(false); }}
+          ariaLabel="Apply leave, permission, or on-duty request"
+          overlayClassName="bg-slate-950/60 backdrop-blur-xs"
+          panelClassName="max-w-lg max-h-[90vh] rounded-2xl border-slate-200 animate-scaleUp p-0 space-y-0"
+        >
+          <form onSubmit={handleSubmitLeave}>
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-teal-50 flex items-center justify-center text-teal-700 shrink-0 border border-teal-200">
@@ -653,6 +663,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
               <button
                 type="button"
                 onClick={() => setShowLeaveModal(false)}
+                aria-label="Close leave request dialog"
                 className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/60 transition-all cursor-pointer"
               >
                 <X className="h-4 w-4" />
@@ -666,6 +677,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                   Leave Category <span className="text-rose-500">*</span>
                 </label>
                 <select
+                  aria-label="Leave Category"
                   value={requestType}
                   onChange={(e) => setRequestType(e.target.value as any)}
                   className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 transition-all cursor-pointer"
@@ -687,6 +699,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                     <input
                       type="date"
                       required
+                      aria-label="Permission Date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-teal-600"
@@ -700,6 +713,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                       <input
                         type="time"
                         required
+                        aria-label="From Time"
                         value={startTime}
                         onChange={(e) => setStartTime(e.target.value)}
                         className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-teal-600"
@@ -712,6 +726,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                       <input
                         type="time"
                         required
+                        aria-label="To Time"
                         value={endTime}
                         onChange={(e) => setEndTime(e.target.value)}
                         className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-teal-600"
@@ -728,6 +743,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                     <input
                       type="date"
                       required
+                      aria-label="From Date"
                       value={startDate}
                       onChange={(e) => {
                         setStartDate(e.target.value);
@@ -744,6 +760,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                       type="date"
                       required
                       min={startDate}
+                      aria-label="To Date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
                       className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-teal-600"
@@ -760,6 +777,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                 <textarea
                   required
                   rows={3}
+                  aria-label="Reason / Justification for Key Account Manager (KAM)"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="Specify clear details and justification for your KAM..."
@@ -787,16 +805,19 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {/* MODAL: PUNCH IN TODAY'S STATUS */}
       {showPunchModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <form
-            onSubmit={handleSubmitPunch}
-            className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp"
-          >
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setShowPunchModal(false); }}
+          ariaLabel="Mark attendance for today"
+          overlayClassName="bg-slate-950/60 backdrop-blur-xs"
+          panelClassName="max-w-md max-h-[90vh] rounded-2xl border-slate-200 animate-scaleUp p-0 space-y-0"
+        >
+          <form onSubmit={handleSubmitPunch}>
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-700 shrink-0 border border-emerald-200">
@@ -810,6 +831,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
               <button
                 type="button"
                 onClick={() => setShowPunchModal(false)}
+                aria-label="Close attendance dialog"
                 className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/60 transition-all cursor-pointer"
               >
                 <X className="h-4 w-4" />
@@ -834,6 +856,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
                   Today&apos;s Presence Status <span className="text-rose-500">*</span>
                 </label>
                 <select
+                  aria-label="Today's Presence Status"
                   value={punchStatus}
                   onChange={(e) => setPunchStatus(e.target.value as any)}
                   className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all cursor-pointer"
@@ -898,7 +921,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
     </div>
   );

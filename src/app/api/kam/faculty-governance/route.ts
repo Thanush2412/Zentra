@@ -1,16 +1,22 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireKamScope, resolveScopeParams } from "@/lib/kamScope";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("collegeId");
-    const kamId = searchParams.get("kamId");
-    const todayStr = new Date().toISOString().split("T")[0];
+    const scoped = resolveScopeParams(scope!, searchParams.get("kamId"), searchParams.get("collegeId"));
+    if (scoped.errorResponse) return scoped.errorResponse;
+    const collegeId = scoped.collegeId;
+    const kamId = scoped.kamId;
+    const todayStr = getInstitutionDateStr();
 
     // 1. Fetch colleges & mentors — scoped to KAM's assigned colleges
     let colleges: any[];
@@ -28,25 +34,38 @@ export async function GET(request: Request) {
       ? await db.all(`SELECT * FROM mentors WHERE college_id IN ${inClause} AND (is_active = 1 OR is_active IS NULL)`, ...collegeIds)
       : [];
 
-    // 2. Fetch today's mentor attendance records
-    const [punchRows, leaveRequests, leaveBalances, demoSessions] = await Promise.all([
-      db.all("SELECT * FROM mentor_attendance WHERE date_str = ?", todayStr).catch(() => []),
-      db.all(`
-        SELECT flr.*, m.name as mentor_name, m.department, c.name as college_name
-        FROM faculty_leave_requests flr
-        JOIN mentors m ON flr.mentor_id = m.id
-        LEFT JOIN colleges c ON flr.college_id = c.id
-        WHERE flr.end_date >= ?
-        ORDER BY flr.start_date ASC
-      `, todayStr).catch(() => []),
-      db.all("SELECT * FROM leave_balances").catch(() => []),
-      db.all(`
-        SELECT ds.*, m.name as mentor_full_name, m.department as mentor_department
-        FROM demo_sessions ds
-        JOIN mentors m ON ds.mentorId = m.id
-        ORDER BY ds.dateStr DESC
-      `).catch(() => [])
-    ]);
+    // 2. Fetch today's mentor attendance records. These feeds drive the punch and
+    // demo KPIs, so a failed read must surface instead of rendering zeros.
+    const governanceFailures: QueryFailure[] = [];
+    const [punchRows, leaveRequests, demoSessions] = await db.multiQuery(
+      [
+        { sql: "SELECT * FROM mentor_attendance WHERE date_str = ?", params: [todayStr] },
+        {
+          sql: `SELECT flr.*, m.name as mentor_name, m.department, c.name as college_name
+                FROM faculty_leave_requests flr
+                JOIN mentors m ON flr.mentor_id = m.id
+                LEFT JOIN colleges c ON flr.college_id = c.id
+                WHERE flr.end_date >= ? AND m.college_id IN ${inClause}
+                ORDER BY flr.start_date ASC`,
+          params: [todayStr, ...collegeIds]
+        },
+        {
+          sql: `SELECT ds.*, m.name as mentor_full_name, m.department as mentor_department
+                FROM demo_sessions ds
+                JOIN mentors m ON ds.mentorId = m.id
+                WHERE m.college_id IN ${inClause}
+                ORDER BY ds.dateStr DESC`,
+          params: [...collegeIds]
+        }
+      ],
+      governanceFailures
+    );
+    if (governanceFailures.length > 0) {
+      return NextResponse.json(
+        { success: false, error: `Faculty governance inputs could not be read: ${governanceFailures[0].error}` },
+        { status: 500 }
+      );
+    }
 
     // Compute Faculty Daily Attendance Punch Health
     let totalFaculty = mentors.length;
@@ -99,13 +118,9 @@ export async function GET(request: Request) {
 
     const punchRatePct = totalFaculty > 0
       ? Math.round(((presentToday + odToday) / totalFaculty) * 1000) / 10
-      : 92.5;
+      : 0;
 
     // Upcoming 14-Day Faculty Leave Coverage Radar
-    const fourteenDaysLater = new Date();
-    fourteenDaysLater.setDate(fourteenDaysLater.getDate() + 14);
-    const fourteenDaysLaterStr = fourteenDaysLater.toISOString().split("T")[0];
-
     const upcomingLeaves = (leaveRequests || []).map((lr: any) => {
       // In real system, check if approved_handovers covers this slot
       const isCovered = lr.status === "approved" || lr.status === "covered";
@@ -125,23 +140,29 @@ export async function GET(request: Request) {
       };
     });
 
-    // SME Demo Teaching Evaluation Averages
-    const totalDemos = demoSessions.length || 24;
-    const completedDemos = demoSessions.filter((d: any) => d.status === "completed" || d.marks !== null).length || 20;
-    const avgDemoScore = demoSessions.length > 0
-      ? Math.round(demoSessions.reduce((acc: number, d: any) => acc + (d.marks || 78), 0) / demoSessions.length)
-      : 81;
+    // Demo averages are computed only from sessions that actually carry a numeric
+    // score. Empty cohorts report zero demos, not a seeded 24/20/81.
+    const totalDemos = demoSessions.length;
+    const completedDemos = demoSessions.filter(
+      (d: any) => d.status === "completed" || (d.marks !== null && d.marks !== undefined && d.marks !== "")
+    ).length;
+    const scoredDemos = demoSessions.filter(
+      (d: any) => d.marks !== null && d.marks !== undefined && d.marks !== "" && !isNaN(Number(d.marks))
+    );
+    const avgDemoScore = scoredDemos.length > 0
+      ? Math.round(scoredDemos.reduce((acc: number, d: any) => acc + Number(d.marks), 0) / scoredDemos.length)
+      : 0;
 
     const demoRoster = demoSessions.slice(0, 10).map((d: any) => ({
       id: d.id,
       mentorName: d.mentorName || d.mentor_full_name,
-      smeName: d.smeName || "Senior SME Lead",
+      smeName: d.smeName || d.sme_name || null,
       subject: d.subject,
       dateStr: d.dateStr,
       timeSlot: d.timeSlot,
       status: d.status,
-      marks: d.marks || 80,
-      comments: d.comments || "Good technical clarity and student interaction."
+      marks: d.marks ?? null,
+      comments: d.comments ?? null
     }));
 
     return NextResponse.json({

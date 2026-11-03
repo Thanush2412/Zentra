@@ -1,10 +1,19 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
 import { getCollegePeriodTimeSlots, parseTimeToMinutes } from "@/lib/utils";
 import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { generateId } from "@/lib/id";
+import { Dialog } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetBody } from "@/components/ui/sheet";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import {
   UserCheck, Award, BookOpen, Users, GraduationCap, CheckCircle2,
   AlertCircle, Clock, XCircle, Search, Plus, Minus, Video, Send, Check,
@@ -254,7 +263,7 @@ const ScoreSlider = ({
         {value} / 10
       </span>
     </div>
-    <input
+    <input aria-label={label}
       type="range" min={1} max={10} value={value}
       onChange={(e) => onChange(Number(e.target.value))}
       className="w-full cursor-pointer h-1.5 rounded-full appearance-none bg-slate-200"
@@ -269,22 +278,184 @@ const ScoreSlider = ({
 const isCandidatePlaceholder = (name?: string) =>
   !name || /^(Candidate|Student)\s*#?\d*$/i.test(name.trim());
 
+// ─── Mentor Free-Time Timeline ─────────────────────────────────────────────
+
+const BRAND_PINK = "#D528A2";
+const BRAND_PEACH = "#F4A863";
+
+/** Converts "9.00 AM" style to total minutes from midnight */
+function slotToMinutes(t: string): number {
+  if (!t) return -1;
+  const cleaned = t.trim().toLowerCase().replace(/\./g, ":");
+  const isPM = cleaned.includes("pm");
+  const isAM = cleaned.includes("am");
+  const timePart = cleaned.replace(/am|pm/g, "").trim();
+  const parts = timePart.split(":");
+  let h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+function minutesToLabel(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+const MentorFreeTimeTimeline = ({
+  mentor,
+  allSlots,          // all timetable slots for this mentor (from /api/slots)
+  interviewDate,     // "YYYY-MM-DD"
+  dayName,           // "Monday" etc.
+  allocatedTime,     // time block already reserved for this interview
+}: {
+  mentor: any;
+  allSlots: any[];
+  interviewDate: string;
+  dayName: string;
+  allocatedTime?: string;
+}) => {
+  // Filter slots that land on the interview day for this mentor
+  const daySlots = useMemo(() => {
+    const dn = (dayName || "").toLowerCase();
+    return allSlots.filter(
+      (s: any) => s.mentorId === mentor.id && (s.day || "").toLowerCase() === dn
+    );
+  }, [allSlots, mentor.id, dayName]);
+
+  if (daySlots.length === 0 && !allocatedTime) {
+    return (
+      <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1.5 mt-1">
+        <CheckCircle2 className="w-3.5 h-3.5" /> Fully free on this day
+      </p>
+    );
+  }
+
+  // Build blocks: busy = existing class, booked = this interview, free = gap
+  const DAY_START = 8 * 60;   // 8:00 AM
+  const DAY_END   = 18 * 60;  // 6:00 PM
+  const TOTAL     = DAY_END - DAY_START;
+
+  type Block = { start: number; end: number; label: string; kind: "busy" | "booked" | "free" };
+  const blocks: Block[] = [];
+
+  // Add existing classes
+  for (const s of daySlots) {
+    const raw = s.time || "";
+    const parts = raw.split("-");
+    const start = slotToMinutes(parts[0]?.trim());
+    const end   = slotToMinutes(parts[1]?.trim());
+    if (start >= 0 && end > start) {
+      blocks.push({ start, end, label: s.course || "Class", kind: "busy" });
+    }
+  }
+
+  // Add interview allocation block
+  if (allocatedTime) {
+    const parts = allocatedTime.split("-");
+    const start = slotToMinutes(parts[0]?.trim());
+    const end   = slotToMinutes(parts[1]?.trim() || "");
+    const endFallback = start + 15; // 15-min interview slots
+    if (start >= 0) {
+      blocks.push({ start, end: end > start ? end : endFallback, label: "Interview Slot", kind: "booked" });
+    }
+  }
+
+  // Sort
+  blocks.sort((a, b) => a.start - b.start);
+
+  // Fill gaps
+  const timeline: Block[] = [];
+  let cursor = DAY_START;
+  for (const b of blocks) {
+    const s = Math.max(b.start, DAY_START);
+    const e = Math.min(b.end, DAY_END);
+    if (s > cursor) {
+      timeline.push({ start: cursor, end: s, label: "Free", kind: "free" });
+    }
+    if (s < e) timeline.push({ ...b, start: s, end: e });
+    cursor = Math.max(cursor, e);
+  }
+  if (cursor < DAY_END) {
+    timeline.push({ start: cursor, end: DAY_END, label: "Free", kind: "free" });
+  }
+
+  const kindStyle: Record<string, string> = {
+    busy:   "bg-rose-400/80",
+    booked: "bg-[#D528A2]",
+    free:   "bg-emerald-400/70",
+  };
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      {/* Timeline bar */}
+      <div className="flex h-4 rounded-lg overflow-hidden w-full border border-slate-200 shadow-inner">
+        {timeline.map((blk, i) => {
+          const width = ((blk.end - blk.start) / TOTAL) * 100;
+          return (
+            <div
+              key={i}
+              title={`${blk.label}: ${minutesToLabel(blk.start)} – ${minutesToLabel(blk.end)}`}
+              style={{ width: `${width}%` }}
+              className={`${kindStyle[blk.kind]} transition-all`}
+            />
+          );
+        })}
+      </div>
+      {/* Legend inline */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {timeline.some(b => b.kind === "free") && (
+          <span className="text-[9px] font-bold text-emerald-700 flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-400/70 inline-block" /> Free
+          </span>
+        )}
+        {timeline.some(b => b.kind === "busy") && (
+          <span className="text-[9px] font-bold text-rose-600 flex items-center gap-1">
+            <span className="w-2.5 h-2.5 rounded-sm bg-rose-400/80 inline-block" /> Teaching
+          </span>
+        )}
+        {timeline.some(b => b.kind === "booked") && (
+          <span className="text-[9px] font-bold flex items-center gap-1" style={{ color: BRAND_PINK }}>
+            <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: BRAND_PINK }} /> Interview
+          </span>
+        )}
+        {/* Free slot labels */}
+        {timeline
+          .filter(b => b.kind === "free")
+          .map((blk, i) => (
+            <span key={i} className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+              {minutesToLabel(blk.start)}–{minutesToLabel(blk.end)}
+            </span>
+          ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Session Drawer (shadcn Sheet + Tabs + Badge + Table) ─────────────────
+
 const StudentConductedRosterDrawer = ({
   interview,
   cohortStudents,
   evaluations,
   allMentors = [],
   allColleges = [],
+  allSlots = [],
   userCollegeId,
   isCM = false,
   initialTab,
-  onClose
+  onClose,
 }: {
   interview: any;
   cohortStudents: any[];
   evaluations: any[];
   allMentors?: any[];
   allColleges?: any[];
+  allSlots?: any[];
   userCollegeId?: string;
   isCM?: boolean;
   initialTab?: "mentors" | "students" | "logs";
@@ -294,10 +465,9 @@ const StudentConductedRosterDrawer = ({
   const hostCollegeId = interview.college_id || interview.origin_college_id;
   const isPartnerCM = isCM && isExternalSession && userCollegeId && hostCollegeId !== userCollegeId;
 
-  // Resilient session evaluations resolution (supports string/number ID, trimming, and eval_ID prefix)
   const sessionEvals = useMemo(() => {
     const rawId = String(interview.id || "").trim();
-    return (evaluations || []).filter(e => {
+    return (evaluations || []).filter((e: any) => {
       if (!e) return false;
       const eIntId = String(e.interview_id || "").trim();
       if (eIntId && rawId && (eIntId === rawId || eIntId.toLowerCase() === rawId.toLowerCase())) return true;
@@ -305,1064 +475,841 @@ const StudentConductedRosterDrawer = ({
       return false;
     });
   }, [evaluations, interview.id]);
+
   const evalCount = sessionEvals.length;
   const isCompleted = interview.status === "completed";
-
-  // Default to 'students' tab if evaluations exist or requested, so CM immediately sees marks & questions
-  const [activeTab, setActiveTab] = useState<"mentors" | "students" | "logs">(
-    initialTab || (evalCount > 0 ? "students" : "mentors")
-  );
-  const [studentSearch, setStudentSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "evaluated" | "pending" | "cleared" | "needs_work">("all");
-  const [selectedEvaluationDetail, setSelectedEvaluationDetail] = useState<any | null>(null);
-
   const reqCount = Number(interview.required_students || interview.student_count || 10);
-  const slots = interview.student_slots || [];
+  const slots: any[] = interview.student_slots || [];
   const assignedSlotStudentIds = slots.map((s: any) => s.student_id);
   const allocCount = interview.allocated_students || slots.length;
-  const maxSessionCount = Math.max(allocCount, reqCount);
 
-  // Partner CAM's accepted capacity record
+  const defaultTab = initialTab || (evalCount > 0 ? "students" : "mentors");
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
+  const [studentSearch, setStudentSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "evaluated" | "pending" | "cleared">("all");
+  const [selectedEval, setSelectedEval] = useState<any | null>(null);
+
   const myCampusResponse = (interview.cam_responses || []).find((r: any) => r.college_id === userCollegeId);
+  const myCollegeMentorIds = useMemo(() =>
+    !userCollegeId ? [] : allMentors.filter((m: any) => m.college_id === userCollegeId).map((m: any) => m.id),
+    [allMentors, userCollegeId]
+  );
 
-  // Mentors belonging to current CAM's college
-  const myCollegeMentorIds = useMemo(() => {
-    if (!userCollegeId) return [];
-    return allMentors.filter(m => m.college_id === userCollegeId).map(m => m.id);
-  }, [allMentors, userCollegeId]);
-
-  // Strictly scope students to this CAM's college if partner CAM, else full session cohort
-  const displayStudents = useMemo(() => {
+  // ── display students ──────────────────────────────────────────────────────
+  const maxSessionCount = Math.max(allocCount, reqCount);
+  const displayStudents: any[] = useMemo(() => {
     if (slots.length > 0) {
-      let relevantSlots = slots;
+      let relevant = slots;
       if (isPartnerCM) {
-        relevantSlots = slots.filter((sl: any) => 
+        relevant = slots.filter((sl: any) =>
           (sl.mentor_id && myCollegeMentorIds.includes(sl.mentor_id)) ||
           (sl.college_id && sl.college_id === userCollegeId)
         );
-
-        // Fallback: if slots exist but haven't tagged mentor college, slice by accepted capacity
-        if (relevantSlots.length === 0 && myCampusResponse?.accepted_student_capacity) {
-          const cap = Number(myCampusResponse.accepted_student_capacity);
-          relevantSlots = slots.slice(0, cap);
+        if (relevant.length === 0 && myCampusResponse?.accepted_student_capacity) {
+          relevant = slots.slice(0, Number(myCampusResponse.accepted_student_capacity));
         }
       }
-
-      return relevantSlots.map((sl: any, sIdx: number) => {
-        const found = cohortStudents.find(cs => 
-          (sl.student_id && (cs.id === sl.student_id || cs.register_number === sl.student_id || cs.roll_number === sl.student_id)) ||
+      return relevant.map((sl: any, sIdx: number) => {
+        const found = cohortStudents.find((cs: any) =>
+          (sl.student_id && (cs.id === sl.student_id || cs.register_number === sl.student_id)) ||
           (sl.student_name && !isCandidatePlaceholder(sl.student_name) && cs.name?.toLowerCase().trim() === sl.student_name?.toLowerCase().trim())
         );
-
-        const resolvedName = (!isCandidatePlaceholder(sl.student_name) ? sl.student_name : null) ||
-          found?.name ||
-          sl.student_name ||
-          (sl.student_id ? `Student ${sl.student_id}` : `Student #${sIdx + 1}`);
-
-        const resolvedRegNo = found?.register_number || found?.roll_number || sl.register_number || sl.roll_number || sl.student_id || `REG-${1000 + sIdx}`;
-
         return {
-          id: found?.id || sl.student_id || sl.studentId || `slot_std_${sIdx + 1}`,
+          id: found?.id || sl.student_id || sl.id || "",
           dbId: found?.id,
-          slotStudentId: sl.student_id,
           student_id: sl.student_id,
-          name: resolvedName,
-          roll_number: resolvedRegNo,
-          register_number: resolvedRegNo,
-          classGroup: found?.classGroup || interview.class_group || "Cohort",
-          department: found?.department || interview.class_group || "Cohort",
+          name: (!isCandidatePlaceholder(sl.student_name) ? sl.student_name : null) || found?.name || `Student #${sIdx + 1}`,
+          roll_number: found?.register_number || found?.roll_number || sl.student_id || "",
           slot_start_time: sl.slot_start_time,
           slot_end_time: sl.slot_end_time,
           mentor_name: sl.mentor_name,
           mentor_id: sl.mentor_id,
-          gmeet_link: sl.gmeet_link
+          gmeet_link: sl.gmeet_link,
         };
       });
     }
-
-    if (isPartnerCM && myCampusResponse?.accepted_student_capacity) {
-      const cap = Number(myCampusResponse.accepted_student_capacity);
-      return cohortStudents.slice(0, cap).map((s: any, idx: number) => ({
-        ...s,
-        dbId: s.id,
-        register_number: s.register_number || s.roll_number || s.id,
-        roll_number: s.register_number || s.roll_number || s.id
-      }));
-    }
-
-    const cohortMatching = cohortStudents.filter(s =>
+    const pool = cohortStudents.filter((s: any) =>
       interview.class_group
-        ? ((s.classGroup || "").toLowerCase().trim() === (interview.class_group || "").toLowerCase().trim() ||
-           (s.department || "").toLowerCase().trim() === (interview.class_group || "").toLowerCase().trim())
-        : (interview.college_id && s.college_id === interview.college_id)
+        ? (s.classGroup || "").toLowerCase().trim() === (interview.class_group || "").toLowerCase().trim()
+        : interview.college_id && s.college_id === interview.college_id
     );
-    const pool = cohortMatching.length > 0 ? cohortMatching : cohortStudents;
-    return pool.slice(0, maxSessionCount).map((s: any, idx: number) => ({
-      ...s,
-      dbId: s.id,
-      register_number: s.register_number || s.roll_number || s.id,
-      roll_number: s.register_number || s.roll_number || s.id
+    return (pool.length > 0 ? pool : cohortStudents).slice(0, maxSessionCount).map((s: any) => ({
+      ...s, dbId: s.id, roll_number: s.register_number || s.roll_number || s.id,
     }));
   }, [slots, cohortStudents, interview, maxSessionCount, isPartnerCM, userCollegeId, myCollegeMentorIds, myCampusResponse]);
 
-  // Resolve Google Meet Link with robust fallback for assigned sessions
-  const sessionMeetLink = useMemo(() => {
-    if (interview.gmeet_link && interview.gmeet_link.trim().length > 0) return interview.gmeet_link;
+  // ── meet link ─────────────────────────────────────────────────────────────
+  const sessionMeetLink: string | null = useMemo(() => {
+    if (interview.gmeet_link?.trim()) return interview.gmeet_link;
     const fromSlot = slots.find((s: any) => s.gmeet_link)?.gmeet_link;
     if (fromSlot) return fromSlot;
-    const fromAlloc = (interview.allocations || []).find((a: any) => a.gmeet_link)?.gmeet_link;
-    if (fromAlloc) return fromAlloc;
-    if (interview.status === "assigned" || interview.status === "completed" || interview.status === "pending_verification" || allocCount > 0) {
-      const rawId = (interview.id || "eval").replace(/[^a-z0-9]/gi, "").toLowerCase();
-      const code1 = rawId.slice(0, 3) || "fpz";
-      const code2 = rawId.slice(3, 7) || "meet";
-      const code3 = rawId.slice(7, 10) || "eval";
-      return `https://meet.google.com/${code1}-${code2}-${code3}`;
-    }
-    return null;
-  }, [interview, slots, allocCount]);
+    return (interview.allocations || []).find((a: any) => a.gmeet_link)?.gmeet_link || null;
+  }, [interview, slots]);
 
-  const sessionGcalLink = useMemo(() => {
-    if (interview.gcal_link && interview.gcal_link.trim().length > 0) return interview.gcal_link;
-    const title = `Structured Interview: ${interview.subject} (${interview.class_group || 'Cohort'})`;
-    const desc = `Faculty assessment session for ${interview.subject}.\nCohort: ${interview.class_group || 'All'}\nGoogle Meet: ${sessionMeetLink}`;
-    const cleanDate = (interview.target_date || new Date().toISOString().slice(0, 10)).replace(/-/g, "");
-    const startISO = `${cleanDate}T082000`;
-    const endISO = `${cleanDate}T091000`;
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startISO}/${endISO}&details=${encodeURIComponent(desc)}&location=${encodeURIComponent(sessionMeetLink || '')}`;
-  }, [interview, sessionMeetLink]);
-
-  // Parse assigned mentor IDs
+  // ── assigned mentors ──────────────────────────────────────────────────────
   const assignedMentorIds: string[] = useMemo(() => {
     if (interview.assigned_mentor_ids) {
       try {
-        const parsed = JSON.parse(interview.assigned_mentor_ids);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        const p = JSON.parse(interview.assigned_mentor_ids);
+        if (Array.isArray(p) && p.length > 0) return p;
       } catch (_) {}
     }
     const fromSlots = Array.from(new Set(slots.map((s: any) => s.mentor_id).filter(Boolean)));
     if (fromSlots.length > 0) return fromSlots as string[];
-    const fromAllocs = Array.from(new Set((interview.allocations || []).map((a: any) => a.mentor_id).filter(Boolean)));
-    if (fromAllocs.length > 0) return fromAllocs as string[];
     if (interview.mentor_id) return [interview.mentor_id];
     return [];
   }, [interview, slots]);
 
-  // Build assigned mentor detail records
   const assignedMentorsList = useMemo(() => {
-    // Deduplicate IDs
-    const uniqueIds = Array.from(new Set(assignedMentorIds));
-
-    // If partner CM, prioritize showing mentors from their college if mapped
-    let idsToUse = uniqueIds;
+    const unique = Array.from(new Set(assignedMentorIds));
+    let ids = unique;
     if (isPartnerCM && userCollegeId) {
-      const myCollegeMentors = uniqueIds.filter(mId => myCollegeMentorIds.includes(mId));
-      if (myCollegeMentors.length > 0) {
-        idsToUse = myCollegeMentors;
-      }
+      const mine = unique.filter((id) => myCollegeMentorIds.includes(id));
+      if (mine.length > 0) ids = mine;
     }
-
-    return idsToUse.map((mId, idx) => {
-      const mObj = allMentors.find(m => m.id === mId) || {
-        id: mId,
-        name: `Evaluator Faculty ${idx + 1}`,
-        department: "Faculty",
-        college_id: userCollegeId
-      };
+    return ids.map((mId, idx) => {
+      const mObj = allMentors.find((m: any) => m.id === mId) || { id: mId, name: `Evaluator ${idx + 1}`, department: "Faculty", college_id: userCollegeId };
       const mSlots = slots.filter((s: any) => s.mentor_id === mId);
-      const mEvals = sessionEvals.filter(e => e.mentor_id === mId || e.evaluator_id === mId);
-      const mAllocCount = mSlots.length > 0
-        ? mSlots.length
-        : Math.max(1, Math.round(displayStudents.length / Math.max(1, idsToUse.length)));
-
-      // Fix duplicate dash formatting in timing string
-      const rawStart = mSlots[0]?.slot_start_time || interview.preferred_start_time || "8.20 AM - 9.10 AM";
-      const rawEnd = mSlots[mSlots.length - 1]?.slot_end_time;
-      let timing = rawStart;
-      if (rawEnd && rawEnd !== rawStart && !rawStart.includes(rawEnd)) {
-        timing = `${rawStart} to ${rawEnd}`;
-      }
-
-      const meetLink = mSlots[0]?.gmeet_link || interview.gmeet_link;
-      const mCollege = allColleges.find(c => c.id === mObj.college_id)?.name || mObj.college_id || "Campus Faculty";
-
-      return {
-        ...mObj,
-        assignedSlots: mSlots,
-        evalCount: mEvals.length,
-        allocCount: mAllocCount,
-        timing,
-        meetLink,
-        collegeName: mCollege
-      };
+      const mEvals = sessionEvals.filter((e: any) => e.mentor_id === mId || e.evaluator_id === mId);
+      const allocCnt = mSlots.length || Math.max(1, Math.round(displayStudents.length / Math.max(1, ids.length)));
+      const rawStart = mSlots[0]?.slot_start_time || interview.preferred_start_time || "";
+      const rawEnd   = mSlots[mSlots.length - 1]?.slot_end_time || "";
+      const timing   = rawEnd && rawEnd !== rawStart ? `${rawStart} – ${rawEnd}` : rawStart;
+      const meetLink = mSlots[0]?.gmeet_link || interview.gmeet_link || null;
+      const collegeName = allColleges.find((c: any) => c.id === mObj.college_id)?.name || mObj.college_id || "Campus";
+      return { ...mObj, mSlots, evalCount: mEvals.length, allocCount: allocCnt, timing, meetLink, collegeName };
     });
-  }, [assignedMentorIds, allMentors, slots, sessionEvals, displayStudents.length, interview, allColleges, isPartnerCM, userCollegeId, myCollegeMentorIds]);
+  }, [assignedMentorIds, allMentors, slots, sessionEvals, displayStudents, interview, allColleges, isPartnerCM, userCollegeId, myCollegeMentorIds]);
 
-  // Robust helper: find eval for a student using all available keys
-  const findEvalForStudent = (st: any): any | undefined => {
+  // ── student eval lookup ───────────────────────────────────────────────────
+  const findEval = (st: any): any | undefined => {
     if (!st) return undefined;
-    const candidateIds = [
-      st.id,
-      st.dbId,
-      st.slotStudentId,
-      st.student_id,
-      st.register_number,
-      st.roll_number
-    ].filter(Boolean).map(x => String(x).trim().toLowerCase());
-
-    const cleanStName = (st.name || "").trim().toLowerCase();
-    const isPlaceholder = isCandidatePlaceholder(st.name);
-    const intIdLower = String(interview.id || "").trim().toLowerCase();
-
-    return sessionEvals.find(e => {
-      // 1. Direct candidate ID match
-      const eStudentId = String(e.student_id || "").trim().toLowerCase();
-      if (eStudentId && candidateIds.includes(eStudentId)) return true;
-
-      // 2. Check eval.id ending with any candidate key or exact pattern
+    const ids = [st.id, st.dbId, st.student_id, st.roll_number].filter(Boolean).map((x) => String(x).trim().toLowerCase());
+    const nameClean = (st.name || "").trim().toLowerCase();
+    const intId = String(interview.id || "").trim().toLowerCase();
+    return sessionEvals.find((e: any) => {
+      const eSt = String(e.student_id || "").trim().toLowerCase();
+      if (eSt && ids.includes(eSt)) return true;
       if (e.id) {
-        const eIdLower = String(e.id).toLowerCase();
-        if (candidateIds.some(cid => eIdLower === `eval_${intIdLower}_${cid}` || eIdLower.endsWith(`_${cid}`))) {
-          return true;
-        }
+        const eId = String(e.id).toLowerCase();
+        if (ids.some((cid) => eId === `eval_${intId}_${cid}` || eId.endsWith(`_${cid}`))) return true;
       }
-
-      // 3. Name match (fallback for real student names)
-      if (!isPlaceholder && cleanStName && e.student_name) {
-        const eNameClean = String(e.student_name).trim().toLowerCase();
-        if (eNameClean === cleanStName) return true;
-        if (cleanStName.length > 3 && eNameClean.length > 3) {
-          if (cleanStName.includes(eNameClean) || eNameClean.includes(cleanStName)) return true;
-        }
+      if (!isCandidatePlaceholder(st.name) && nameClean && e.student_name) {
+        const en = String(e.student_name).trim().toLowerCase();
+        if (en === nameClean || (nameClean.length > 3 && (nameClean.includes(en) || en.includes(nameClean)))) return true;
       }
-
       return false;
     });
   };
 
-  // Filter students for Student Roster tab
+  // ── filtered students ─────────────────────────────────────────────────────
   const filteredStudents = useMemo(() => {
     return displayStudents.filter((st: any) => {
-      const evaluation = findEvalForStudent(st);
-      const isEval = Boolean(evaluation);
-      const evalStatus = (evaluation?.status || "").toLowerCase();
-
+      const ev = findEval(st);
       if (studentSearch.trim()) {
-        const q = studentSearch.toLowerCase().trim();
-        const matchName = (st.name || "").toLowerCase().includes(q);
-        const matchRoll = (st.roll_number || st.register_number || st.id || "").toLowerCase().includes(q);
-        if (!matchName && !matchRoll) return false;
+        const q = studentSearch.toLowerCase();
+        if (!(st.name || "").toLowerCase().includes(q) && !(st.roll_number || "").toLowerCase().includes(q)) return false;
       }
-
-      if (statusFilter === "evaluated" && !isEval) return false;
-      if (statusFilter === "pending" && isEval) return false;
-      if (statusFilter === "cleared" && (!isEval || !evalStatus.includes("clear"))) return false;
-      if (statusFilter === "needs_work" && (!isEval || evalStatus.includes("clear"))) return false;
-
+      if (statusFilter === "evaluated" && !ev) return false;
+      if (statusFilter === "pending" && ev) return false;
+      if (statusFilter === "cleared" && (!ev || !(ev.status || "").toLowerCase().includes("clear"))) return false;
       return true;
     });
   }, [displayStudents, sessionEvals, studentSearch, statusFilter]);
 
+  // ── day-of-week from interview date ───────────────────────────────────────
+  const interviewDayName = useMemo(() => {
+    if (!interview.target_date) return "";
+    const [y, mo, d] = interview.target_date.split("-").map(Number);
+    return new Date(y, mo - 1, d).toLocaleDateString("en-US", { weekday: "long" });
+  }, [interview.target_date]);
+
+  // ── GCal fallback link ────────────────────────────────────────────────────
+  const sessionGcalLink = useMemo(() => {
+    if (interview.gcal_link?.trim()) return interview.gcal_link;
+    const title = `Interview: ${interview.subject} (${interview.class_group || "Cohort"})`;
+    const desc = `Faculty assessment for ${interview.subject}.\n${sessionMeetLink ? `Google Meet: ${sessionMeetLink}` : ""}`;
+    const cleanDate = (interview.target_date || "").replace(/-/g, "");
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${cleanDate}T082000/${cleanDate}T091000&details=${encodeURIComponent(desc)}${sessionMeetLink ? `&location=${encodeURIComponent(sessionMeetLink)}` : ""}`;
+  }, [interview, sessionMeetLink]);
+
+  // ── per-mentor free time (count busy slots from all known timetable data) ──
+  const mentorBusySlots: Record<string, any[]> = useMemo(() => {
+    const result: Record<string, any[]> = {};
+    for (const m of assignedMentorsList) {
+      result[m.id] = (allSlots || []).filter(
+        (s: any) => s.mentorId === m.id && (s.day || "").toLowerCase() === interviewDayName.toLowerCase()
+      );
+    }
+    return result;
+  }, [assignedMentorsList, allSlots, interviewDayName]);
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-5xl w-full overflow-hidden flex flex-col max-h-[92vh]">
-        
-        {/* Modal Header */}
-        <div className="p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-black text-slate-900">Session Allocation, Assigned Faculty &amp; Audit Logs</h3>
-              <StatusBadge status={interview.status} />
-              <ConductedStatusBadge
-                status={interview.status}
-                required={reqCount}
-                allocated={allocCount}
-                evaluated={evalCount}
-                verified={isCompleted ? evalCount : 0}
-              />
-              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                interview.type === "external"
-                  ? "bg-purple-50 text-purple-700 border-purple-200"
-                  : "bg-blue-50 text-blue-700 border-blue-200"
-              }`}>
-                {(interview.type || "internal").toUpperCase()}
-              </span>
+    <Sheet open={true} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <SheetContent side="right" width="w-[95vw] max-w-5xl" className="flex flex-col p-0">
+
+        {/* ── Header ── */}
+        <SheetHeader className="px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <SheetTitle className="flex items-center gap-2 flex-wrap">
+                Session Detail
+                <StatusBadge status={interview.status} />
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                  isExternalSession ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-blue-50 text-blue-700 border-blue-200"
+                }`}>
+                  {(interview.type || "internal").toUpperCase()}
+                </span>
+                <ConductedStatusBadge status={interview.status} required={reqCount} allocated={allocCount} evaluated={evalCount} />
+              </SheetTitle>
+              <SheetDescription className="mt-1 flex items-center gap-2 flex-wrap">
+                <span><strong className="text-slate-800">{interview.subject}</strong></span>
+                <span>·</span>
+                <span>{interview.class_group || "All"}</span>
+                <span>·</span>
+                <span>{interview.target_date || "TBD"}{interviewDayName ? ` (${interviewDayName})` : ""}</span>
+                {sessionMeetLink && (
+                  <>
+                    <span>·</span>
+                    <a href={sessionMeetLink} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-indigo-600 font-bold hover:underline bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      <Video className="w-3 h-3" /> Join Meet
+                    </a>
+                    <a href={sessionGcalLink} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-emerald-700 font-bold hover:underline bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      <Calendar className="w-3 h-3" /> Google Cal
+                    </a>
+                  </>
+                )}
+              </SheetDescription>
             </div>
-            <p className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-2 flex-wrap">
-              <span>Subject: <strong className="text-slate-800">{interview.subject}</strong></span>
-              <span>•</span>
-              <span>Cohort: <strong className="text-slate-800">{interview.class_group || "All"}</strong></span>
-              <span>•</span>
-              <span>Date: <strong className="text-slate-800">{interview.target_date || "TBD"}</strong></span>
-              {sessionMeetLink && (
-                <>
-                  <span>•</span>
-                  <a
-                    href={sessionMeetLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-indigo-600 font-bold hover:underline inline-flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200"
-                  >
-                    <Video className="w-3.5 h-3.5 text-indigo-600" /> Room Live
-                  </a>
-                  <span>•</span>
-                  <a
-                    href={sessionGcalLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Add event to Google Calendar"
-                    className="text-emerald-700 font-bold hover:underline inline-flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200"
-                  >
-                    <Calendar className="w-3.5 h-3.5 text-emerald-600" /> Google Calendar
-                  </a>
-                </>
+          </div>
+        </SheetHeader>
+
+        {/* ── 5-Metric Summary Strip ── */}
+        <div className="grid grid-cols-5 border-b border-slate-200 shrink-0">
+          {[
+            { label: isPartnerCM ? "Campus Cap" : "Required", value: isPartnerCM ? (myCampusResponse?.accepted_student_capacity || displayStudents.length) : reqCount, color: "text-indigo-700" },
+            { label: isPartnerCM ? "My Alloc"  : "Allocated",  value: isPartnerCM ? displayStudents.length : allocCount, color: "text-blue-700" },
+            { label: "Evaluated", value: evalCount, color: "text-emerald-700" },
+            { label: "Verified",  value: isCompleted ? evalCount : 0, color: "text-teal-700" },
+            { label: "Unallocated", value: isPartnerCM ? 0 : Math.max(0, reqCount - allocCount), color: "text-amber-600" },
+          ].map((m) => (
+            <div key={m.label} className="flex flex-col items-center justify-center py-3 border-r border-slate-200 last:border-r-0 bg-slate-50/50">
+              <span className={`text-base font-black ${m.color}`}>{m.value}</span>
+              <span className="text-[9px] font-bold uppercase text-slate-400 tracking-wider mt-0.5">{m.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Tabs ── */}
+        <SheetBody className="flex flex-col">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
+            <TabsList className="mx-4 mt-3 shrink-0 self-start">
+              <TabsTrigger value="mentors" icon={<Users className="w-3.5 h-3.5" />}>
+                Faculty ({assignedMentorsList.length})
+              </TabsTrigger>
+              <TabsTrigger value="students" icon={<GraduationCap className="w-3.5 h-3.5" />}>
+                Students ({displayStudents.length})
+              </TabsTrigger>
+              {isExternalSession && (
+                <TabsTrigger value="capacity" icon={<Globe className="w-3.5 h-3.5" />}>
+                  Capacity
+                </TabsTrigger>
               )}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-all cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+              <TabsTrigger value="logs" icon={<History className="w-3.5 h-3.5" />}>
+                Audit Log
+              </TabsTrigger>
+            </TabsList>
 
-        {/* 5-Metrics Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 p-3.5 bg-slate-100/60 border-b border-slate-200 text-center">
-          <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[9px] font-black uppercase text-slate-400 block">
-              {isPartnerCM ? "Campus Cap" : "Required"}
-            </span>
-            <span className="text-base font-black text-indigo-700">
-              {isPartnerCM ? (Number(myCampusResponse?.accepted_student_capacity) || displayStudents.length) : reqCount}
-            </span>
-          </div>
-          <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[9px] font-black uppercase text-slate-400 block">
-              {isPartnerCM ? "My Alloc" : "Allocated"}
-            </span>
-            <span className="text-base font-black text-blue-700">
-              {isPartnerCM ? displayStudents.length : allocCount}
-            </span>
-          </div>
-          <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[9px] font-black uppercase text-slate-400 block">Evaluated</span>
-            <span className="text-base font-black text-emerald-700">
-              {isPartnerCM
-                ? sessionEvals.filter(e => displayStudents.some((ds: any) => ds.id === e.student_id)).length
-                : evalCount
-              }
-            </span>
-          </div>
-          <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[9px] font-black uppercase text-slate-400 block">Verified</span>
-            <span className="text-base font-black text-teal-700">
-              {isCompleted ? (isPartnerCM ? sessionEvals.filter(e => displayStudents.some((ds: any) => ds.id === e.student_id)).length : evalCount) : 0}
-            </span>
-          </div>
-          <div className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[9px] font-black uppercase text-slate-400 block">Unallocated</span>
-            <span className="text-base font-black text-amber-700">
-              {isPartnerCM ? 0 : Math.max(0, reqCount - allocCount)}
-            </span>
-          </div>
-        </div>
-
-        {/* Navigation Tabs Bar */}
-        <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-2 gap-2 text-xs font-black">
-          <button
-            onClick={() => setActiveTab("mentors")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl border-b-2 transition-all cursor-pointer ${
-              activeTab === "mentors"
-                ? "border-indigo-600 bg-white text-indigo-700 shadow-2xs"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            {isPartnerCM ? `Campus Faculty (${assignedMentorsList.length})` : `Assigned Faculty (${assignedMentorsList.length})`}
-          </button>
-          <button
-            onClick={() => setActiveTab("students")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl border-b-2 transition-all cursor-pointer ${
-              activeTab === "students"
-                ? "border-indigo-600 bg-white text-indigo-700 shadow-2xs"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <GraduationCap className="w-3.5 h-3.5" />
-            {isPartnerCM ? `Assigned Candidates (${displayStudents.length})` : `Student Roster (${displayStudents.length})`}
-          </button>
-          <button
-            onClick={() => setActiveTab("logs")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl border-b-2 transition-all cursor-pointer ${
-              activeTab === "logs"
-                ? "border-indigo-600 bg-white text-indigo-700 shadow-2xs"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <History className="w-3.5 h-3.5" />
-            Audit Logs
-          </button>
-        </div>
-
-        {/* ── TAB 1: ASSIGNED FACULTY & CAPACITY SPLIT ── */}
-        {activeTab === "mentors" && (
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                  Assigned Evaluator Faculty Mentors ({assignedMentorsList.length})
-                </h4>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  Faculty scheduled to conduct structured interviews for this session.
-                </p>
-              </div>
-              <span className="text-[11px] font-extrabold bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg border border-indigo-200">
-                Allocated: {allocCount} Students
-              </span>
-            </div>
-
-            {assignedMentorsList.length === 0 ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center text-xs text-slate-400">
-                <Users className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                No mentors assigned yet. Allocate faculty in "Pending Allocations".
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {assignedMentorsList.map((m, idx) => {
-                  const mProgressPct = m.allocCount > 0 ? Math.round((m.evalCount / m.allocCount) * 100) : 0;
-                  const initial = (m.name || "M").charAt(0).toUpperCase();
-
-                  return (
-                    <div key={m.id || idx} className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-2.5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs shrink-0">
-                            {initial}
-                          </div>
-                          <div>
-                            <div className="font-extrabold text-slate-900 text-xs">{m.name}</div>
-                            <div className="text-[10px] text-slate-400 font-medium">{m.department || "Faculty"} • {m.collegeName}</div>
-                          </div>
-                        </div>
-                        {m.meetLink && (
-                          <a
-                            href={m.meetLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg border border-indigo-200 inline-flex items-center gap-1 shrink-0"
-                          >
-                            <Video className="w-3 h-3" /> Meet
-                          </a>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-200 font-semibold">
-                        <span className="flex items-center gap-1 text-slate-700">
-                          <Clock className="w-3 h-3 text-indigo-600" /> {m.timing}
-                        </span>
-                        <span className="font-bold text-slate-800">
-                          {m.allocCount} Candidates (15m each)
-                        </span>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 mb-1">
-                          <span>Evaluations</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-indigo-700 font-black">{m.evalCount} / {m.allocCount} ({mProgressPct}%)</span>
-                            {m.evalCount > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setActiveTab("students")}
-                                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
-                              >
-                                View Marks →
-                              </button>
+            {/* ══ TAB: FACULTY ══════════════════════════════════════════════ */}
+            <TabsContent value="mentors" className="flex-1 overflow-y-auto px-4 pb-6">
+              {assignedMentorsList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
+                  <Users className="w-10 h-10 text-slate-200" />
+                  <p className="text-sm font-semibold">No faculty assigned yet.</p>
+                  <p className="text-xs">Use the Assign panel to map evaluators.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  {assignedMentorsList.map((m, idx) => {
+                    const pct = m.allocCount > 0 ? Math.round((m.evalCount / m.allocCount) * 100) : 0;
+                    const busyDay = mentorBusySlots[m.id] || [];
+                    return (
+                      <Card key={m.id || idx} className="overflow-hidden">
+                        <CardContent className="p-4 space-y-3">
+                          {/* Mentor identity */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm text-white shrink-0"
+                                style={{ background: `linear-gradient(135deg, ${BRAND_PINK} 0%, ${BRAND_PEACH} 100%)` }}>
+                                {(m.name || "M").charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="text-xs font-black text-slate-900 leading-tight">{m.name}</p>
+                                <p className="text-[10px] text-slate-400 font-semibold">{m.department || "Faculty"} · {m.collegeName}</p>
+                              </div>
+                            </div>
+                            {m.meetLink && (
+                              <a href={m.meetLink} target="_blank" rel="noreferrer"
+                                className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded-lg transition-all">
+                                <Video className="w-3 h-3" /> Meet
+                              </a>
                             )}
                           </div>
-                        </div>
-                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all rounded-full"
-                            style={{ width: `${Math.min(100, mProgressPct)}%` }}
-                          />
-                        </div>
+
+                          {/* Interview time slot */}
+                          <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[11px]">
+                            <span className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                              <Clock className="w-3 h-3 text-indigo-500" />
+                              {m.timing || "Time TBD"}
+                            </span>
+                            <span className="font-bold text-slate-800">{m.allocCount} candidates</span>
+                          </div>
+
+                          {/* Evaluation progress */}
+                          <div>
+                            <div className="flex justify-between text-[10px] font-bold text-slate-500 mb-1.5">
+                              <span>Evaluations</span>
+                              <span className="font-black text-indigo-700">{m.evalCount}/{m.allocCount} ({pct}%)</span>
+                            </div>
+                            <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                              <div className="h-full rounded-full transition-all"
+                                style={{ width: `${Math.min(100, pct)}%`, background: `linear-gradient(90deg, ${BRAND_PINK}, ${BRAND_PEACH})` }} />
+                            </div>
+                          </div>
+
+                          {/* Free-time timeline */}
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                              Free Time on {interviewDayName || "Interview Day"}
+                            </p>
+                            <MentorFreeTimeTimeline
+                              mentor={m}
+                              allSlots={allSlots}
+                              interviewDate={interview.target_date || ""}
+                              dayName={interviewDayName}
+                              allocatedTime={m.timing}
+                            />
+                            {busyDay.length > 0 ? (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {busyDay.map((s: any, i: number) => (
+                                  <span key={i} className="text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.5 rounded">
+                                    {s.time} · {s.course}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-emerald-600 font-semibold mt-1">
+                                No other classes on this day
+                              </p>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* ══ TAB: STUDENTS ═════════════════════════════════════════════ */}
+            <TabsContent value="students" className="flex-1 overflow-y-auto px-4 pb-6 flex flex-col gap-3">
+              {/* Search + filter row */}
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search name or roll number…"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none font-semibold"
+                  />
+                </div>
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[10px] font-bold self-start">
+                  {(["all", "evaluated", "pending", "cleared"] as const).map((f) => (
+                    <button key={f} onClick={() => setStatusFilter(f)}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer capitalize ${
+                        statusFilter === f ? "bg-white text-indigo-700 shadow font-black" : "text-slate-500 hover:text-slate-800"
+                      }`}>
+                      {f === "all" ? `All (${displayStudents.length})` : f === "evaluated" ? `Evaluated (${evalCount})` : f === "pending" ? `Pending (${Math.max(0, displayStudents.length - evalCount)})` : "Cleared"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="flex-1 border border-slate-200 rounded-xl overflow-hidden">
+                <Table containerClassName="h-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8">#</TableHead>
+                      <TableHead>Candidate</TableHead>
+                      <TableHead>Evaluator</TableHead>
+                      <TableHead>Slot</TableHead>
+                      <TableHead>Meet</TableHead>
+                      <TableHead>Score</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredStudents.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-10 text-slate-400 font-semibold">
+                          No candidates match the current filter.
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredStudents.map((st: any, idx: number) => {
+                      const isAssigned = assignedSlotStudentIds.includes(st.id) || idx < displayStudents.length;
+                      const slot = slots.find((s: any) => s.student_id === st.id || s.student_id === st.roll_number);
+                      const ev = findEval(st);
+                      const isEval = Boolean(ev);
+                      const rawS = slot?.slot_start_time || st.slot_start_time || "";
+                      const rawE = slot?.slot_end_time   || st.slot_end_time   || "";
+                      const slotLabel = rawS && rawE && rawS !== rawE ? `${rawS} – ${rawE}` : rawS || "—";
+                      const meetHref = slot?.gmeet_link || st.gmeet_link || sessionMeetLink;
+
+                      return (
+                        <TableRow key={st.id || idx} className={isAssigned ? "" : "opacity-50"}>
+                          <TableCell className="text-slate-400 font-mono text-[10px] w-8">{idx + 1}</TableCell>
+                          <TableCell>
+                            <p className="font-bold text-slate-900 text-xs">{st.name}</p>
+                            <p className="text-[10px] font-mono text-slate-400">{st.roll_number || st.id}</p>
+                          </TableCell>
+                          <TableCell className="text-[11px]">
+                            {isAssigned ? (slot?.mentor_name || st.mentor_name || interview.mentor_name || "—") : "—"}
+                          </TableCell>
+                          <TableCell className="text-[11px] font-mono">
+                            {isAssigned ? slotLabel : "—"}
+                          </TableCell>
+                          <TableCell>
+                            {interview.type === "internal" ? (
+                              <Badge variant="success" className="text-[9px]">
+                                <User className="w-2.5 h-2.5" /> In-Person
+                              </Badge>
+                            ) : isAssigned && meetHref ? (
+                              <a href={meetHref} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-lg transition-all">
+                                <Video className="w-3 h-3" /> Meet
+                              </a>
+                            ) : <span className="text-slate-300 text-[10px]">—</span>}
+                          </TableCell>
+                          <TableCell>
+                            {isEval ? (
+                              <button type="button" onClick={() => setSelectedEval({ student: st, eval: ev })}
+                                className="flex flex-col text-left group cursor-pointer">
+                                <span className="font-black text-indigo-700 text-xs group-hover:underline flex items-center gap-1">
+                                  {ev.total_score}/10 <Eye className="w-3 h-3 opacity-50 group-hover:opacity-100" />
+                                </span>
+                                <span className="text-[9px] text-slate-400">{Math.round((Number(ev.total_score) || 0) * 10)}%</span>
+                              </button>
+                            ) : <span className="text-amber-500 text-[10px] font-semibold">⏳ Pending</span>}
+                          </TableCell>
+                          <TableCell>
+                            {isEval ? (
+                              <Badge variant={(ev.status || "").toLowerCase().includes("clear") ? "success" : "warning"} className="text-[9px]">
+                                {ev.status || "Evaluated"}
+                              </Badge>
+                            ) : isAssigned ? (
+                              <Badge variant="secondary" className="text-[9px]">Scheduled</Badge>
+                            ) : (
+                              <Badge variant="destructive" className="text-[9px]">Unallocated</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+
+            {/* ══ TAB: CAPACITY (external only) ════════════════════════════ */}
+            {isExternalSession && (
+              <TabsContent value="capacity" className="flex-1 overflow-y-auto px-4 pb-6">
+                <div className="space-y-3 pt-1">
+                  <p className="text-xs font-black uppercase tracking-wider text-slate-400">Partner Campus Capacity Responses</p>
+                  {(() => {
+                    const hostId = interview.college_id || interview.origin_college_id;
+                    const hostCol = allColleges.find((c: any) => c.id === hostId);
+                    const hostKamId = hostCol?.kam_id;
+                    const valid = (interview.cam_responses || []).filter((cr: any) => {
+                      if (cr.college_id === hostId) return false;
+                      if (!hostKamId) return true;
+                      const crKam = allColleges.find((c: any) => c.id === cr.college_id)?.kam_id;
+                      return !crKam || crKam === hostKamId;
+                    });
+                    if (valid.length === 0) return (
+                      <Card><CardContent className="py-8 text-center text-slate-400 text-sm">No capacity responses yet.</CardContent></Card>
+                    );
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {valid.map((cr: any) => (
+                          <Card key={cr.id} className="overflow-hidden">
+                            <CardContent className="p-4 flex items-center justify-between">
+                              <div>
+                                <p className="text-xs font-bold text-slate-900">{cr.college_name}</p>
+                                <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                                  {cr.cam_name || "Campus Manager"}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-black text-purple-700">{cr.accepted_student_capacity || 0} students</p>
+                                <Badge variant={cr.status === "accepted" ? "success" : cr.status === "declined" ? "destructive" : "warning"} className="text-[9px] mt-0.5">
+                                  {cr.status || "pending"}
+                                </Badge>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
+                    );
+                  })()}
+                  {/* Totals */}
+                  <Card className="border-purple-200 bg-purple-50/30">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <span className="text-xs font-black text-purple-900">Total Accepted Capacity</span>
+                      <span className="text-sm font-black text-purple-700">
+                        {interview.accepted_capacity || 0} / {reqCount} students
+                      </span>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+            )}
+
+            {/* ══ TAB: AUDIT LOG ════════════════════════════════════════════ */}
+            <TabsContent value="logs" className="flex-1 overflow-y-auto px-4 pb-6">
+              <div className="relative pl-6 space-y-5 pt-2 before:absolute before:left-2 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
+                {/* Event 1 */}
+                <div className="relative">
+                  <div className="absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow bg-indigo-500" />
+                  <Card><CardContent className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-slate-800">1. Interview Request Raised</p>
+                      <p className="text-[10px] text-slate-400">{interview.created_at || "—"}</p>
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      <strong>{interview.mentor_name || "Mentor"}</strong> raised a <strong>{(interview.type || "internal").toUpperCase()}</strong> interview for <strong>{reqCount} students</strong> in <strong>{interview.class_group || "cohort"}</strong>.
+                      {interview.topics && <span> Topics: {interview.topics}.</span>}
+                    </p>
+                  </CardContent></Card>
+                </div>
+
+                {/* Event 2 — external broadcast */}
+                {isExternalSession && (
+                  <div className="relative">
+                    <div className="absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow bg-purple-500" />
+                    <Card className="border-purple-200 bg-purple-50/30"><CardContent className="p-3.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-black text-purple-900">2. Zone Broadcast — Capacity Requests</p>
+                      </div>
+                      <p className="text-xs text-purple-800">
+                        Capacity request broadcast to regional partner colleges. Total accepted: <strong>{interview.accepted_capacity || 0}/{reqCount}</strong>.
+                      </p>
+                    </CardContent></Card>
+                  </div>
+                )}
+
+                {/* Event 3 — assigned */}
+                {["assigned", "pending_verification", "completed"].includes(interview.status) && (
+                  <div className="relative">
+                    <div className="absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow bg-blue-500" />
+                    <Card className="border-blue-200 bg-blue-50/30"><CardContent className="p-3.5 space-y-1">
+                      <p className="text-xs font-black text-blue-900">3. Faculty Assigned — 15-Min Slots Dispatched</p>
+                      <p className="text-xs text-blue-800">
+                        <strong>{assignedMentorsList.length} mentor(s)</strong> assigned: {assignedMentorsList.map((m) => m.name).join(", ")}.
+                        {sessionMeetLink && <span> Google Meet: <a href={sessionMeetLink} target="_blank" rel="noreferrer" className="underline">{sessionMeetLink}</a></span>}
+                      </p>
+                    </CardContent></Card>
+                  </div>
+                )}
+
+                {/* Event 4 — evaluations */}
+                {evalCount > 0 && (
+                  <div className="relative">
+                    <div className="absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow bg-emerald-500" />
+                    <Card className="border-emerald-200 bg-emerald-50/30"><CardContent className="p-3.5 space-y-1">
+                      <p className="text-xs font-black text-emerald-900">4. Evaluations Submitted</p>
+                      <p className="text-xs text-emerald-800">
+                        <strong>{evalCount} of {allocCount}</strong> students evaluated.
+                        {evalCount >= allocCount && allocCount > 0 && " All evaluations complete."}
+                      </p>
+                    </CardContent></Card>
+                  </div>
+                )}
+
+                {/* Event 5 — completed */}
+                {isCompleted && (
+                  <div className="relative">
+                    <div className="absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow bg-teal-500" />
+                    <Card className="border-teal-200 bg-teal-50/30"><CardContent className="p-3.5">
+                      <p className="text-xs font-black text-teal-900">5. Session Completed & Verified</p>
+                      <p className="text-xs text-teal-800 mt-0.5">Campus Manager marked session complete. Students have been notified.</p>
+                    </CardContent></Card>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+          </Tabs>
+        </SheetBody>
+
+        {/* ── Footer ── */}
+        <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-6 py-3 flex items-center justify-between">
+          <span className="text-[11px] text-slate-500 font-semibold">
+            Required: <strong>{reqCount}</strong> · Allocated: <strong>{allocCount}</strong> · Evaluated: <strong>{evalCount}</strong>
+          </span>
+          <button onClick={onClose}
+            className="px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer shadow">
+            Close
+          </button>
+        </div>
+
+      </SheetContent>
+
+      {/* ── Eval Detail Sub-Dialog ── */}
+      {selectedEval && (
+        <Dialog open={true} onOpenChange={(v) => { if (!v) setSelectedEval(null); }} ariaLabel="Evaluation Detail">
+          <div className="p-5 space-y-4 max-w-md w-full">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-slate-900">{selectedEval.student?.name}</h3>
+              <Badge variant={(selectedEval.eval?.status || "").toLowerCase().includes("clear") ? "success" : "warning"}>
+                {selectedEval.eval?.status || "Evaluated"}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-center">
+                <p className="text-2xl font-black text-indigo-700">{selectedEval.eval?.total_score}/10</p>
+                <p className="text-[10px] text-slate-400 font-semibold">{Math.round((Number(selectedEval.eval?.total_score) || 0) * 10)}%</p>
+              </div>
+              <div className="flex-1 space-y-1 text-xs">
+                {[["Communication", "communication_score"], ["Content", "content_score"], ["Technical", "technical_score"], ["Confidence", "confidence_score"]].map(([label, key]) => {
+                  const val = Number(selectedEval.eval?.[key]) || 0;
+                  return (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="w-24 text-slate-500 font-semibold shrink-0">{label}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-slate-100">
+                        <div className="h-full rounded-full" style={{ width: `${val * 10}%`, background: `linear-gradient(90deg, ${BRAND_PINK}, ${BRAND_PEACH})` }} />
+                      </div>
+                      <span className="font-black text-slate-700 w-6 text-right">{val}</span>
                     </div>
                   );
                 })}
               </div>
-            )}
-
-            {/* External Partner Colleges Acceptance Breakdown */}
-            {interview.type === "external" && (interview.cam_responses?.length > 0 || myCampusResponse) && (
-              <div className="bg-purple-50/50 border border-purple-200 rounded-xl p-3.5 space-y-2 mt-3">
-                <h4 className="text-xs font-black text-purple-900 flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-purple-600" />
-                  {isPartnerCM ? "Your Campus Accepted Capacity" : "Partner Campus Capacity Responses"}
-                </h4>
-                {isPartnerCM ? (
-                  <div className="bg-white p-2.5 rounded-lg border border-purple-200 text-xs font-semibold flex items-center justify-between">
-                    <div>
-                      <span className="text-slate-700 font-bold">
-                        {allColleges.find(c => c.id === userCollegeId)?.name || "Your Campus"}:
-                      </span>{" "}
-                      <span className="text-purple-700 font-extrabold">
-                        {myCampusResponse?.accepted_student_capacity || 0} students
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded border border-purple-300">
-                      {myCampusResponse?.status || "Accepted"}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {(() => {
-                      const hostId = interview.college_id || interview.origin_college_id;
-                      const hostCol = allColleges.find(c => c.id === hostId);
-                      const hostKamId = hostCol?.kam_id || (hostCol as any)?.kamId;
-                      const validResponses = (interview.cam_responses || []).filter((cr: any) => {
-                        if (cr.college_id === hostId) return false;
-                        if (!hostKamId) return true;
-                        const crCol = allColleges.find(c => c.id === cr.college_id);
-                        const crKam = crCol?.kam_id || (crCol as any)?.kamId;
-                        return !crKam || crKam === hostKamId;
-                      });
-                      return validResponses.map((cr: any) => (
-                        <div key={cr.id} className="bg-white p-2 rounded-lg border border-purple-200 text-xs font-semibold">
-                          <div className="font-bold text-slate-800 truncate">{cr.college_name}</div>
-                          <div className="text-[10px] text-purple-700 font-bold mt-0.5">
-                            Capacity: {cr.accepted_student_capacity || 0} students ({cr.status})
-                          </div>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── TAB 2: STUDENT CONDUCTED ROSTER (SCOPED TO COLLEGE IF PARTNER CAM) ── */}
-        {activeTab === "students" && (
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search candidate name or roll number..."
-                  value={studentSearch}
-                  onChange={e => setStudentSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[10px] font-bold">
-                {[
-                  { id: "all", label: `All (${displayStudents.length})` },
-                  { id: "evaluated", label: `Evaluated (${evalCount})` },
-                  { id: "pending", label: `Pending (${Math.max(0, displayStudents.length - evalCount)})` },
-                  { id: "cleared", label: `Cleared` },
-                ].map(tab => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setStatusFilter(tab.id as any)}
-                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                      statusFilter === tab.id
-                        ? "bg-white text-indigo-700 shadow-2xs font-black"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
             </div>
-
-            <div className="flex-1 overflow-y-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-100/90 text-slate-600 font-extrabold text-[10px] uppercase border-b border-slate-200 sticky top-0 z-10">
-                    <th className="px-3 py-2.5">#</th>
-                    <th className="px-3 py-2.5">Candidate Name</th>
-                    <th className="px-3 py-2.5">Evaluator</th>
-                    <th className="px-3 py-2.5">Time</th>
-                    <th className="px-3 py-2.5">Meet</th>
-                    <th className="px-3 py-2.5">Score</th>
-                    <th className="px-3 py-2.5">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {filteredStudents.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs font-semibold">
-                        No candidate slots found matching filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredStudents.map((st: any, idx: number) => {
-                      const isAssignedToSlot = assignedSlotStudentIds.includes(st.id) || (idx < displayStudents.length && (interview.status === "assigned" || interview.status === "completed" || interview.status === "pending_verification"));
-                      const slot = slots.find((s: any) => s.student_id === st.id || s.student_id === st.register_number);
-                      const evaluation = findEvalForStudent(st);
-                      const isEval = Boolean(evaluation);
-
-                      return (
-                        <tr key={st.id || idx} className={isAssignedToSlot ? "bg-white hover:bg-indigo-50/30" : "bg-slate-50/50 opacity-70"}>
-                          <td className="px-3 py-2 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
-                          <td className="px-3 py-2">
-                            <div className="font-bold text-slate-900">{st.name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">{st.roll_number || st.register_number || st.id}</div>
-                          </td>
-                          <td className="px-3 py-2 text-[11px] font-semibold text-slate-700">
-                            {isAssignedToSlot ? (slot?.mentor_name || st.mentor_name || interview.mentor_name || "Faculty Mentor") : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-[11px] font-semibold text-slate-700">
-                            {isAssignedToSlot ? (() => {
-                              const rawS = slot?.slot_start_time || st.slot_start_time || interview.preferred_start_time || "8.20 AM - 9.10 AM";
-                              const rawE = slot?.slot_end_time || st.slot_end_time;
-                              if (!rawE || rawS === rawE || rawS.includes(rawE) || rawE.includes(rawS)) return rawS;
-                              return `${rawS} to ${rawE}`;
-                            })() : "—"}
-                          </td>
-                          <td className="px-3 py-2">
-                            {interview.type === "internal" ? (
-                              <span className="text-[9.5px] font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 inline-flex items-center gap-1">
-                                <User className="w-3 h-3 text-teal-600" /> In-Person
-                              </span>
-                            ) : isAssignedToSlot && (slot?.gmeet_link || st.gmeet_link || sessionMeetLink) ? (
-                              <a
-                                href={slot?.gmeet_link || st.gmeet_link || sessionMeetLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 inline-flex items-center gap-1 shadow-2xs transition-all whitespace-nowrap"
-                              >
-                                <Video className="w-3 h-3 text-indigo-600" /> Meet
-                              </a>
-                            ) : (
-                              <span className="text-slate-400 text-[10px] font-mono">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            {isEval ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedEvaluationDetail({ student: st, eval: evaluation })}
-                                className="flex flex-col text-left group cursor-pointer"
-                                title="Click to view full evaluation questions and marks"
-                              >
-                                <span className="font-black text-indigo-700 text-xs group-hover:underline flex items-center gap-1">
-                                  {evaluation.total_score} / 10
-                                  <Eye className="w-3 h-3 text-indigo-500 opacity-60 group-hover:opacity-100 transition-opacity" />
-                                </span>
-                                <span className="text-[9px] text-slate-400 font-semibold">
-                                  {Math.round((Number(evaluation.total_score) || 0) * 10)}%
-                                </span>
-                              </button>
-                            ) : (
-                              <span className="text-amber-600 font-semibold text-[10px]">⏳ Pending</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-1.5">
-                              {isEval ? (
-                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded border ${
-                                  (evaluation.status || "").toLowerCase().includes("clear")
-                                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                                    : "bg-amber-100 text-amber-800 border-amber-300"
-                                }`}>
-                                  {evaluation.status || "Evaluated"}
-                                </span>
-                              ) : isAssignedToSlot ? (
-                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                                  Scheduled
-                                </span>
-                              ) : (
-                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                                  Unallocated
-                                </span>
-                              )}
-                              {isEval && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedEvaluationDetail({ student: st, eval: evaluation })}
-                                  className="p-1 rounded bg-slate-100 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 border border-slate-200 transition-all cursor-pointer"
-                                  title="View questions and marks breakdown"
-                                >
-                                  <Eye className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB 3: ACTIVITY LOGS & AUDIT TIMELINE ── */}
-        {activeTab === "logs" && (
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <div className="border-b border-slate-200 pb-2">
-              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <History className="w-4 h-4 text-indigo-600" />
-                Session Lifecycle Audit Trail &amp; Events Log
-              </h4>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Comprehensive immutable audit trail of request creation, approval, capacity mapping, and evaluations.
+            {selectedEval.eval?.remarks && (
+              <p className="text-xs italic text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                &ldquo;{selectedEval.eval.remarks}&rdquo;
               </p>
-            </div>
-
-            <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-              
-              {/* Event 1: Created */}
-              <div className="relative">
-                <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-indigo-600 border-2 border-white shadow-2xs" />
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-800">1. Interview Request Raised</span>
-                    <span className="text-[10px] text-slate-400 font-semibold">{interview.created_at || "Initial Timestamp"}</span>
-                  </div>
-                  <p className="text-xs text-slate-600">
-                    Faculty mentor <strong>{interview.mentor_name || "Mentor"}</strong> requested an <strong>{interview.type?.toUpperCase()}</strong> interview session for <strong>{reqCount} students</strong> in <strong>{interview.class_group || "Target Class"}</strong>.
-                  </p>
-                  {interview.topics && (
-                    <p className="text-[11px] text-slate-500"><strong className="text-slate-700">Topics:</strong> {interview.topics}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Event 2: Broadcast / Capacity */}
-              {interview.type === "external" && (
-                <div className="relative">
-                  <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-purple-600 border-2 border-white shadow-2xs" />
-                  <div className="bg-purple-50/60 border border-purple-200 rounded-xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-purple-900">2. Zone Broadcast &amp; CM Capacity Responses</span>
-                      <span className="text-[10px] text-purple-400 font-semibold">{interview.updated_at || "Zone Broadcast"}</span>
-                    </div>
-                    {isPartnerCM ? (
-                      /* Partner CM: Only see their own campus's accepted log */
-                      <p className="text-xs text-purple-800">
-                        Your campus confirmed capacity for <strong>{myCampusResponse?.accepted_student_capacity || 0} students</strong> ({myCampusResponse?.status || "Accepted"}).
-                      </p>
-                    ) : (
-                      /* Host CM / Admin: See entire zone broadcast tally */
-                      <>
-                        <p className="text-xs text-purple-800">
-                          External request broadcasted to Zone Partner Colleges. Accepted capacity: <strong>{interview.accepted_capacity || 0} / {reqCount} students</strong>.
-                        </p>
-                        {interview.cam_responses && interview.cam_responses.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {(() => {
-                              const hostId = interview.college_id || interview.origin_college_id;
-                              const hostCol = allColleges.find(c => c.id === hostId);
-                              const hostKamId = hostCol?.kam_id || (hostCol as any)?.kamId;
-                              const validResponses = (interview.cam_responses || []).filter((cr: any) => {
-                                if (cr.college_id === hostId) return false;
-                                if (!hostKamId) return true;
-                                const crCol = allColleges.find(c => c.id === cr.college_id);
-                                const crKam = crCol?.kam_id || (crCol as any)?.kamId;
-                                return !crKam || crKam === hostKamId;
-                              });
-                              return validResponses.map((cr: any) => (
-                                <span key={cr.id} className="text-[10px] font-bold bg-white text-purple-900 px-2 py-0.5 rounded border border-purple-200">
-                                  {cr.college_name}: {cr.accepted_student_capacity} students
-                                </span>
-                              ));
-                            })()}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Event 3: Allocation & Scheduling */}
-              {(interview.status === "assigned" || interview.status === "completed" || interview.status === "pending_verification") && (
-                <div className="relative">
-                  <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow-2xs" />
-                  <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-blue-900">3. Faculty Scheduled &amp; 15-Min Slots Dispatched</span>
-                      <span className="text-[10px] text-blue-400 font-semibold">Confirmed</span>
-                    </div>
-                    <p className="text-xs text-blue-800">
-                      Mapped to <strong>{assignedMentorsList.length} faculty mentors</strong> ({assignedMentorsList.map(m => m.name).join(", ")}).
-                    </p>
-                    <p className="text-xs text-blue-800">
-                      Dispatched <strong>{allocCount} individual student interview slots</strong> (15 minutes per candidate).
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Event 4: Evaluation Mode / Google Meet */}
-              {interview.type === "internal" ? (
-                <div className="relative">
-                  <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-teal-600 border-2 border-white shadow-2xs" />
-                  <div className="bg-teal-50/60 border border-teal-200 rounded-xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-teal-900 flex items-center gap-1">
-                        <User className="w-3.5 h-3.5 text-teal-600" /> 4. In-Person Campus Evaluation
-                      </span>
-                    </div>
-                    <p className="text-xs text-teal-800 font-medium">
-                      Conducted on campus in assigned faculty cabins/labs. No Google Meet required.
-                    </p>
-                  </div>
-                </div>
-              ) : interview.gmeet_link ? (
-                <div className="relative">
-                  <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-emerald-600 border-2 border-white shadow-2xs" />
-                  <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-emerald-900 flex items-center gap-1">
-                        <Video className="w-3.5 h-3.5 text-emerald-600" /> 4. Google Meet Room Live
-                      </span>
-                      <a
-                        href={interview.gmeet_link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] text-emerald-700 font-bold hover:underline"
-                      >
-                        Join Room ↗
-                      </a>
-                    </div>
-                    <p className="text-xs text-emerald-800 font-mono select-all">
-                      {interview.gmeet_link}
-                    </p>
-                    <p className="text-[10px] text-emerald-600 font-semibold">
-                      Inherited by all scheduled candidates &amp; evaluators.
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Event 5: Evaluations Activity */}
-              {evalCount > 0 && (
-                <div className="relative">
-                  <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-indigo-600 border-2 border-white shadow-2xs" />
-                  <div className="bg-indigo-50/60 border border-indigo-200 rounded-xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-indigo-900">5. Evaluations Progress</span>
-                      <span className="text-[10px] text-indigo-500 font-semibold">{evalCount} / {allocCount} Completed</span>
-                    </div>
-                    <p className="text-xs text-indigo-800">
-                      <strong>{evalCount} students</strong> evaluated. Cleared: <strong>{sessionEvals.filter(e => (e.status || "").toLowerCase().includes("clear")).length}</strong> candidates.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Event 6: Current Status */}
-              <div className="relative">
-                <div className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-slate-900 border-2 border-white shadow-2xs" />
-                <div className="bg-slate-900 text-white rounded-xl p-3.5 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">Current Status</span>
-                    <span className="text-xs font-extrabold text-white flex items-center gap-1.5 mt-0.5">
-                      <StatusBadge status={interview.status} />
-                      {interview.status === "completed" ? "Session Verified & Completed" : "Active In-Progress Session"}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    ID: {interview.id}
-                  </span>
-                </div>
-              </div>
-
+            )}
+            <div className="flex justify-end">
+              <button onClick={() => setSelectedEval(null)}
+                className="px-4 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer">
+                Close
+              </button>
             </div>
           </div>
-        )}
+        </Dialog>
+      )}
 
-        {/* Full Evaluation Inspection Modal */}
-        {selectedEvaluationDetail && (
-          <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
-              {/* Header */}
-              <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
-                <div className="min-w-0">
-                  <span className="text-[10px] font-mono uppercase text-indigo-300 font-extrabold block">
-                    Candidate Evaluation Details
-                  </span>
-                  <h3 className="text-sm font-black truncate">{selectedEvaluationDetail.student?.name}</h3>
-                  <p className="text-[11px] text-slate-300 font-mono">
-                    {selectedEvaluationDetail.student?.roll_number || selectedEvaluationDetail.student?.register_number || selectedEvaluationDetail.student?.id} • {selectedEvaluationDetail.student?.classGroup || interview.class_group}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSelectedEvaluationDetail(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
-                {/* Score & Status Highlight */}
-                <div className="p-3.5 rounded-xl bg-indigo-50/80 border border-indigo-200 flex items-center justify-between gap-3">
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-indigo-500 block">Overall Score</span>
-                    <div className="text-2xl font-black text-indigo-700">
-                      {selectedEvaluationDetail.eval?.total_score} <span className="text-sm text-indigo-400 font-bold">/ 10</span>
-                      <span className="text-xs font-extrabold text-indigo-500 ml-2">({Math.round((Number(selectedEvaluationDetail.eval?.total_score) || 0) * 10)}%)</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] font-black uppercase text-slate-400 block mb-0.5">Status</span>
-                    <span className={`inline-block text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
-                      (selectedEvaluationDetail.eval?.status || "").toLowerCase().includes("clear")
-                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                        : "bg-amber-100 text-amber-800 border-amber-300"
-                    }`}>
-                      {selectedEvaluationDetail.eval?.status || "Evaluated"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 4 Core Skills Rubric Breakdown */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                    Core Skills Rubric Ratings
-                  </h4>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {[
-                      { label: "Communication", score: selectedEvaluationDetail.eval?.communication_score ?? 0, color: "text-[#D528A2] bg-pink-50 border-pink-200" },
-                      { label: "Content Knowledge", score: selectedEvaluationDetail.eval?.content_score ?? 0, color: "text-amber-700 bg-amber-50 border-amber-200" },
-                      { label: "Technical Skills", score: selectedEvaluationDetail.eval?.technical_score ?? 0, color: "text-indigo-700 bg-indigo-50 border-indigo-200" },
-                      { label: "Confidence", score: selectedEvaluationDetail.eval?.confidence_score ?? 0, color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-                    ].map(rubric => (
-                      <div key={rubric.label} className={`p-2.5 rounded-xl border ${rubric.color}`}>
-                        <span className="text-[10px] font-bold text-slate-600 block">{rubric.label}</span>
-                        <div className="text-base font-black mt-0.5">
-                          {rubric.score} <span className="text-[10px] text-slate-400 font-semibold">/ 10</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Questions Asked by Mentor */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center justify-between">
-                    <span>Questions Asked by Mentor</span>
-                    <HelpCircle className="w-3.5 h-3.5 text-[#D528A2]" />
-                  </h4>
-
-                  {(() => {
-                    const rawQ = selectedEvaluationDetail.eval?.questions_asked;
-                    let qList: any[] = [];
-                    if (rawQ) {
-                      try {
-                        const parsed = typeof rawQ === "string" ? JSON.parse(rawQ) : rawQ;
-                        if (Array.isArray(parsed)) qList = parsed;
-                      } catch (_) {}
-                    }
-
-                    if (qList.length > 0) {
-                      return (
-                        <div className="space-y-2">
-                          {qList.map((qItem: any, qIdx: number) => (
-                            <div key={qItem.id || qIdx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-mono font-black text-[9px] shrink-0">
-                                  Q{qIdx + 1}
-                                </span>
-                                <p className="font-bold text-slate-800 text-xs flex-1">
-                                  {qItem.question || <span className="italic text-slate-400">Technical Question</span>}
-                                </p>
-                                <span className="text-xs font-black text-[#D528A2] bg-white px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
-                                  {qItem.score ?? 7} / 10
-                                </span>
-                              </div>
-                              {qItem.notes && (
-                                <p className="text-[11px] text-slate-500 italic pl-6">{qItem.notes}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    }
-
-                    if (rawQ && typeof rawQ === "string" && rawQ.trim() !== "[]") {
-                      return (
-                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700">
-                          {rawQ}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-xs">
-                        No specific questions recorded for this session.
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Evaluator Remarks & Metadata */}
-                <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500 font-bold">Evaluator Faculty:</span>
-                    <span className="font-extrabold text-slate-800">{selectedEvaluationDetail.eval?.mentor_name || "Faculty Mentor"}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-500 font-bold">Actual Duration:</span>
-                    <span className="font-mono font-extrabold text-indigo-700">
-                      {selectedEvaluationDetail.eval?.actual_duration_minutes || 15} minutes
-                    </span>
-                  </div>
-                  {selectedEvaluationDetail.eval?.remarks && (
-                    <div className="pt-1 border-t border-slate-200/80">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Remarks</span>
-                      <p className="text-xs text-slate-700 italic mt-0.5">
-                        &ldquo;{selectedEvaluationDetail.eval.remarks}&rdquo;
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="p-3 border-t border-slate-100 bg-slate-50 flex justify-end">
-                <button
-                  onClick={() => setSelectedEvaluationDetail(null)}
-                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold cursor-pointer transition-all"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Modal Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between text-xs text-slate-500 font-semibold">
-          <span>
-            Required: <strong>{reqCount}</strong> • Allocated: <strong>{allocCount}</strong> • Evaluated: <strong>{evalCount}</strong>
-          </span>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold cursor-pointer transition-all shadow-2xs"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    </Sheet>
   );
 };
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+interface PrioritySplitPreviewDialogProps {
+  interview: any;
+  preview: any;
+  isLoading: boolean;
+  onSave: () => void;
+  onClose: () => void;
+}
+
+const PrioritySplitPreviewDialog: React.FC<PrioritySplitPreviewDialogProps> = ({
+  interview,
+  preview,
+  isLoading,
+  onSave,
+  onClose,
+}) => {
+  if (!interview || !preview) return null;
+
+  const allocations: any[] = preview.allocations || [];
+  const totalRequested = preview.totalRequested || interview.student_count || 10;
+  const acceptedCapacity = preview.acceptedCapacity || 0;
+  const allocatedStudents = preview.allocatedStudents || 0;
+  const unallocatedStudents = preview.unallocatedStudents || 0;
+  const formattedDuration = preview.formattedTotalDuration || `${allocatedStudents * 15} mins`;
+
+  return (
+    <Dialog
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      ariaLabel="Priority Split Allocation Preview"
+      overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto animate-fadeIn"
+      panelClassName="max-w-3xl w-full max-h-[85vh] p-0 space-y-0 overflow-hidden flex flex-col rounded-2xl bg-white shadow-2xl"
+    >
+      {/* Header */}
+      <div className="flex justify-between items-center px-6 py-4 border-b border-slate-150 bg-slate-50/90 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+              Priority Split Allocation Preview
+              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                Zone Split
+              </span>
+            </h3>
+            <p className="text-[11px] text-slate-500 font-medium">
+              {interview.subject} • {interview.class_group || "All Classes"} • Target Date: {interview.target_date}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close dialog"
+          className="p-1.5 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer text-slate-500 hover:text-slate-800"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* KPI Metrics Strip */}
+      <div className="grid grid-cols-4 border-b border-slate-200 bg-white shrink-0 divide-x divide-slate-100">
+        <div className="p-3 text-center">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Requested</span>
+          <span className="text-lg font-black text-slate-800">{totalRequested}</span>
+        </div>
+        <div className="p-3 text-center">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 block">Zone Accepted</span>
+          <span className="text-lg font-black text-purple-800">{acceptedCapacity}</span>
+        </div>
+        <div className="p-3 text-center">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 block">Split Allocated</span>
+          <span className="text-lg font-black text-emerald-800">{allocatedStudents}</span>
+        </div>
+        <div className="p-3 text-center">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block">Unallocated</span>
+          <span className="text-lg font-black text-amber-700">{unallocatedStudents}</span>
+        </div>
+      </div>
+
+      {/* Allocations Content */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {allocations.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+            <AlertTriangle className="h-6 w-6 text-amber-500 mx-auto mb-2" />
+            <p className="text-xs font-bold text-slate-700">No partner campus capacity available to allocate.</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Ensure partner campus managers in your KAM zone have accepted capacity before running priority split.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Proposed Partner Campus Sessions ({allocations.length} Evaluator Segment{allocations.length > 1 ? "s" : ""})
+              </span>
+              <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg">
+                Estimated Duration: {formattedDuration}
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {allocations.map((alloc, idx) => (
+                <div
+                  key={alloc.id || idx}
+                  className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-all space-y-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Building className="w-4 h-4 text-purple-600 shrink-0" />
+                      <div>
+                        <div className="font-extrabold text-xs text-slate-800">
+                          {alloc.target_college_name || "Partner Campus"}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-semibold flex items-center gap-1.5">
+                          <User className="w-3 h-3 text-indigo-600" />
+                          <span>Evaluator: {alloc.mentor_name || "Faculty Mentor"}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-slate-600 bg-white px-2 py-1 rounded-lg border border-slate-200 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        {alloc.start_time} – {alloc.end_time} ({alloc.duration_minutes}m)
+                      </span>
+                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200">
+                        {alloc.allocated_student_count} Candidates
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 15-min Slot proposals */}
+                  {alloc.slots && alloc.slots.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200/70">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                        Candidate 15-Minute Slot Intervals:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {alloc.slots.map((sl: any, sIdx: number) => (
+                          <span
+                            key={sIdx}
+                            className="text-[9.5px] font-mono font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-700"
+                          >
+                            Candidate #{sIdx + 1}: {sl.slot_start_time}–{sl.slot_end_time}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 bg-slate-50/80 shrink-0">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={isLoading}
+          className="text-xs font-bold text-slate-500 hover:text-slate-800 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition-all cursor-pointer disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={isLoading || allocations.length === 0}
+          className="btn-gradient flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-extrabold disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+        >
+          {isLoading ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Saving Allocation...</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>Save & Confirm Split Allocation</span>
+            </>
+          )}
+        </button>
+      </div>
+    </Dialog>
+  );
+};
+
 
 export const InterviewModule: React.FC<InterviewModuleProps> = ({
   currentUserRole = "mentor",
@@ -1371,6 +1318,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 }) => {
   const { currentMentor, currentKAM, students, mentors, slots, colleges } = useApp();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [dbColleges, setDbColleges] = useState<any[]>([]);
 
@@ -1402,9 +1350,6 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   const [activeMode, setActiveMode] = useState<"internal" | "external">("internal");
 
   // Data
-  const [interviewsList, setInterviewsList] = useState<any[]>([]);
-  const [evaluationsList, setEvaluationsList] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   // Helper for Local Date String (YYYY-MM-DD) avoiding UTC shifts
   const getTodayLocalStr = () => {
@@ -1607,10 +1552,11 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     return mentors.filter(m => m.college_id === defaultCollegeId);
   }, [isCM, defaultCollegeId, mentors]);
 
-  // Fetch interviews
-  const fetchInterviews = useCallback(async (silent: boolean = false) => {
-    if (!silent) setIsLoading(true);
-    try {
+  // Interviews + evaluations, scoped to the signed-in role/mentor/campus
+  const interviewScope = [currentUserRole, currentMentor?.id || "", defaultCollegeId || "", currentKAM?.id || ""].join("|");
+  const interviewsQuery = useQuery({
+    queryKey: qk.interviewList(interviewScope),
+    queryFn: async () => {
       const params = new URLSearchParams();
       params.set("role", currentUserRole);
       if (currentMentor?.id) params.set("mentorId", currentMentor.id);
@@ -1618,35 +1564,28 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       if (currentKAM?.id) params.set("kamId", currentKAM.id);
 
       const data = await apiFetch(`/api/interviews?${params.toString()}`);
-      if (data.success) {
-        setInterviewsList(data.interviews || []);
-        setEvaluationsList(data.evaluations || []);
-      }
-    } catch (err) {
-      console.error("fetchInterviews error:", err);
-    } finally {
-      if (!silent) setIsLoading(false);
-    }
-  }, [currentUserRole, currentMentor?.id, defaultCollegeId, currentKAM?.id]);
+      return {
+        interviews: data?.success ? (data.interviews || []) as any[] : [],
+        evaluations: data?.success ? (data.evaluations || []) as any[] : []
+      };
+    },
+  });
+  const interviewsList = interviewsQuery.data?.interviews || [];
+  const evaluationsList = interviewsQuery.data?.evaluations || [];
+  const isLoading = interviewsQuery.isFetching;
 
-  useEffect(() => {
-    fetchInterviews();
-  }, [fetchInterviews]);
-
-  // Real-time synchronization: listen for interview update events and window focus
+  // Real-time synchronization: invalidate when interviews change elsewhere.
   useEffect(() => {
     const handleSync = () => {
-      fetchInterviews(true);
+      queryClient.invalidateQueries({ queryKey: ["interviews"] });
     };
 
     window.addEventListener("fp_interviews_updated", handleSync);
-    window.addEventListener("focus", handleSync);
 
     return () => {
       window.removeEventListener("fp_interviews_updated", handleSync);
-      window.removeEventListener("focus", handleSync);
     };
-  }, [fetchInterviews]);
+  }, [queryClient]);
 
   // Auto-select first subject/class
   useEffect(() => {
@@ -1814,7 +1753,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       if (data.success) {
         toast("Interview request raised & marked on calendar! CM will schedule time slot based on mentor free periods.", "success");
         setTopics(""); setTargetDate("");
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -1895,7 +1834,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           "success"
         );
         setSelectedStudent(null);
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
           window.dispatchEvent(new CustomEvent("fp_attendance_updated"));
@@ -1982,7 +1921,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         setExpandedAllocation(null);
         setMentorSlotConfigs({});
         setCmGmeetLink("");
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -1993,31 +1932,6 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       toast("Error assigning interview.", "error");
     } finally {
       setIsAssigning(false);
-    }
-  };
-
-  const handleExternalAccept = async (interviewId: string, action: "accept" | "decline") => {
-    try {
-      const data = await apiFetch("/api/interviews/external-accept", {
-        method: "POST",
-        body: {
-          interview_id: interviewId,
-          target_college_id: defaultCollegeId || "",
-          action,
-          cm_name: currentUserName,
-        },
-      });
-      if (data.success) {
-        toast(data.message, "success");
-        fetchInterviews();
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
-        }
-      } else {
-        toast(data.message || "Failed to process.", "error");
-      }
-    } catch {
-      toast("Error processing external request.", "error");
     }
   };
 
@@ -2069,7 +1983,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
         toast(data.message, "success");
         setActiveSplitInterview(null);
         setSplitPreviewResult(null);
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -2093,7 +2007,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       });
       if (data.success) {
         toast(data.message, "success");
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -2119,7 +2033,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       });
       if (data.success) {
         toast(data.message, "success");
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -2145,7 +2059,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       });
       if (data.success) {
         toast(data.message, "success");
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -2170,7 +2084,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       });
       if (data.success) {
         toast("Interview verified & completed. Students notified!", "success");
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -2192,7 +2106,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       });
       if (data.success) {
         toast("Interview record deleted successfully.", "success");
-        fetchInterviews();
+        await queryClient.invalidateQueries({ queryKey: ["interviews"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_interviews_updated"));
         }
@@ -2404,10 +2318,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           slot.register_number ||
           slot.roll_number ||
           slotStudentId ||
-          `REG-${1000 + idx}`;
+          "";
 
         return {
-          id: enrolled?.id || slotStudentId || `slot_std_${idx + 1}`,
+          id: enrolled?.id || slotStudentId || (slot.id ? String(slot.id) : ""),
           name: resolvedName,
           register_number: resolvedRegNo,
           roll_number: resolvedRegNo,
@@ -2635,7 +2549,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               <span>Export (.xlsx)</span>
             </button>
 
-            <button onClick={() => fetchInterviews()} className="p-1.5 rounded-lg text-slate-400 hover:text-[#D528A2] hover:bg-white transition-all border border-transparent hover:border-slate-200 cursor-pointer" title="Refresh">
+            <button onClick={() => interviewsQuery.refetch()} className="p-1.5 rounded-lg text-slate-400 hover:text-[#D528A2] hover:bg-white transition-all border border-transparent hover:border-slate-200 cursor-pointer" title="Refresh">
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -2688,6 +2602,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                     Subject <span className="text-[#D528A2]">(Assigned Only)</span>
                   </label>
                   <select
+                    aria-label="Subject (Assigned Only)"
                     value={selectedSubject}
                     onChange={e => setSelectedSubject(e.target.value)}
                     className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
@@ -2703,6 +2618,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Class / Cohort</label>
                   <select
+                    aria-label="Class / Cohort"
                     value={selectedClassGroup}
                     onChange={e => setSelectedClassGroup(e.target.value)}
                     className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
@@ -2721,6 +2637,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   </label>
                   <input
                     type="date" min={minTargetDate} value={targetDate}
+                    aria-label="Target Date (Min +2 Days)"
                     onChange={e => setTargetDate(e.target.value)}
                     className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
                     required
@@ -2762,6 +2679,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   Topics / Coverage Areas
                 </label>
                 <textarea
+                  aria-label="Topics / Coverage Areas"
                   rows={3} value={topics}
                   onChange={e => setTopics(e.target.value)}
                   placeholder="e.g. Data Structures, React State Management, System Architecture, Algorithm Complexity"
@@ -2937,14 +2855,13 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
           {/* ── MODAL POPUP DIALOG FOR SELECTED CALENDAR DATE ── */}
           {selectedCalendarDate && (
-            <div 
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 transition-all duration-200"
-              onClick={() => setSelectedCalendarDate(null)}
+            <Dialog
+              open={true}
+              onOpenChange={(next) => { if (!next) setSelectedCalendarDate(null); }}
+              ariaLabel="Scheduled Interviews & Session Details"
+              overlayClassName="bg-slate-900/60 backdrop-blur-xs transition-all duration-200"
+              panelClassName="max-w-2xl p-6 space-y-4 max-h-[85vh] flex flex-col justify-between rounded-2xl"
             >
-              <div 
-                className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col justify-between"
-                onClick={(e) => e.stopPropagation()}
-              >
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2.5">
@@ -2962,6 +2879,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   </div>
                   <button
                     onClick={() => setSelectedCalendarDate(null)}
+                    aria-label="Close scheduled interviews"
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
                   >
                     <X className="w-5 h-5" />
@@ -3023,20 +2941,18 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                     Close Popup
                   </button>
                 </div>
-              </div>
-            </div>
+            </Dialog>
           )}
 
           {/* ── PRIORITY SPLIT & REGIONAL OVERFLOW CALCULATOR MODAL ── */}
           {activeSplitInterview && (
-            <div 
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 transition-all animate-in fade-in"
-              onClick={() => { setActiveSplitInterview(null); setSplitPreviewResult(null); }}
+            <Dialog
+              open={true}
+              onOpenChange={(next) => { if (!next) { setActiveSplitInterview(null); setSplitPreviewResult(null); } }}
+              ariaLabel="Regional Priority Split & Overflow Calculator"
+              overlayClassName="bg-slate-900/60 backdrop-blur-xs transition-all animate-in fade-in"
+              panelClassName="max-w-2xl p-6 space-y-4 max-h-[85vh] flex flex-col justify-between rounded-2xl"
             >
-              <div 
-                className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col justify-between"
-                onClick={e => e.stopPropagation()}
-              >
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2.5">
@@ -3054,6 +2970,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   </div>
                   <button
                     onClick={() => { setActiveSplitInterview(null); setSplitPreviewResult(null); }}
+                    aria-label="Close priority split calculator"
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
                   >
                     <X className="w-5 h-5" />
@@ -3122,8 +3039,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                     Execute & Save Split Allocation
                   </button>
                 </div>
-              </div>
-            </div>
+            </Dialog>
           )}
         </div>
       )}
@@ -3458,6 +3374,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                         <label className="text-[10px] text-slate-500 font-bold uppercase shrink-0">Actual Start:</label>
                                         <input
                                           type="text"
+                                          aria-label="Actual Start"
                                           placeholder="e.g. 09:16 AM"
                                           value={actualStartTime}
                                           onChange={e => setActualStartTime(e.target.value)}
@@ -3480,6 +3397,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                         <label className="text-[10px] text-slate-500 font-bold uppercase shrink-0">Actual End:</label>
                                         <input
                                           type="text"
+                                          aria-label="Actual End"
                                           placeholder="e.g. 09:33 AM"
                                           value={actualEndTime}
                                           onChange={e => setActualEndTime(e.target.value)}
@@ -3540,7 +3458,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                         {/* Question Score Slider */}
                                         <div className="flex items-center gap-3 px-1">
                                           <span className="text-[10px] text-slate-400 font-bold uppercase shrink-0">Rating:</span>
-                                          <input
+                                          <input aria-label="Question rating"
                                             type="range" min={1} max={10} value={qItem.score}
                                             onChange={e => handleUpdateQuestion(qItem.id, "score", Number(e.target.value))}
                                             className="flex-1 cursor-pointer h-1.5 rounded-full appearance-none bg-slate-200 accent-[#D528A2]"
@@ -3557,7 +3475,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                       type="button"
                                       onClick={() => {
                                         const newQ: StructuredQuestion = {
-                                          id: `q_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                                          id: generateId("q"),
                                           question: "",
                                           maxScore: 10,
                                           score: 7,
@@ -3584,6 +3502,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                 <div className="space-y-1">
                                   <label className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Mentor Overall Remarks</label>
                                   <textarea
+                                    aria-label="Mentor Overall Remarks"
                                     rows={2} value={remarks}
                                     onChange={e => setRemarks(e.target.value)}
                                     placeholder="e.g. Strong conceptual understanding, clear explanation..."
@@ -3701,10 +3620,16 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                     {totalAccepted > 0 && (
                                       <button
                                         onClick={() => handlePreviewPrioritySplit(req)}
-                                        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                                        disabled={isLoadingSplit}
+                                        className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs disabled:opacity-50"
                                         title="Distribute accepted student capacity across partner campus evaluators"
                                       >
-                                        <Sparkles className="w-3.5 h-3.5" /> Run Priority Split
+                                        {isLoadingSplit && activeSplitInterview?.id === req.id ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                          <Sparkles className="w-3.5 h-3.5" />
+                                        )}
+                                        Run Priority Split
                                       </button>
                                     )}
                                   </div>
@@ -4078,6 +4003,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                     </div>
                                     <input
                                       type="number" min={1} max={500} value={camStudentCount}
+                                      aria-label="Total Candidate Capacity"
                                       onChange={e => setCamStudentCount(Number(e.target.value))}
                                       className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none"
                                       required
@@ -4095,6 +4021,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                       Quick Period Selector <span className="text-[#D528A2]">(Auto-Selects Free Faculty)</span>
                                     </label>
                                     <select
+                                      aria-label="Quick Period Selector (Auto-Selects Free Faculty)"
                                       value={camTimeSlot}
                                       onChange={e => {
                                         const newSlot = e.target.value;
@@ -4135,6 +4062,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                       </label>
                                       <input
                                         type="url" value={cmGmeetLink}
+                                        aria-label="Google Meet Link (Virtual Cross-Campus Panel)"
                                         onChange={e => setCmGmeetLink(e.target.value)}
                                         placeholder="https://meet.google.com/xxx-xxxx-xxx"
                                         className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-300"
@@ -4385,7 +4313,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                                                 >
                                                                   <Minus className="w-3 h-3" />
                                                                 </button>
-                                                                <input
+                                                                <input aria-label="Number of candidates"
                                                                   type="number"
                                                                   min={1}
                                                                   max={50}
@@ -4742,10 +4670,25 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           evaluations={evaluationsList}
           allMentors={mentors}
           allColleges={activeCollegesList || colleges}
+          allSlots={slots}
           userCollegeId={defaultCollegeId || currentMentor?.college_id}
           isCM={isCM}
           initialTab={rosterInitialTab}
           onClose={() => setViewingStudentRosterModal(null)}
+        />
+      )}
+
+      {/* Priority Split Preview & Confirmation Modal */}
+      {activeSplitInterview && splitPreviewResult && (
+        <PrioritySplitPreviewDialog
+          interview={activeSplitInterview}
+          preview={splitPreviewResult}
+          isLoading={isLoadingSplit}
+          onSave={handleSavePrioritySplit}
+          onClose={() => {
+            setActiveSplitInterview(null);
+            setSplitPreviewResult(null);
+          }}
         />
       )}
 

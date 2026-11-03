@@ -1,13 +1,21 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { sendMail, renderDemoSwapEmail } from "@/lib/mail";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
+import { renderSwapOfferEmail, BRAND } from "@/lib/mail";
+import { sendMailAsync } from "@/lib/mailAsync";
 import { checkMentorAvailability } from "@/lib/availability";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
+
+// A swap reassigns a live class slot and emails the other mentor.
+const SWAP_ROLES: Role[] = ["mentor", "cm", "kam", "admin"];
 
 export async function POST(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: SWAP_ROLES });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const body = await request.json();
@@ -27,11 +35,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    const [requestor, offerSlot, targetStaff] = await Promise.all([
-      db.get("SELECT * FROM mentors WHERE id = ?", requestorId),
-      db.get("SELECT * FROM slots WHERE id = ?", offerSlotId),
-      db.get("SELECT * FROM mentors WHERE id = ?", targetStaffId)
-    ]);
+    // The three existence probes and the pending-duplicate probe all key off the
+    // body, so they leave as one round trip. Every slice feeds a refusal: a failed
+    // read must not read as "missing" (404) or "not pending" (INSERT).
+    const swapFailures: QueryFailure[] = [];
+    const [requestorRows, offerSlotRows, targetStaffRows, duplicateRows] = await db.multiQuery([
+      { sql: "SELECT * FROM mentors WHERE id = ?", params: [requestorId] },
+      { sql: "SELECT * FROM slots WHERE id = ?", params: [offerSlotId] },
+      { sql: "SELECT * FROM mentors WHERE id = ?", params: [targetStaffId] },
+      {
+        sql: `SELECT id FROM handover_requests WHERE requestorId = ? AND slotId = ? AND dateStr = ? AND targetStaffId = ? AND request_type = 'swap_compensate' AND status IN ('pending', 'pending_cm', 'pending_cam')`,
+        params: [requestorId, offerSlotId, offerDateStr, targetStaffId],
+      },
+    ], swapFailures);
+    if (swapFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not verify this swap offer. Please try again." }, { status: 500 });
+    }
+    const requestor = requestorRows[0];
+    const offerSlot = offerSlotRows[0];
+    const targetStaff = targetStaffRows[0];
 
     if (!requestor || !offerSlot || !targetStaff) {
       return NextResponse.json({ success: false, message: "Mentor, Slot, or Target Staff not found." }, { status: 404 });
@@ -41,7 +63,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "You can only select a slot that belongs to the target faculty." }, { status: 400 });
     }
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getInstitutionDateStr();
     if (offerDateStr < todayStr) {
       return NextResponse.json({ success: false, message: "You can only offer to cover future slots as compensation." }, { status: 400 });
     }
@@ -61,15 +83,12 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const duplicateCheck = await db.get(
-      `SELECT id FROM handover_requests WHERE requestorId = ? AND slotId = ? AND dateStr = ? AND targetStaffId = ? AND request_type = 'swap_compensate' AND status IN ('pending', 'pending_cm', 'pending_cam')`,
-      requestorId, offerSlotId, offerDateStr, targetStaffId
-    );
+    const duplicateCheck = duplicateRows[0];
     if (duplicateCheck) {
       return NextResponse.json({ success: false, message: "A swap offer for this slot/date is already pending." }, { status: 400 });
     }
 
-    const newId = "swap_" + Date.now();
+    const newId = generateId("swap");
     const swapReason = reason || `Offering class as compensation for previous handover.`;
 
     await db.run(
@@ -86,7 +105,7 @@ export async function POST(request: Request) {
       originalSubject || null, originalMonth || null
     );
 
-    const logId = "l_" + Date.now();
+    const logId = generateId("l");
     await db.run(
       "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'handover_request', ?, ?, 'Mentor', ?)",
       logId,
@@ -95,25 +114,23 @@ export async function POST(request: Request) {
       new Date().toISOString()
     );
 
-    // Asynchronously trigger email notification
-    try {
-      const subject = `[FACE Prep E-Campus] New Swap Compensation Offer - ${offerSlot.course}`;
-      const htmlBody = renderDemoSwapEmail({
-        requestorName: requestor.name,
-        targetMentorName: targetStaff.name,
-        dateStr: offerDateFormatted,
-        time: `${offerSlot.time} (${offerSlot.day})`,
-        course: offerSlot.course,
-        classGroup: offerSlot.classGroup || "General"
-      });
-      await sendMail({
-        to: targetStaff.email,
-        subject,
-        htmlBody
-      });
-    } catch (mailErr) {
-      console.error("Failed to send swap request email:", mailErr);
-    }
+    const subject = `${BRAND.emailPrefix} New Swap Compensation Offer - ${offerSlot.course}`;
+    const htmlBody = renderSwapOfferEmail({
+      requestorName: requestor.name,
+      targetMentorName: targetStaff.name,
+      dateStr: offerDateFormatted,
+      time: `${offerSlot.time} (${offerSlot.day})`,
+      course: offerSlot.course,
+      classGroup: offerSlot.classGroup || "General",
+      kind: "class",
+      ctaUrl: `${BRAND.portalUrl}/mentor/handovers`
+    });
+    sendMailAsync({
+      to: targetStaff.email,
+      subject,
+      htmlBody,
+      context: "swap-compensation-offer"
+    });
 
     return NextResponse.json({
       success: true,

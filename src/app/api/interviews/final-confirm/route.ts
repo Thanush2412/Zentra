@@ -1,15 +1,18 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { getDb, chunkList, type QueryFailure } from "@/lib/db";
 import { generate15MinSlotsForSegment, parseTimeToMinutes } from "@/lib/interview-priority-engine";
-import { dispatchExternalInterviewNotifications } from "@/lib/interview-notifications";
-import { createGoogleCalendarEvent, generateStudentGCalUrl, generateGoogleMeetCode } from "@/lib/google-calendar";
+import { notifyExternalInterviewsAfterResponse } from "@/lib/interview-notifications";
+import { createGoogleCalendarEvent, generateStudentGCalUrl } from "@/lib/google-calendar";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "L and D", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
 
@@ -48,22 +51,40 @@ export async function POST(request: Request) {
     }
 
     if (action === "cam_confirm") {
-      // 1. Fetch all proposed allocations for this interview
-      const allocations = await db.all(
-        "SELECT * FROM interview_allocations WHERE interview_id = ? ORDER BY start_time ASC",
-        [interview_id]
-      );
+      // Only a split that is waiting for confirmation can be confirmed. Re-running it
+      // after assignment wiped and re-generated the slots a mentor was already using.
+      if (interview.status !== "pending_final_confirmation") {
+        return NextResponse.json(
+          { success: false, message: `This interview is ${String(interview.status || "not awaiting confirmation").replace(/_/g, " ")} and cannot be confirmed again.` },
+          { status: 409 }
+        );
+      }
 
       // Fetch actual enrolled students for this class cohort with robust normalized matching
       const cleanCG = (interview.class_group || "").replace(/^[\["'\s]+|[\]"'\s]+$/g, "").trim();
-      let enrolledStudents = await db.all(
-        `SELECT id, name, email FROM students 
-         WHERE (LOWER(TRIM(classGroup)) = LOWER(TRIM(?)) OR LOWER(TRIM(department)) = LOWER(TRIM(?)) OR classGroup LIKE ? OR department LIKE ?)
-         ORDER BY id ASC`,
-        [cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`]
-      );
 
-      if (!enrolledStudents || enrolledStudents.length === 0) {
+      // 1. Allocations and the cohort roster are independent, so they share one round
+      // trip. A failed roster slice must not fall through to the fallback below — that
+      // would build the session from the wrong students.
+      const confirmFailures: QueryFailure[] = [];
+      const [allocations, enrolledRows] = await db.multiQuery(
+        [
+          { sql: "SELECT * FROM interview_allocations WHERE interview_id = ? ORDER BY start_time ASC", params: [interview_id] },
+          {
+            sql: `SELECT id, name, email FROM students 
+                  WHERE (LOWER(TRIM(classGroup)) = LOWER(TRIM(?)) OR LOWER(TRIM(department)) = LOWER(TRIM(?)) OR classGroup LIKE ? OR department LIKE ?)
+                  ORDER BY id ASC`,
+            params: [cleanCG, cleanCG, `%${cleanCG}%`, `%${cleanCG}%`],
+          },
+        ],
+        confirmFailures
+      );
+      if (confirmFailures.length > 0) {
+        return NextResponse.json({ success: false, message: "Could not load the proposed allocations. Please try again." }, { status: 500 });
+      }
+
+      let enrolledStudents = enrolledRows;
+      if (enrolledStudents.length === 0) {
         const colId = interview.college_id || null;
         if (colId) {
           enrolledStudents = await db.all(
@@ -77,28 +98,37 @@ export async function POST(request: Request) {
         }
       }
 
-      // Fetch faculty emails map
-      const mentorIds = allocations.map((a: any) => a.mentor_id).filter(Boolean);
-      const mentorEmailMap = new Map<string, string>();
-      if (mentorIds.length > 0) {
-        const placeholders = mentorIds.map(() => "?").join(",");
-        const mentorsFound = await db.all(`SELECT id, email FROM mentors WHERE id IN (${placeholders})`, mentorIds);
-        mentorsFound.forEach((m: any) => {
-          if (m.email) mentorEmailMap.set(m.id, m.email);
-        });
+      // 2. Conference room — use existing link if valid, otherwise try to create one via GAS
+      let realMeetLink: string | null =
+        interview.gmeet_link && interview.gmeet_link.includes("meet.google.com")
+          ? interview.gmeet_link
+          : null;
+
+      // Auto-create Google Meet + GCal event via GAS if no link exists yet
+      let gcalLink: string | null = interview.gcal_link || null;
+      if (!realMeetLink) {
+        try {
+          const gcalResult = await createGoogleCalendarEvent({
+            title: `Structured Interview: ${interview.subject} (${interview.class_group || "Cohort"})`,
+            description: `Faculty evaluation session for ${interview.subject}. Cohort: ${interview.class_group || "All"}`,
+            targetDate: interview.target_date || getInstitutionDateStr(),
+            startTime: interview.preferred_start_time || "08:20 AM",
+            endTime: "09:10 AM",
+            existingMeetLink: null,
+            interviewId: interview_id,
+          });
+          if (gcalResult.gmeet_link) realMeetLink = gcalResult.gmeet_link;
+          if (gcalResult.gcal_link) gcalLink = gcalResult.gcal_link;
+        } catch (gasErr) {
+          console.warn("[final-confirm] GAS calendar event creation failed:", gasErr);
+        }
       }
 
-      // 2. Base conference room for external session
-      const baseMeetCode = interview.gmeet_link && interview.gmeet_link.includes("meet.google.com")
-        ? interview.gmeet_link
-        : `https://meet.google.com/${generateGoogleMeetCode()}`;
-
       // 3. Generate and insert 15-minute non-overlapping student slots with ISOLATED student privacy
-      await db.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [interview_id]);
-
       let totalAllocatedStudents = 0;
       const assignedMentorIds: string[] = [];
       let studentCursor = 0;
+      const slotRows: any[][] = [];
 
       for (const alloc of allocations) {
         const segCount = Number(alloc.allocated_student_count) || 0;
@@ -116,10 +146,8 @@ export async function POST(request: Request) {
           startMins
         );
 
-        const mentorEmail = mentorEmailMap.get(alloc.mentor_id) || "";
-
         for (const s of slots) {
-          const slotId = `slot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          const slotId = generateId("slot");
           const realStudent = enrolledStudents[studentCursor] || {
             id: s.student_id,
             name: s.student_name,
@@ -132,43 +160,53 @@ export async function POST(request: Request) {
             studentName: realStudent.name || s.student_name,
             studentEmail: realStudent.email,
             subject: interview.subject || "Interview",
-            targetDate: interview.target_date || new Date().toISOString().slice(0, 10),
+            targetDate: interview.target_date || getInstitutionDateStr(),
             slotStartTime: s.slot_start_time,
             slotEndTime: s.slot_end_time,
-            gmeetLink: baseMeetCode,
+            gmeetLink: realMeetLink,
             mentorName: s.mentor_name
           });
 
-          await db.run(
-            `INSERT INTO student_interview_slots (
-              id, interview_id, allocation_id, student_id, student_name,
-              mentor_id, mentor_name, college_id, slot_start_time, slot_end_time,
-              gmeet_link, gcal_link, subject, target_date, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              slotId,
-              interview_id,
-              alloc.id,
-              realStudent.id,
-              realStudent.name,
-              s.mentor_id,
-              s.mentor_name,
-              s.college_id,
-              s.slot_start_time,
-              s.slot_end_time,
-              baseMeetCode,
-              studentGCalUrl,
-              interview.subject,
-              interview.target_date,
-              "scheduled",
-              now
-            ]
-          );
+          slotRows.push([
+            slotId,
+            interview_id,
+            alloc.id,
+            realStudent.id,
+            realStudent.name,
+            s.mentor_id,
+            s.mentor_name,
+            s.college_id,
+            s.slot_start_time,
+            s.slot_end_time,
+            realMeetLink,
+            studentGCalUrl,
+            interview.subject,
+            interview.target_date,
+            "scheduled",
+            now
+          ]);
         }
       }
 
-      const gmeetLink = baseMeetCode;
-      const gcalLink: string | null = null;
+      // Clearing the previous schedule and writing the new one is one unit; a failure
+      // halfway used to leave the panel with a partial slot list.
+      const SLOT_COLUMNS = [
+        "id", "interview_id", "allocation_id", "student_id", "student_name",
+        "mentor_id", "mentor_name", "college_id", "slot_start_time", "slot_end_time",
+        "gmeet_link", "gcal_link", "subject", "target_date", "status", "created_at"
+      ];
+      await db.transaction(async (tx) => {
+        await tx.run("DELETE FROM student_interview_slots WHERE interview_id = ?", [interview_id]);
+        for (const part of chunkList(slotRows, 200)) {
+          await tx.run(
+            `INSERT INTO student_interview_slots (${SLOT_COLUMNS.join(", ")})
+             VALUES ${part.map(() => `(${SLOT_COLUMNS.map(() => "?").join(", ")})`).join(", ")}`,
+            part.flat()
+          );
+        }
+      });
+
+      const gmeetLink = realMeetLink;
 
 
       // 4. Update allocations to confirmed
@@ -201,7 +239,7 @@ export async function POST(request: Request) {
 
       // 6. Send notification with GMeet & GCal links
       try {
-        await dispatchExternalInterviewNotifications({
+        notifyExternalInterviewsAfterResponse({
           interviewId: interview.id,
           subject: interview.subject,
           classGroup: interview.class_group,
@@ -212,7 +250,7 @@ export async function POST(request: Request) {
           mentorName: interview.mentor_name,
           originCollegeId: interview.origin_college_id || interview.college_id,
           actionType: "accepted",
-          gmeetLink,
+          gmeetLink: gmeetLink || undefined,
           gcalLink: gcalLink || undefined,
           actorName: actor_name
         });
@@ -222,7 +260,9 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: "Final allocation confirmed! Real Google Calendar & Google Meet links generated and 15-minute student slots assigned.",
+        message: gmeetLink
+          ? "Final allocation confirmed! 15-minute student slots assigned with the saved Google Meet room."
+          : "Final allocation confirmed! 15-minute student slots assigned. Add the Google Meet room link before the session so students get a working join link.",
         gmeet_link: gmeetLink,
         gcal_link: gcalLink,
         allocated_students: totalAllocatedStudents,
@@ -249,21 +289,29 @@ export async function POST(request: Request) {
         if (r.status === "accepted") totalAcceptedCapacity += Number(r.accepted_student_capacity) || 0;
       });
 
-      const requestedStudents = Number(interview.student_count) || 10;
+      const requestedStudents = Number(interview.student_count) || Number(interview.requested_students) || 10;
       const remainingStudents = Math.max(0, requestedStudents - totalAcceptedCapacity);
+
+      // Re-derive the state the same way a capacity response does: a rejection can
+      // leave the pool full again (priority allocation) or empty (no capacity left).
+      const newStatus = remainingStudents <= 0
+        ? "priority_allocation"
+        : totalAcceptedCapacity > 0
+          ? "capacity_partially_accepted"
+          : "no_capacity";
 
       await db.run(
         `UPDATE student_interviews 
-         SET accepted_capacity = ?, remaining_students = ?, unallocated_students = ?, status = 'capacity_partially_accepted', updated_at = ?
+         SET accepted_capacity = ?, remaining_students = ?, unallocated_students = ?, status = ?, updated_at = ?
          WHERE id = ?`,
-        [totalAcceptedCapacity, remainingStudents, remainingStudents, now, interview_id]
+        [totalAcceptedCapacity, remainingStudents, remainingStudents, newStatus, now, interview_id]
       );
 
       return NextResponse.json({
         success: true,
         message: "Allocation rejected. Released capacity returned to remaining student pool.",
         remaining_students: remainingStudents,
-        status: "capacity_partially_accepted"
+        status: newStatus
       });
     }
 

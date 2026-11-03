@@ -1,8 +1,8 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireKamScope } from "@/lib/kamScope";
 
 export async function GET(
   request: Request,
@@ -10,6 +10,9 @@ export async function GET(
 ) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
 
     // 1. Fetch Mentor Details with College Name
@@ -24,65 +27,81 @@ export async function GET(
       return NextResponse.json({ success: false, message: "Faculty member not found" }, { status: 404 });
     }
 
+    if (scope!.allowedCollegeIds && !scope!.allowedCollegeIds.includes(mentor.college_id)) {
+      return NextResponse.json({ success: false, message: "This faculty member is outside your assigned portfolio." }, { status: 403 });
+    }
+
     const mentorId = mentor.id;
     const mentorName = mentor.name;
 
-    // 2. Fetch Weekly Assigned Slots & Schedule
-    const slots = await db.all(`
-      SELECT s.*, c.name as college_name
-      FROM slots s
-      LEFT JOIN colleges c ON s.college_id = c.id
-      WHERE s.mentorId = ?
-      ORDER BY 
-        CASE s.day
-          WHEN 'Monday' THEN 1
-          WHEN 'Tuesday' THEN 2
-          WHEN 'Wednesday' THEN 3
-          WHEN 'Thursday' THEN 4
-          WHEN 'Friday' THEN 5
-          WHEN 'Saturday' THEN 6
-          ELSE 7
-        END, s.time ASC
-    `, mentorId);
-
-    // 3. Fetch SME Demo Evaluation Records
-    const demoSessions = await db.all(`
-      SELECT ds.*, su.name as sme_name
-      FROM demo_sessions ds
-      LEFT JOIN sme_users su ON ds.sme_id = su.id
-      WHERE ds.mentor_id = ?
-      ORDER BY ds.dateStr DESC, ds.created_at DESC
-    `, mentorId).catch(() => []);
-
-    // 4. Fetch Handover & Substitution Requests (Sent & Received)
-    const [handoversSent, handoversReceived] = await Promise.all([
-      db.all(`
-        SELECT hr.*, tm.name as target_mentor_name, c.name as college_name
-        FROM handover_requests hr
-        LEFT JOIN mentors tm ON hr.targetMentorId = tm.id
-        LEFT JOIN colleges c ON hr.college_id = c.id
-        WHERE hr.requestorId = ?
-        ORDER BY hr.dateStr DESC LIMIT 15
-      `, mentorId).catch(() => []),
-      db.all(`
-        SELECT hr.*, rm.name as requestor_mentor_name, c.name as college_name
-        FROM handover_requests hr
-        LEFT JOIN mentors rm ON hr.requestorId = rm.id
-        LEFT JOIN colleges c ON hr.college_id = c.id
-        WHERE hr.targetMentorId = ?
-        ORDER BY hr.dateStr DESC LIMIT 15
-      `, mentorId).catch(() => [])
-    ]);
-
-    // 5. Fetch Total Marked Attendance Sessions by this Mentor
-    const attendanceMarked = await db.all(`
-      SELECT dateStr, slotId, COUNT(id) as students_marked,
-             SUM(CASE WHEN LOWER(status) = 'present' OR LOWER(status) = 'od' THEN 1 ELSE 0 END) as present_count
-      FROM student_attendance
-      WHERE markedBy = ? OR markedBy = ?
-      GROUP BY dateStr, slotId
-      ORDER BY dateStr DESC LIMIT 50
-    `, mentorName, mentorId).catch(() => []);
+    // Schedule, demo records, both handover directions and the marking history all key
+    // off the mentor row, so one round trip fills the whole progress card. The schedule
+    // gates every workload number, so a failed slice fails the page; the other tables
+    // only exist where their migration has run, so those sections degrade instead.
+    const progressFailures: QueryFailure[] = [];
+    const [slots, demoSessions, handoversSent, handoversReceived, attendanceMarked] = await db.multiQuery(
+      [
+        {
+          sql: `SELECT s.*, c.name as college_name
+                FROM slots s
+                LEFT JOIN colleges c ON s.college_id = c.id
+                WHERE s.mentorId = ?
+                ORDER BY 
+                  CASE s.day
+                    WHEN 'Monday' THEN 1
+                    WHEN 'Tuesday' THEN 2
+                    WHEN 'Wednesday' THEN 3
+                    WHEN 'Thursday' THEN 4
+                    WHEN 'Friday' THEN 5
+                    WHEN 'Saturday' THEN 6
+                    ELSE 7
+                  END, s.time ASC`,
+          params: [mentorId],
+        },
+        {
+          sql: `SELECT ds.*, su.name as sme_name
+                FROM demo_sessions ds
+                LEFT JOIN sme_users su ON ds.sme_id = su.id
+                WHERE ds.mentor_id = ?
+                ORDER BY ds.dateStr DESC, ds.created_at DESC`,
+          params: [mentorId],
+        },
+        {
+          sql: `SELECT hr.*, tm.name as target_mentor_name, c.name as college_name
+                FROM handover_requests hr
+                LEFT JOIN mentors tm ON hr.targetMentorId = tm.id
+                LEFT JOIN colleges c ON hr.college_id = c.id
+                WHERE hr.requestorId = ?
+                ORDER BY hr.dateStr DESC LIMIT 15`,
+          params: [mentorId],
+        },
+        {
+          sql: `SELECT hr.*, rm.name as requestor_mentor_name, c.name as college_name
+                FROM handover_requests hr
+                LEFT JOIN mentors rm ON hr.requestorId = rm.id
+                LEFT JOIN colleges c ON hr.college_id = c.id
+                WHERE hr.targetMentorId = ?
+                ORDER BY hr.dateStr DESC LIMIT 15`,
+          params: [mentorId],
+        },
+        {
+          sql: `SELECT dateStr, slotId, COUNT(id) as students_marked,
+                       SUM(CASE WHEN LOWER(status) = 'present' OR LOWER(status) = 'od' THEN 1 ELSE 0 END) as present_count
+                FROM student_attendance
+                WHERE markedBy = ? OR markedBy = ?
+                GROUP BY dateStr, slotId
+                ORDER BY dateStr DESC LIMIT 50`,
+          params: [mentorName, mentorId],
+        },
+      ],
+      progressFailures
+    );
+    if (progressFailures.some(f => f.sql.includes("FROM slots"))) {
+      return NextResponse.json({ success: false, error: "Could not load this faculty schedule. Please try again." }, { status: 500 });
+    }
+    if (progressFailures.length > 0) {
+      console.warn("[/api/kam/mentors/[id]/progress] partial read:", progressFailures.map(f => f.sql.slice(0, 60)));
+    }
 
     // 6. Calculate Workload Metrics
     const totalWeeklyHours = slots.length;

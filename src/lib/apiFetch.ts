@@ -5,12 +5,25 @@
  * 1. Bypass browser disk and memory HTTP caching (no 304 Not Modified delays).
  * 2. Append a millisecond timestamp cache-buster (_t=Date.now()) on GET requests.
  * 3. Enforce "cache: no-store" and "Pragma: no-cache" headers.
+ *    (1-3 do not apply to GETs listed in SERVER_CACHED_GETS, which negotiate freshness server-side.)
  * 4. Automatically attaches the CSRF token (`x-csrf-token`) on state-changing requests (POST, PUT, DELETE, PATCH).
  * 5. Handles JSON serialization and safe response parsing.
  * 6. Intercepts global fetch() so all legacy and newly created components benefit from automatic CSRF and anti-cache protection.
  */
 
 let memoryCsrfToken: string | null = null;
+
+/**
+ * GETs whose route handler already negotiates freshness itself (ETag + max-age),
+ * which the blanket `_t` buster and forced `no-store` below would defeat.
+ * Adding a path here opts it into normal HTTP caching, so cap it at endpoints
+ * that are safe to serve up to their max-age window.
+ */
+const SERVER_CACHED_GETS = ["/api/data/reference"];
+
+function isServerCachedGet(url: string): boolean {
+  return SERVER_CACHED_GETS.some((path) => url.includes(path));
+}
 
 export function setClientCsrfToken(token: string | null) {
   memoryCsrfToken = token;
@@ -48,6 +61,7 @@ export function installFetchInterceptor() {
     let url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const method = (init?.method || "GET").toUpperCase();
     const isMutation = method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH";
+    const serverCached = method === "GET" && isServerCachedGet(url);
 
     // Only intercept internal /api/ calls
     const isApiCall =
@@ -66,13 +80,15 @@ export function installFetchInterceptor() {
       }
 
       // Add anti-cache headers
-      if (!headers.has("Pragma")) headers.set("Pragma", "no-cache");
-      if (!headers.has("Cache-Control")) headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+      if (!serverCached) {
+        if (!headers.has("Pragma")) headers.set("Pragma", "no-cache");
+        if (!headers.has("Cache-Control")) headers.set("Cache-Control", "no-cache, no-store, must-revalidate");
+      }
 
       init = {
         ...init,
         headers,
-        cache: init?.cache || "no-store"
+        cache: init?.cache || (serverCached ? "default" : "no-store")
       };
     }
 
@@ -97,6 +113,25 @@ if (typeof window !== "undefined") {
   installFetchInterceptor();
 }
 
+const NETWORK_RETRY_DELAY_MS = 400;
+
+/**
+ * A backgrounded tab or a just-restarted dev server drops an in-flight fetch as a
+ * TypeError before any HTTP status exists. One short retry recovers the first GET
+ * after a wake-up instead of showing the stale-data banner; mutations are never
+ * retried because a duplicate write is worse than a visible error.
+ */
+async function fetchWithNetworkRetry(doFetch: () => Promise<Response>): Promise<Response> {
+  try {
+    return await doFetch();
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw err;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) throw err;
+    await new Promise((resolve) => setTimeout(resolve, NETWORK_RETRY_DELAY_MS));
+    return doFetch();
+  }
+}
+
 export interface ApiFetchOptions extends Omit<RequestInit, "body"> {
   /** Request body (can be string, FormData, Blob, or plain JS object) */
   body?: any;
@@ -112,10 +147,11 @@ export async function apiFetch<T = any>(
   const method = (options.method || "GET").toUpperCase();
   const isGet = method === "GET";
   const isMutation = method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH";
+  const serverCached = isGet && isServerCachedGet(url);
 
   let finalUrl = url;
 
-  if (isGet && !skipCacheBuster) {
+  if (isGet && !skipCacheBuster && !serverCached) {
     if (typeof window !== "undefined") {
       const isAbsolute = url.startsWith("http://") || url.startsWith("https://");
       const urlObj = isAbsolute
@@ -130,10 +166,12 @@ export async function apiFetch<T = any>(
     }
   }
 
-  const defaultHeaders: Record<string, string> = {
-    "Pragma": "no-cache",
-    "Cache-Control": "no-cache, no-store, must-revalidate"
-  };
+  const defaultHeaders: Record<string, string> = serverCached
+    ? {}
+    : {
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      };
 
   // Attach CSRF token on mutating requests if not explicitly provided
   if (isMutation) {
@@ -156,15 +194,16 @@ export async function apiFetch<T = any>(
     fetchOptions.body = JSON.stringify(options.body);
   }
 
-  const res = await fetch(finalUrl, {
+  const doFetch = () => fetch(finalUrl, {
     ...fetchOptions,
     method,
-    cache: "no-store",
+    cache: fetchOptions.cache ?? (serverCached ? "default" : "no-store"),
     headers: {
       ...defaultHeaders,
       ...(headers as Record<string, string>)
     }
   });
+  const res = isGet ? await fetchWithNetworkRetry(doFetch) : await doFetch();
 
   const contentType = res.headers.get("content-type") || "";
   let data: any;

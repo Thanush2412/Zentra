@@ -1,13 +1,16 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { sendMail, renderEmailShell } from "@/lib/mail";
+import { requireAuth } from "@/lib/authGuard";
+import { renderEmailShell } from "@/lib/mail";
+import { sendMailAsync } from "@/lib/mailAsync";
+import { generateId } from "@/lib/id";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin", "L and D"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const role = searchParams.get("role");
@@ -54,6 +57,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const {
@@ -72,7 +77,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const id = `appr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const id = generateId("appr");
     const now = new Date().toISOString();
 
     await db.run(
@@ -87,7 +92,7 @@ export async function POST(request: Request) {
     await db.run(
       `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        `audit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        generateId("audit"),
         "approval_request",
         `Created pending approval for request ${request_id} (${module_type})`,
         requester_name,
@@ -106,20 +111,25 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const {
       approval_id,
       status,
-      approver_id,
-      approver_name,
       rejection_reason = "",
       remarks = ""
     } = body;
+    // The approver identity used to come from the request body, which let any
+    // caller sign a decision under someone else's name.
+    const actor = auth!.user;
+    const approver_id = actor.reference_id || actor.id;
+    const approver_name = actor.name || actor.email;
 
-    if (!approval_id || !status || !approver_id || !approver_name) {
+    if (!approval_id || !status) {
       return NextResponse.json(
-        { success: false, message: "Missing required fields (approval_id, status, approver_id, approver_name)" },
+        { success: false, message: "Missing required fields (approval_id, status)" },
         { status: 400 }
       );
     }
@@ -139,114 +149,139 @@ export async function PUT(request: Request) {
 
     const now = new Date().toISOString();
     const reasonText = rejection_reason || remarks;
-
-    await db.run(
-      `UPDATE approvals SET
-        current_status = ?,
-        approver_id = ?,
-        approver_name = ?,
-        remarks = ?,
-        rejection_reason = ?,
-        approved_at = ?,
-        updated_at = ?
-      WHERE id = ?`,
-      [status, approver_id, approver_name, remarks, reasonText, status === "approved" ? now : null, now, approval_id]
-    );
-
-    // Module Side Effects Trigger
     const { module_type, request_id } = approval;
 
-    if (module_type === "student_leave") {
-      await db.run(
-        "UPDATE leave_requests SET status = ?, approvedBy = ? WHERE id = ?",
-        [status, approver_name, request_id]
+    // The approval row, the module it drives, the excused attendance, the
+    // notification and the audit entry are one decision. Split across six
+    // autocommitted statements, a failure left an approval marked resolved with
+    // the leave still Pending (or the reverse) — and the notification insert was
+    // swallowed with .catch(console.warn), so the requester was simply never told.
+    let pendingMail: { to: string; subject: string; htmlBody: string } | null = null;
+
+    await db.transaction(async (tx) => {
+      await tx.run(
+        `UPDATE approvals SET
+          current_status = ?,
+          approver_id = ?,
+          approver_name = ?,
+          remarks = ?,
+          rejection_reason = ?,
+          approved_at = ?,
+          updated_at = ?
+        WHERE id = ?`,
+        [status, approver_id, approver_name, remarks, reasonText, status === "approved" ? now : null, now, approval_id]
       );
 
-      const leaveReq = await db.get("SELECT * FROM leave_requests WHERE id = ?", [request_id]);
-      if (leaveReq && status === "approved") {
-        const student = await db.get("SELECT * FROM students WHERE id = ?", [leaveReq.studentId]);
-        if (student) {
-          const dayName = new Date(leaveReq.dateStr).toLocaleDateString("en-US", { weekday: "long" });
-          const matchingSlots = await db.all(
-            "SELECT id FROM slots WHERE classGroup = ? AND day = ?",
-            [student.classGroup, dayName]
-          );
+      // Module Side Effects Trigger
+      if (module_type === "student_leave") {
+        await tx.run(
+          "UPDATE leave_requests SET status = ?, approvedBy = ? WHERE id = ?",
+          [status, approver_name, request_id]
+        );
 
-          for (const s of matchingSlots) {
-            const attId = `att_${s.id}_${leaveReq.studentId}_${leaveReq.dateStr}`;
-            await db.run(
-              `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(studentId, slotId, dateStr) DO UPDATE SET status = 'present', markedBy = 'CAM Approval'`,
-              [attId, leaveReq.studentId, s.id, leaveReq.dateStr, "present", `CAM Approval (${approver_name})`, now]
+        const leaveReq = await tx.get("SELECT * FROM leave_requests WHERE id = ?", [request_id]);
+        if (leaveReq && status === "approved") {
+          const student = await tx.get("SELECT * FROM students WHERE id = ?", [leaveReq.studentId]);
+          if (student) {
+            const dayName = new Date(leaveReq.dateStr).toLocaleDateString("en-US", { weekday: "long" });
+            const matchingSlots = await tx.all(
+              "SELECT id FROM slots WHERE classGroup = ? AND day = ?",
+              [student.classGroup, dayName]
             );
-          }
 
-          if (student.email) {
-            await sendMail({
-              to: student.email,
-              subject: `[Leave Approved] Your ${leaveReq.type?.toUpperCase()} request for ${leaveReq.dateStr} has been APPROVED`,
-              htmlBody: renderEmailShell({
-                title: "Leave Request Approved",
-                badgeText: "Approved",
-                badgeColor: "emerald",
-                description: `Dear ${student.name}, your ${leaveReq.type?.toUpperCase()} request for <strong>${leaveReq.dateStr}</strong> has been approved. Attendance has been excused as Present.`,
-                details: [
-                  { label: "Date", value: leaveReq.dateStr, highlight: true },
-                  { label: "Approved By", value: approver_name },
-                  { label: "Status", value: "Approved & Excused" }
-                ],
-                ctaText: "Open Student Dashboard →"
-              })
-            }).catch(console.warn);
+            // One statement instead of one per slot; same upsert semantics.
+            if (matchingSlots.length > 0) {
+              const params: any[] = [];
+              const placeholders = matchingSlots.map((s: any) => {
+                params.push(
+                  `att_${s.id}_${leaveReq.studentId}_${leaveReq.dateStr}`,
+                  leaveReq.studentId, s.id, leaveReq.dateStr, "present",
+                  `CAM Approval (${approver_name})`, now
+                );
+                return "(?, ?, ?, ?, ?, ?, ?)";
+              }).join(", ");
+              await tx.run(
+                `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp)
+                 VALUES ${placeholders}
+                 ON CONFLICT(studentId, slotId, dateStr) DO UPDATE SET status = 'present', markedBy = 'CAM Approval'`,
+                params
+              );
+            }
+
+            if (student.email) {
+              pendingMail = {
+                to: student.email,
+                subject: `[Leave Approved] Your ${leaveReq.type?.toUpperCase()} request for ${leaveReq.dateStr} has been APPROVED`,
+                htmlBody: renderEmailShell({
+                  title: "Leave Request Approved",
+                  badgeText: "Approved",
+                  badgeColor: "emerald",
+                  description: `Dear ${student.name}, your ${leaveReq.type?.toUpperCase()} request for <strong>${leaveReq.dateStr}</strong> has been approved. Attendance has been excused as Present.`,
+                  details: [
+                    { label: "Date", value: leaveReq.dateStr, highlight: true },
+                    { label: "Approved By", value: approver_name },
+                    { label: "Status", value: "Approved & Excused" }
+                  ],
+                  ctaText: "Open Student Dashboard →"
+                })
+              };
+            }
           }
         }
+      } else if (module_type === "faculty_leave") {
+        await tx.run(
+          "UPDATE faculty_leave_requests SET status = ?, updated_at = ? WHERE id = ?",
+          [status === "approved" ? "Approved" : "Rejected", now, request_id]
+        );
+      } else if (module_type === "interview") {
+        await tx.run(
+          "UPDATE student_interviews SET status = ?, updated_at = ? WHERE id = ?",
+          [status === "approved" ? "completed" : "rejected", now, request_id]
+        );
       }
-    } else if (module_type === "faculty_leave") {
-      await db.run(
-        "UPDATE faculty_leave_requests SET status = ?, updated_at = ? WHERE id = ?",
-        [status === "approved" ? "Approved" : "Rejected", now, request_id]
+
+      // In-app notification creation
+      await tx.run(
+        `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+        [
+          generateId("notif"),
+          approval.requester_id,
+          `Request ${status.toUpperCase()}: ${module_type.replace("_", " ").toUpperCase()}`,
+          `Your request has been ${status} by ${approver_name}. ${reasonText ? `Remarks: ${reasonText}` : ""}`,
+          status === "approved" ? "result" : "alert",
+          `#`,
+          now
+        ]
       );
-    } else if (module_type === "interview") {
-      await db.run(
-        "UPDATE student_interviews SET status = ?, updated_at = ? WHERE id = ?",
-        [status === "approved" ? "completed" : "rejected", now, request_id]
+
+      // Audit Log Entry
+      await tx.run(
+        `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          generateId("audit"),
+          "approval_resolution",
+          `Resolved request ${request_id} for ${approval.requester_name}: ${status.toUpperCase()}. Remarks: ${reasonText || "None"}`,
+          approver_name,
+          "Approver",
+          now
+        ]
       );
+    });
+
+    // pendingMail is assigned inside db.transaction's callback, which control-flow
+    // analysis does not follow, so it is still typed as null at this read.
+    const mailJob = pendingMail as { to: string; subject: string; htmlBody: string } | null;
+    if (mailJob) {
+      // The resolution is committed; the requester hears about it once the
+      // response is on the wire instead of after a relay leg.
+      sendMailAsync({ ...mailJob, context: "approval-resolution" });
     }
-
-    // In-app notification creation
-    const notifId = `notif_${Date.now()}`;
-    await db.run(
-      `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
-      [
-        notifId,
-        approval.requester_id,
-        `Request ${status.toUpperCase()}: ${module_type.replace("_", " ").toUpperCase()}`,
-        `Your request has been ${status} by ${approver_name}. ${reasonText ? `Remarks: ${reasonText}` : ""}`,
-        status === "approved" ? "result" : "alert",
-        `#`,
-        now
-      ]
-    ).catch(console.warn);
-
-    // Audit Log Entry
-    await db.run(
-      `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        `audit_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        "approval_resolution",
-        `Resolved request ${request_id} for ${approval.requester_name}: ${status.toUpperCase()}. Remarks: ${reasonText || "None"}`,
-        approver_name,
-        "Approver",
-        now
-      ]
-    );
 
     const updatedApproval = await db.get("SELECT * FROM approvals WHERE id = ?", [approval_id]);
     return NextResponse.json({
       success: true,
-      message: `Request successfully ${status}. Notification and side-effects executed.`,
+      message: `Request successfully ${status}. Side-effects executed and the requester is being notified.`,
       approval: updatedApproval
     });
   } catch (error: any) {

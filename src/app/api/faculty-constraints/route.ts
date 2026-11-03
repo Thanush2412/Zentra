@@ -1,12 +1,13 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const rows = await db.all("SELECT * FROM faculty_configs");
     
@@ -26,6 +27,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { mentorId, maxHours, shift } = body;

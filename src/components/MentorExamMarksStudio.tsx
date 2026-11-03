@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
 import {
   Award,
   Calendar,
@@ -24,6 +27,9 @@ import {
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { Dialog } from "@/components/ui/dialog";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
 
 interface ExamItem {
   id: string;
@@ -53,6 +59,7 @@ interface StudentRosterRow {
   marks_obtained: number | null;
   max_marks: number;
   is_absent: boolean;
+  is_od?: boolean;
   grade: string | null;
   remarks: string;
   evaluated_by?: string;
@@ -62,9 +69,20 @@ interface StudentRosterRow {
 export const MentorExamMarksStudio: React.FC = () => {
   const { currentMentor, coursesList, subjectsList } = useApp();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [exams, setExams] = useState<ExamItem[]>([]);
-  const [loadingExams, setLoadingExams] = useState(false);
+  const mentorCollegeId = currentMentor?.college_id || "";
+  const examsQuery = useQuery({
+    queryKey: qk.exams(mentorCollegeId || "all"),
+    enabled: !!mentorCollegeId,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/exams?college_id=${encodeURIComponent(mentorCollegeId)}`);
+      return data?.success && Array.isArray(data.exams) ? (data.exams as ExamItem[]) : [];
+    },
+  });
+  const exams = examsQuery.data || [];
+  const loadingExams = examsQuery.isFetching;
+
   const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
 
   // Filter & Search states for exam list
@@ -76,8 +94,6 @@ export const MentorExamMarksStudio: React.FC = () => {
 
   // Evaluation Roster states
   const [selectedExam, setSelectedExam] = useState<ExamItem | null>(null);
-  const [roster, setRoster] = useState<StudentRosterRow[]>([]);
-  const [loadingRoster, setLoadingRoster] = useState(false);
   const [isSavingMarks, setIsSavingMarks] = useState(false);
 
   // Active marks & attendance editing state
@@ -89,35 +105,36 @@ export const MentorExamMarksStudio: React.FC = () => {
   const [rosterSearch, setRosterSearch] = useState("");
   const [cohortFilter, setCohortFilter] = useState("all");
   const [statusRosterFilter, setStatusRosterFilter] = useState<"all" | "evaluated" | "pending" | "absent" | "failed">("all");
+  const [rosterPage, setRosterPage] = useState(1);
+  const [rosterPageSize, setRosterPageSize] = useState(25);
 
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
 
-  // 1. Fetch exams for this mentor's college
-  const fetchMentorExams = async () => {
-    if (!currentMentor?.college_id) return;
-    setLoadingExams(true);
-    try {
-      const res = await fetch(`/api/exams?college_id=${encodeURIComponent(currentMentor.college_id)}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.exams)) {
-        setExams(data.exams);
-      } else {
-        setExams([]);
-      }
-    } catch (err: any) {
-      toast("Failed to load exam schedules: " + err.message, "error");
-    } finally {
-      setLoadingExams(false);
-    }
-  };
+  // Subject/department scope: mentors must not see exams they do not teach.
+  const mentorScope = useMemo(() => {
+    const subjects = (currentMentor?.subjects || "")
+      .split(/\n|\/|,|;/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const department = (currentMentor?.department || "").trim().toLowerCase();
+    return { subjects, department };
+  }, [currentMentor]);
 
-  useEffect(() => {
-    fetchMentorExams();
-  }, [currentMentor?.college_id]);
+  const matchesMentorScope = (ex: ExamItem) => {
+    const subject = (ex.subject_name || "").toLowerCase();
+    const department = (ex.department || "").toLowerCase();
+    if (mentorScope.subjects.length > 0) {
+      return !!subject && mentorScope.subjects.some((s) => subject.includes(s) || s.includes(subject));
+    }
+    if (mentorScope.department) return !!department && department.includes(mentorScope.department);
+    return true;
+  };
 
   // Filter exams matching mentor's taught subjects & department
   const filteredExams = useMemo(() => {
     return exams.filter((ex) => {
+      if (!matchesMentorScope(ex)) return false;
+
       // Search query filter
       const q = examSearch.toLowerCase().trim();
       const matchesSearch = !q ||
@@ -135,7 +152,7 @@ export const MentorExamMarksStudio: React.FC = () => {
 
       return true;
     });
-  }, [exams, currentMentor, examSearch, examTabFilter, todayStr]);
+  }, [exams, mentorScope, examSearch, examTabFilter, todayStr]);
 
   // Unique exam types for Step 0 grouping
   const uniqueExamTypes = useMemo(() => {
@@ -155,17 +172,23 @@ export const MentorExamMarksStudio: React.FC = () => {
   const [proposedMark, setProposedMark] = useState<string>("");
   const [editReason, setEditReason] = useState<string>("");
   const [isSubmittingEditReq, setIsSubmittingEditReq] = useState(false);
-  const [pendingEditRequests, setPendingEditRequests] = useState<Record<string, string>>({}); // student_id -> proposedMark
 
   // Check if exam is officially completed (date and end time have passed)
   const isExamOver = useMemo(() => {
     if (!selectedExam || !selectedExam.exam_date) return true;
-    const today = new Date().toISOString().slice(0, 10);
+    // Client-side, so the browser's own zone is the institution's zone for these
+    // users; the UTC string would still read yesterday before 05:30 IST.
+    const today = new Date().toLocaleDateString("en-CA");
     if (selectedExam.exam_date < today) return true;
     if (selectedExam.exam_date > today) return false;
-    
-    // Same day: check end time
-    const endTimeStr = (selectedExam.session_time || "").split("-")[1]?.trim() || "05:00 PM";
+
+    // Same day: check end time. session_time is free text and commonly
+    // "9.00 AM to 12.00 PM", which has no hyphen to split on.
+    const endTimeStr = (
+      (selectedExam.session_time || "").split(/\s*(?:to|–|-)\s*/i)[1] ||
+      selectedExam.end_time ||
+      "05:00 PM"
+    ).trim();
     const match = endTimeStr.match(/(\d+)(?::|\.)(\d+)\s*(AM|PM)?/i);
     if (!match) return true;
     let h = parseInt(match[1], 10);
@@ -179,60 +202,67 @@ export const MentorExamMarksStudio: React.FC = () => {
     return now >= endDateTime;
   }, [selectedExam]);
 
-  // Fetch pending edit requests for this exam
-  const fetchPendingEditRequests = async (examId: string) => {
-    try {
-      const res = await fetch(`/api/requests`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.requests)) {
-        const pendingMap: Record<string, string> = {};
+  // Pending CAM edit requests for the selected exam (no prefetch: GET /api/requests has side effects)
+  const editRequestsQuery = useQuery({
+    queryKey: qk.examEditRequests(selectedExamId || "none"),
+    enabled: !!selectedExamId,
+    queryFn: async () => {
+      // Server-side filter: this route returns every handover request in the
+      // system, and the pending marks only ever concern the selected exam slot.
+      const data = await apiFetch(`/api/requests?slotId=${encodeURIComponent(selectedExamId as string)}`);
+      const pendingMap: Record<string, string> = {};
+      if (data?.success && Array.isArray(data.requests)) {
         data.requests.forEach((r: any) => {
-          if (r.slotId === examId && (r.status === "pending" || r.status === "pending_cam")) {
+          if (r.slotId === selectedExamId && (r.status === "pending" || r.status === "pending_cam")) {
             const markMatch = (r.reason || "").match(/Proposed Mark:\s*([\d.]+)/i);
             if (markMatch) pendingMap[r.targetStaffId] = markMatch[1];
           }
         });
-        setPendingEditRequests(pendingMap);
       }
-    } catch (e) {
-      console.error("Error fetching pending mark edit requests:", e);
-    }
-  };
+      return pendingMap;
+    },
+  });
+  const pendingEditRequests = editRequestsQuery.data || {};
+  const fetchPendingEditRequests = (examId: string) =>
+    queryClient.invalidateQueries({ queryKey: qk.examEditRequests(examId) });
 
-  // 2. Fetch student roster when an exam is selected
+  // Student roster for the selected exam
+  const rosterQuery = useQuery({
+    queryKey: qk.examRoster(selectedExamId || "none"),
+    enabled: !!selectedExamId,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/exams/marks?exam_id=${encodeURIComponent(selectedExamId as string)}`);
+      return data?.success && Array.isArray(data.roster) ? (data.roster as StudentRosterRow[]) : [];
+    },
+  });
+  const roster = rosterQuery.data || [];
+  const loadingRoster = rosterQuery.isFetching;
+
+  const seededRosterExamRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedExamId || !rosterQuery.data) return;
+    if (seededRosterExamRef.current === selectedExamId) return;
+    seededRosterExamRef.current = selectedExamId;
+    const initialMap: Record<string, { marks: string; isAbsent: boolean; isOD: boolean; remarks: string }> = {};
+    rosterQuery.data.forEach((st: StudentRosterRow) => {
+      initialMap[st.student_id] = {
+        marks: st.marks_obtained !== null && st.marks_obtained !== undefined ? String(st.marks_obtained) : "",
+        isAbsent: Boolean(st.is_absent),
+        isOD: Boolean(st.is_od),
+        remarks: st.remarks || ""
+      };
+    });
+    setMarksState(initialMap);
+  }, [selectedExamId, rosterQuery.data]);
+
+  // 2. Select an exam for grading
   const selectExamForGrading = async (exam: ExamItem) => {
+    seededRosterExamRef.current = null;
+    setMarksState({});
     setSelectedExam(exam);
     setSelectedExamId(exam.id);
     setGlobalMaxMarks(exam.max_marks || 50);
     setGlobalPassingMarks(exam.passing_marks || ((exam.max_marks || 50) * 0.4));
-    setLoadingRoster(true);
-
-    try {
-      fetchPendingEditRequests(exam.id);
-      const res = await fetch(`/api/exams/marks?exam_id=${encodeURIComponent(exam.id)}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.roster)) {
-        setRoster(data.roster);
-
-        // Populate local editable state
-        const initialMap: Record<string, { marks: string; isAbsent: boolean; remarks: string }> = {};
-        data.roster.forEach((st: StudentRosterRow) => {
-          initialMap[st.student_id] = {
-            marks: st.marks_obtained !== null && st.marks_obtained !== undefined ? String(st.marks_obtained) : "",
-            isAbsent: Boolean(st.is_absent),
-            remarks: st.remarks || ""
-          };
-        });
-        setMarksState(initialMap);
-      } else {
-        setRoster([]);
-        setMarksState({});
-      }
-    } catch (err: any) {
-      toast("Failed to load student roster: " + err.message, "error");
-    } finally {
-      setLoadingRoster(false);
-    }
   };
 
   // Compute Grade live helper
@@ -283,6 +313,15 @@ export const MentorExamMarksStudio: React.FC = () => {
       return true;
     });
   }, [roster, rosterSearch, cohortFilter, statusRosterFilter, marksState, globalPassingMarks]);
+
+  useEffect(() => {
+    setRosterPage(1);
+  }, [rosterSearch, cohortFilter, statusRosterFilter, selectedExam?.id]);
+
+  const paginatedRoster = useMemo(() => {
+    const start = (rosterPage - 1) * rosterPageSize;
+    return filteredRoster.slice(start, start + rosterPageSize);
+  }, [filteredRoster, rosterPage, rosterPageSize]);
 
   // Calculate live summary metrics
   const summaryStats = useMemo(() => {
@@ -392,20 +431,19 @@ export const MentorExamMarksStudio: React.FC = () => {
         };
       });
 
-      const res = await fetch("/api/exams/marks", {
+      const data = await apiFetch("/api/exams/marks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           exam_id: selectedExam.id,
           marks: payloadMarks,
           evaluated_by: currentMentor?.name || "Subject Mentor"
-        })
+        }
       });
 
-      const data = await res.json();
       if (data.success) {
         toast(`Attendance and Marks successfully published for ${roster.length} students!`, "success");
-        await selectExamForGrading(selectedExam);
+        seededRosterExamRef.current = null;
+        await queryClient.invalidateQueries({ queryKey: ["exams"] });
       } else {
         toast(data.message || "Failed to save marks", "error");
       }
@@ -436,10 +474,9 @@ export const MentorExamMarksStudio: React.FC = () => {
 
     setIsSubmittingEditReq(true);
     try {
-      const res = await fetch("/api/requests", {
+      const data = await apiFetch("/api/requests", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           mentorId: currentMentor?.id || "mentor_1",
           slotId: selectedExam.id,
           dateStr: selectedExam.exam_date,
@@ -447,9 +484,8 @@ export const MentorExamMarksStudio: React.FC = () => {
           targetStaffId: editingStudent.student_id,
           reason: `[Exam Mark Edit Request] Exam: ${selectedExam.exam_type} | Student: ${editingStudent.student_name} (${editingStudent.roll_number}) | Old Mark: ${editingStudent.marks_obtained} | Proposed Mark: ${proposedMark} | Reason: ${editReason.trim()}`,
           subjectName: selectedExam.subject_name
-        })
+        }
       });
-      const data = await res.json();
       if (data.success) {
         toast("Marks edit approval request submitted to Campus Manager (CM)!", "success");
         setEditRequestModalOpen(false);
@@ -510,7 +546,7 @@ export const MentorExamMarksStudio: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={fetchMentorExams}
+            onClick={() => examsQuery.refetch()}
             disabled={loadingExams}
             className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
           >
@@ -571,6 +607,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                 <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="text"
+                  aria-label="Search subject or exam"
                   placeholder="Search subject or exam..."
                   value={examSearch}
                   onChange={(e) => setExamSearch(e.target.value)}
@@ -728,9 +765,10 @@ export const MentorExamMarksStudio: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
+                    seededRosterExamRef.current = null;
                     setSelectedExam(null);
                     setSelectedExamId(null);
-                    setRoster([]);
+                    setMarksState({});
                   }}
                   className="mt-0.5 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
                   title="Back to Exam Selection"
@@ -815,6 +853,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                   type="number"
                   min={1}
                   max={500}
+                  aria-label="Out Of (Max Marks)"
                   disabled={!isExamOver}
                   value={globalMaxMarks}
                   onChange={(e) => {
@@ -835,6 +874,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                   type="number"
                   min={1}
                   max={globalMaxMarks}
+                  aria-label="Passing Marks"
                   disabled={!isExamOver}
                   value={globalPassingMarks}
                   onChange={(e) => setGlobalPassingMarks(parseFloat(e.target.value) || 0)}
@@ -874,6 +914,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                   <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
                   <input
                     type="text"
+                    aria-label="Search student or roll no"
                     placeholder="Search student or roll no..."
                     value={rosterSearch}
                     onChange={(e) => setRosterSearch(e.target.value)}
@@ -945,35 +986,35 @@ export const MentorExamMarksStudio: React.FC = () => {
           {/* Student Marks Evaluation Table */}
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto max-h-[550px] scroll-touch">
-              <table className="w-full text-left text-xs border-collapse min-w-[850px]">
-                <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
-                  <tr>
-                    <th className="p-3 text-center w-12">#</th>
-                    <th className="p-3">Student Details</th>
-                    <th className="p-3">Class / Cohort</th>
-                    <th className="p-3 text-center w-36">Exam Attendance</th>
-                    <th className="p-3 w-44 text-center">Marks Obtained</th>
-                    <th className="p-3 text-center w-24">Scale</th>
-                    <th className="p-3 text-center w-28">Grade</th>
-                    <th className="p-3">Remarks / Feedback</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150 bg-white font-medium">
+              <Table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                <TableHeader className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
+                  <TableRow className="hover:bg-slate-50">
+                    <TableHead className="p-3 text-center w-12">#</TableHead>
+                    <TableHead className="p-3">Student Details</TableHead>
+                    <TableHead className="p-3">Class / Cohort</TableHead>
+                    <TableHead className="p-3 text-center w-36">Exam Attendance</TableHead>
+                    <TableHead className="p-3 w-44 text-center">Marks Obtained</TableHead>
+                    <TableHead className="p-3 text-center w-24">Scale</TableHead>
+                    <TableHead className="p-3 text-center w-28">Grade</TableHead>
+                    <TableHead className="p-3">Remarks / Feedback</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-150 bg-white font-medium">
                   {loadingRoster ? (
-                    <tr>
-                      <td colSpan={8} className="p-12 text-center text-slate-400 font-bold">
+                    <TableRow>
+                      <TableCell colSpan={8} className="p-12 text-center text-slate-400 font-bold">
                         <RefreshCw className="h-6 w-6 animate-spin mx-auto text-indigo-600 mb-2" />
                         Loading student evaluation roster...
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : filteredRoster.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="p-10 text-center text-slate-400 font-medium italic">
+                    <TableRow>
+                      <TableCell colSpan={8} className="p-10 text-center text-slate-400 font-medium italic">
                         No students matching the selected filter.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
-                    filteredRoster.map((st, idx) => {
+                    paginatedRoster.map((st, idx) => {
                       const state = marksState[st.student_id] || { marks: "", isAbsent: false, remarks: "" };
                       const marksNum = state.marks.trim() !== "" && !state.isAbsent ? parseFloat(state.marks) : null;
                       const { grade, label, color } = computeGrade(marksNum, state.isAbsent, globalMaxMarks, globalPassingMarks);
@@ -981,18 +1022,18 @@ export const MentorExamMarksStudio: React.FC = () => {
                       const pendingReqMark = pendingEditRequests[st.student_id];
 
                       return (
-                        <tr key={st.student_id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="p-3 text-center font-mono text-[11px] text-slate-400">
-                            {idx + 1}
-                          </td>
-                          <td className="p-3">
+                        <TableRow key={st.student_id} className="hover:bg-slate-50/70 transition-colors">
+                          <TableCell className="p-3 text-center font-mono text-[11px] text-slate-400">
+                            {(rosterPage - 1) * rosterPageSize + idx + 1}
+                          </TableCell>
+                          <TableCell className="p-3">
                             <div className="font-extrabold text-slate-900">{st.student_name}</div>
                             <div className="font-mono text-[10px] text-slate-400">{st.roll_number || st.student_id}</div>
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <span className="font-semibold text-slate-700">{st.classGroup || st.department || "General"}</span>
-                          </td>
-                          <td className="p-3 text-center">
+                          </TableCell>
+                          <TableCell className="p-3 text-center">
                             <button
                               type="button"
                               disabled={!isExamOver}
@@ -1008,8 +1049,8 @@ export const MentorExamMarksStudio: React.FC = () => {
                             >
                               {state.isAbsent ? "Absent (AB)" : state.isOD ? "On Duty (OD)" : "Present (P)"}
                             </button>
-                          </td>
-                          <td className="p-3 text-center">
+                          </TableCell>
+                          <TableCell className="p-3 text-center">
                             {!isExamOver ? (
                               <div className="py-1.5 px-3 bg-slate-100 text-slate-400 font-black text-xs rounded-xl border border-slate-200 text-center">
                                 🔒 Locked
@@ -1047,6 +1088,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                                   min={0}
                                   max={globalMaxMarks}
                                   step="0.5"
+                                  aria-label="Marks Obtained"
                                   disabled={state.isAbsent}
                                   placeholder="—"
                                   value={state.isAbsent ? "" : state.marks}
@@ -1074,18 +1116,19 @@ export const MentorExamMarksStudio: React.FC = () => {
                                 />
                               </div>
                             )}
-                          </td>
-                          <td className="p-3 text-center font-bold text-slate-500 font-mono text-[11px]">
+                          </TableCell>
+                          <TableCell className="p-3 text-center font-bold text-slate-500 font-mono text-[11px]">
                             / {globalMaxMarks}
-                          </td>
-                          <td className="p-3 text-center">
+                          </TableCell>
+                          <TableCell className="p-3 text-center">
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${color}`}>
                               {grade}
                             </span>
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <input
                               type="text"
+                              aria-label="Remarks / Feedback"
                               disabled={!isExamOver}
                               placeholder="Feedback / Remarks..."
                               value={state.remarks}
@@ -1101,20 +1144,35 @@ export const MentorExamMarksStudio: React.FC = () => {
                               }}
                               className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:outline-none focus:border-indigo-500 disabled:bg-slate-100"
                             />
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
 
-            {/* Table Footer */}
+            {/* Table Footer with Pagination */}
             <div className="p-4 border-t border-slate-150 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
               <span className="text-slate-500 font-semibold">
                 Showing {filteredRoster.length} of {roster.length} students enrolled
               </span>
+
+              {filteredRoster.length > 0 && (
+                <div className="flex-1 max-w-md">
+                  <Pagination
+                    currentPage={rosterPage}
+                    totalItems={filteredRoster.length}
+                    pageSize={rosterPageSize}
+                    onPageChange={setRosterPage}
+                    onPageSizeChange={(newSize) => {
+                      setRosterPageSize(newSize);
+                      setRosterPage(1);
+                    }}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center gap-3">
                 <button
@@ -1132,8 +1190,18 @@ export const MentorExamMarksStudio: React.FC = () => {
 
           {/* ── POPUP MODAL: Request CAM Approval to Edit Marks ── */}
           {editRequestModalOpen && editingStudent && selectedExam && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <Dialog
+              open={true}
+              onOpenChange={(next) => {
+                if (!next) {
+                  setEditRequestModalOpen(false);
+                  setEditingStudent(null);
+                }
+              }}
+              ariaLabel="Request Marks Modification"
+              overlayClassName="p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
+              panelClassName="max-w-md max-h-[90vh] p-6 space-y-4 rounded-2xl"
+            >
                 <div className="flex items-center justify-between border-b border-slate-150 pb-3">
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -1150,6 +1218,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                       setEditRequestModalOpen(false);
                       setEditingStudent(null);
                     }}
+                    aria-label="Close"
                     className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
                   >
                     ✕
@@ -1194,6 +1263,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                     <textarea
                       rows={3}
                       required
+                      aria-label="Mandatory Justification / Reason"
                       placeholder="e.g. Paper re-evaluation verified by Head of Dept; correction in question 4 totaling."
                       value={editReason}
                       onChange={(e) => setEditReason(e.target.value)}
@@ -1221,8 +1291,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                     </button>
                   </div>
                 </form>
-              </div>
-            </div>
+            </Dialog>
           )}
         </div>
       )}

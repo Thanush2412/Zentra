@@ -1,14 +1,16 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { hashPassword } from "@/lib/auth";
+import { DEFAULT_PASSWORD } from "@/lib/authConfig";
 
 // GET /api/cm?id=cam_1  — returns CM profile + their college's data
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const camId = searchParams.get("id");
@@ -70,6 +72,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, college_id, kam_id } = body;
@@ -79,22 +83,27 @@ export async function POST(request: Request) {
     const cleanId = id.trim();
     const cleanEmail = email.trim().toLowerCase();
     
-    await db.run(
-      "INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)",
-      cleanId, name.trim(), cleanEmail, college_id.trim(), kam_id.trim()
-    );
-    
-    // Clean old credentials associated with this email
-    await db.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
+    // Profile row, stale-credential sweep and the new login must land together.
+    // Autocommitted, a failure between them leaves a Campus Manager with no users
+    // row at all — i.e. an account that cannot sign in and shows up in the list.
+    await db.transaction(async (tx) => {
+      await tx.run(
+        "INSERT INTO campus_managers (id, name, email, college_id, kam_id) VALUES (?, ?, ?, ?, ?)",
+        cleanId, name.trim(), cleanEmail, college_id.trim(), kam_id.trim()
+      );
 
-    // Create corresponding entry in centralized users table with hashed default password
-    const now = new Date().toISOString();
-    const defaultHashed = hashPassword("password123");
-    await db.run(
-      `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [cleanId, cleanEmail, defaultHashed, "cm", cleanId, "Active", now, now]
-    );
+      // Clean old credentials associated with this email
+      await tx.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
+
+      // Create corresponding entry in centralized users table with hashed default password
+      const now = new Date().toISOString();
+      const defaultHashed = hashPassword(DEFAULT_PASSWORD);
+      await tx.run(
+        `INSERT INTO users (id, email, password_hash, role, reference_id, status, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [cleanId, cleanEmail, defaultHashed, "cm", cleanId, "Active", 1, now, now]
+      );
+    });
 
     return NextResponse.json({ success: true, message: "Campus Manager created successfully" });
   } catch (error: any) {
@@ -104,6 +113,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, college_id, kam_id } = body;
@@ -112,31 +123,35 @@ export async function PUT(request: Request) {
     }
     const cleanEmail = email.trim().toLowerCase();
 
-    await db.run(
-      "UPDATE campus_managers SET name = ?, email = ?, college_id = ?, kam_id = ? WHERE id = ?",
-      name.trim(), cleanEmail, college_id.trim(), kam_id.trim(), id
-    );
+    await db.transaction(async (tx) => {
+      await tx.run(
+        "UPDATE campus_managers SET name = ?, email = ?, college_id = ?, kam_id = ? WHERE id = ?",
+        name.trim(), cleanEmail, college_id.trim(), kam_id.trim(), id
+      );
 
-    // Clean old credentials associated with this email (excluding the current CM ID)
-    await db.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
+      // Clean old credentials associated with this email (excluding the current CM ID)
+      await tx.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
 
-    // Check existing user to preserve password_hash (match legacy 'cam' rows too)
-    const existingUser = await db.get("SELECT password_hash FROM users WHERE role IN ('cm', 'cam') AND reference_id = ?", id);
-    const passHashToKeep = existingUser?.password_hash || hashPassword("password123");
+      // Check existing user to preserve password_hash (match legacy 'cam' rows too)
+      const existingUser = await tx.get("SELECT password_hash FROM users WHERE role IN ('cm', 'cam') AND reference_id = ?", id);
+      const passHashToKeep = existingUser?.password_hash || hashPassword(DEFAULT_PASSWORD);
+      const mustChange = existingUser?.password_hash ? 0 : 1;
 
-    const now = new Date().toISOString();
-    await db.run(
-      `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET
-         email = EXCLUDED.email,
-         password_hash = EXCLUDED.password_hash,
-         role = EXCLUDED.role,
-         reference_id = EXCLUDED.reference_id,
-         status = EXCLUDED.status,
-         updated_at = EXCLUDED.updated_at`,
-      [id, cleanEmail, passHashToKeep, "cm", id, "Active", now, now]
-    );
+      const now = new Date().toISOString();
+      await tx.run(
+        `INSERT INTO users (id, email, password_hash, role, reference_id, status, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           email = EXCLUDED.email,
+           password_hash = EXCLUDED.password_hash,
+           role = EXCLUDED.role,
+           reference_id = EXCLUDED.reference_id,
+           status = EXCLUDED.status,
+           must_change_password = EXCLUDED.must_change_password,
+           updated_at = EXCLUDED.updated_at`,
+        [id, cleanEmail, passHashToKeep, "cm", id, "Active", mustChange, now, now]
+      );
+    });
 
     return NextResponse.json({ success: true, message: "Campus Manager updated successfully" });
   } catch (error: any) {
@@ -146,6 +161,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -153,9 +170,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "Campus Manager id required" }, { status: 400 });
     }
     
-    // Delete from both users and campus_managers
-    await db.run("DELETE FROM users WHERE role IN ('cm', 'cam') AND reference_id = ?", id);
-    await db.run("DELETE FROM campus_managers WHERE id = ?", id);
+    // Delete from both users and campus_managers — together, or a retry of the
+    // first half strands an orphan login pointing at a deleted manager.
+    await db.transaction(async (tx) => {
+      await tx.run("DELETE FROM users WHERE role IN ('cm', 'cam') AND reference_id = ?", id);
+      await tx.run("DELETE FROM campus_managers WHERE id = ?", id);
+    });
     
     return NextResponse.json({ success: true, message: "Campus Manager deleted successfully" });
   } catch (error: any) {

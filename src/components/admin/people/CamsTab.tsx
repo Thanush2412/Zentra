@@ -1,0 +1,456 @@
+"use client";
+
+import React, { useState } from "react";
+import { Users, Plus, Edit, Trash2, AlertTriangle, Loader2, ShieldAlert, X } from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/button";
+import { TableSurface } from "@/components/dashboard/TableSurface";
+import { TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
+import { usePagination } from "@/hooks/usePagination";
+import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { LoadingButton } from "@/components/ui/LoadingButton";
+import { College, Mentor, Slot, useApp } from "@/context/AppContext";
+import { CAMUserFromDB, KAMUserFromDB } from "@/components/admin/types";
+import { useQuery } from "@tanstack/react-query";
+import { qk } from "@/lib/queryKeys";
+import { normalizeRoleValue } from "@/lib/utils";
+import { apiFetch } from "@/lib/apiFetch";
+
+export interface CamsTabProps {
+  camList?: CAMUserFromDB[];
+  kamList?: KAMUserFromDB[];
+  colleges?: College[];
+  mentors?: Mentor[];
+  slots?: Slot[];
+  isLoading?: boolean;
+  isError?: boolean;
+  onRefetch?: () => void;
+  onCreateCam?: (id: string, name: string, email: string, collegeId: string, kamId: string) => Promise<any>;
+  onUpdateCam?: (id: string, name: string, email: string, collegeId: string, kamId: string) => Promise<any>;
+  onDeleteCam?: (id: string) => Promise<void>;
+  loadingActions?: Record<string, boolean>;
+}
+
+export const CamsTab: React.FC<CamsTabProps> = ({
+  camList: propCamList,
+  kamList: propKamList,
+  colleges: propColleges,
+  mentors: propMentors,
+  slots: propSlots,
+  isLoading: propIsLoading,
+  isError: propIsError,
+  onRefetch: propOnRefetch,
+  onCreateCam: propOnCreateCam,
+  onUpdateCam: propOnUpdateCam,
+  onDeleteCam: propOnDeleteCam,
+  loadingActions: propLoadingActions
+}) => {
+  const app = useApp();
+  const colleges = propColleges ?? app.colleges ?? [];
+  const mentors = propMentors ?? app.mentors ?? [];
+  const slots = propSlots ?? app.slots ?? [];
+
+  const kamQuery = useQuery({
+    queryKey: qk.adminKams(),
+    queryFn: async () => {
+      const data = await apiFetch("/api/kam?all=1");
+      return (data?.kamUsers || []) as KAMUserFromDB[];
+    },
+    enabled: !propKamList
+  });
+  const kamList = propKamList ?? kamQuery.data ?? [];
+
+  const usersQuery = useQuery({
+    queryKey: qk.adminUsers("all"),
+    queryFn: async () => {
+      const data = await apiFetch("/api/users?limit=5000");
+      return (data?.users || []) as any[];
+    },
+    enabled: !propCamList
+  });
+  const usersList = usersQuery.data || [];
+
+  const derivedCamList: CAMUserFromDB[] = React.useMemo(() => {
+    return usersList
+      .filter((u: any) => normalizeRoleValue(u.role) === "cm")
+      .map((u: any) => {
+        const colProfile = (colleges as any[]).find((c: any) => c.cam_id === u.reference_id);
+        return {
+          id: u.id || u.reference_id,
+          name: colProfile?.cam_name || u.name || (u.email && typeof u.email === "string" ? u.email.split("@")[0] : u.reference_id) || "—",
+          email: u.email || "",
+          college_id: colProfile?.id || u.college_id || "",
+          college_name: colProfile?.name || "",
+          kam_id: colProfile?.kam_id || ""
+        } as CAMUserFromDB;
+      });
+  }, [usersList, colleges]);
+
+  const camList: CAMUserFromDB[] = propCamList ?? derivedCamList;
+  const isLoading = propIsLoading ?? (kamQuery.isLoading || usersQuery.isLoading);
+  const isError = propIsError ?? (kamQuery.isError || usersQuery.isError);
+  const onRefetch = propOnRefetch ?? (() => { kamQuery.refetch(); usersQuery.refetch(); });
+
+  const [localLoading, setLocalLoading] = useState<Record<string, boolean>>({});
+  const loadingActions = propLoadingActions ?? localLoading;
+
+  const handleDeleteCam = async (id: string) => {
+    if (propOnDeleteCam) return propOnDeleteCam(id);
+    if (!window.confirm("Are you sure you want to delete this Campus Manager?")) return;
+    setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`cam_${id}`]: true }));
+    try {
+      await app.deleteCAM(id);
+      app.refreshData();
+    } finally {
+      setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`cam_${id}`]: false }));
+    }
+  };
+  const [showModal, setShowModal] = useState(false);
+  const [editingCam, setEditingCam] = useState<boolean>(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [form, setForm] = useState({
+    id: "",
+    name: "",
+    email: "",
+    college_id: "",
+    kam_id: ""
+  });
+
+  const pagination = usePagination<CAMUserFromDB>(camList, {
+    pageSize: 10,
+    pageSizeOptions: [10, 25, 50]
+  });
+
+  const handleOpenAdd = () => {
+    setEditingCam(false);
+    setModalError(null);
+    const maxNum = (camList || []).reduce((acc: number, curr: CAMUserFromDB) => {
+      const num = parseInt(curr.id.replace("cam_", ""), 10);
+      return isNaN(num) ? acc : Math.max(acc, num);
+    }, 0);
+    setForm({
+      id: `cam_${maxNum + 1}`,
+      name: "",
+      email: "",
+      college_id: colleges[0]?.id || "",
+      kam_id: kamList[0]?.id || ""
+    });
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (cam: CAMUserFromDB) => {
+    setEditingCam(true);
+    setModalError(null);
+    setForm({
+      id: cam.id,
+      name: cam.name,
+      email: cam.email,
+      college_id: cam.college_id,
+      kam_id: cam.kam_id
+    });
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.id || !form.name || !form.email || !form.college_id) {
+      setModalError("Please fill in all required fields.");
+      return;
+    }
+    setIsSaving(true);
+    setModalError(null);
+    try {
+      if (editingCam) {
+        if (propOnUpdateCam) {
+          await propOnUpdateCam(form.id, form.name, form.email, form.college_id, form.kam_id);
+        } else {
+          await app.updateCAM({ id: form.id, name: form.name, email: form.email, college_id: form.college_id, kam_id: form.kam_id });
+          app.refreshData();
+        }
+      } else {
+        if (propOnCreateCam) {
+          await propOnCreateCam(form.id, form.name, form.email, form.college_id, form.kam_id);
+        } else {
+          await app.createCAM({ id: form.id, name: form.name, email: form.email, college_id: form.college_id, kam_id: form.kam_id });
+          app.refreshData();
+        }
+      }
+      setShowModal(false);
+    } catch (err: any) {
+      setModalError(err.message || "Failed to save Campus Manager.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 animate-fadeIn font-sans text-xs">
+      <PageHeader
+        icon={Users}
+        title="Campus Managers"
+        subtitle="Campus operations team and their reporting lines."
+        actions={
+          <Button
+            variant="ghost"
+            onClick={handleOpenAdd}
+            className="h-auto btn-gradient shadow-sm text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            Add Campus Manager
+          </Button>
+        }
+      />
+
+      <TableSurface
+        footer={
+          <Pagination
+            currentPage={pagination.page}
+            totalItems={camList.length}
+            pageSize={pagination.pageSize}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+            pageSizeOptions={pagination.pageSizeOptions}
+          />
+        }
+      >
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead className="hidden md:table-cell">Email Address</TableHead>
+            <TableHead>Reporting Campus</TableHead>
+            <TableHead className="hidden lg:table-cell">Reporting KAM Manager</TableHead>
+            <TableHead className="hidden lg:table-cell text-center">Courses</TableHead>
+            <TableHead className="hidden xl:table-cell text-center">Faculty Count</TableHead>
+            <TableHead className="hidden xl:table-cell text-center">Slots Booked</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isError ? (
+            <TableRow>
+              <TableCell colSpan={8} className="h-32 text-center">
+                <div className="flex flex-col items-center gap-3 text-rose-500">
+                  <AlertTriangle className="h-8 w-8" />
+                  <p className="text-sm font-semibold">
+                    Could not load Campus Managers. The credential directory may be temporarily unavailable.
+                  </p>
+                  <Button variant="outline" size="sm" onClick={onRefetch} isLoading={isLoading}>
+                    Retry
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : isLoading && camList.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={8} className="h-32 text-center">
+                <div className="flex flex-col items-center gap-2 text-gray-400">
+                  <Loader2 className="h-7 w-7 animate-spin text-indigo-500" />
+                  <p className="text-sm font-semibold">Loading Campus Managers…</p>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : camList.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={8} className="h-32 text-center">
+                <div className="flex flex-col items-center gap-2 text-gray-400">
+                  <Users className="h-8 w-8" />
+                  <p className="text-sm font-semibold">No Campus Managers found. Click "Add Campus Manager" to create one.</p>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : (
+            pagination.pageItems.map((cam: CAMUserFromDB) => {
+              const colObj = colleges.find((c) => c.id === cam.college_id);
+              const kamObj = kamList.find((k) => k.id === cam.kam_id);
+              const camMentors = mentors.filter((m) => m.college_id === cam.college_id);
+              const camSlots = slots.filter((s) => camMentors.some((m) => m.id === s.mentorId));
+              const camDeptsCount = Array.from(new Set(camMentors.map((m) => m.mentor_group).filter(Boolean))).length;
+
+              return (
+                <TableRow key={cam.id}>
+                  <TableCell className="font-bold text-gray-950">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-extrabold text-[10px]">
+                        {(cam.name || "")
+                          .split(" ")
+                          .filter(Boolean)
+                          .map((w: string) => w[0])
+                          .join("") || "?"}
+                      </div>
+                      {cam.name || "—"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell text-gray-500">{cam.email}</TableCell>
+                  <TableCell className="font-bold">{cam.college_name || (colObj ? colObj.name : "Unassigned")}</TableCell>
+                  <TableCell className="hidden lg:table-cell text-gray-600">{kamObj ? kamObj.name : "Unassigned"}</TableCell>
+                  <TableCell className="hidden lg:table-cell text-center font-bold">{camDeptsCount}</TableCell>
+                  <TableCell className="hidden xl:table-cell text-center font-bold">{camMentors.length}</TableCell>
+                  <TableCell className="hidden xl:table-cell text-center font-black text-indigo-600">
+                    {camSlots.length}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1.5">
+                      <Button variant="outline" size="icon" onClick={() => handleOpenEdit(cam)} title="Edit CM">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => handleDeleteCam(cam.id)}
+                        isLoading={loadingActions[`cam_${cam.id}`]}
+                        title="Delete CM"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </TableSurface>
+
+      {/* CAM Modal */}
+      {showModal && (
+        <Dialog
+          open={showModal}
+          onOpenChange={(next) => {
+            if (!next) setShowModal(false);
+          }}
+          ariaLabel="Campus Manager"
+          overlayClassName="bg-gray-900/50 backdrop-blur-sm p-4"
+          panelClassName="max-w-md overflow-hidden animate-slideUp p-0 space-y-0 max-h-[90vh]"
+        >
+          <div className="flex justify-between items-center p-6 border-b border-gray-100 bg-gray-50">
+            <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
+              <Users className="h-5 w-5 text-indigo-600" />
+              {editingCam ? "Edit Campus Manager" : "Add Campus Manager"}
+            </h3>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Close CAM dialog"
+              onClick={() => setShowModal(false)}
+              className="h-auto w-auto p-1 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs font-semibold">
+            {modalError && (
+              <div
+                role="alert"
+                className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-bold flex items-center gap-1.5"
+              >
+                <ShieldAlert className="h-4 w-4 shrink-0" />
+                {modalError}
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-gray-400 uppercase tracking-wider block">CM ID</label>
+              <Input
+                aria-label="CM ID"
+                type="text"
+                required
+                placeholder="e.g. cam_3"
+                disabled={editingCam}
+                value={form.id}
+                onChange={(e) => setForm({ ...form, id: e.target.value })}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 disabled:bg-gray-100 disabled:text-gray-400"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Full Name</label>
+              <Input
+                aria-label="Full Name"
+                type="text"
+                required
+                placeholder="e.g. Priya Venkatesh"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Email Address</label>
+              <Input
+                aria-label="Email Address"
+                type="email"
+                required
+                placeholder="e.g. priya.cam@faceprep.in"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Assigned Campus</label>
+              <Select
+                aria-label="Assigned Campus"
+                required
+                value={form.college_id}
+                onChange={(e) => setForm({ ...form, college_id: e.target.value })}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer"
+              >
+                <option value="">Select Campus</option>
+                {colleges.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Reporting KAM Manager</label>
+              <Select
+                aria-label="Reporting KAM Manager"
+                required
+                value={form.kam_id}
+                onChange={(e) => setForm({ ...form, kam_id: e.target.value })}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer"
+              >
+                <option value="">Select Reporting KAM</option>
+                {kamList.map((kam) => (
+                  <option key={kam.id} value={kam.id}>
+                    {kam.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="h-auto px-4 py-2 hover:bg-gray-100 text-gray-500 rounded-xl transition-all font-bold cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <LoadingButton
+                type="submit"
+                isLoading={isSaving}
+                loadingText="Saving..."
+                variant="gradient"
+                className="px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+              >
+                {editingCam ? "Update CM" : "Create CM"}
+              </LoadingButton>
+            </div>
+          </form>
+        </Dialog>
+      )}
+    </div>
+  );
+};

@@ -1,15 +1,16 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const resolvedParams = await params;
     const requestId = resolvedParams.id;

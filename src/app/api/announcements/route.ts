@@ -1,11 +1,22 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
+import { renderAnnouncementEmail, BRAND } from "@/lib/mail";
+
+const ANNOUNCE_READ_ROLES: Role[] = [
+  "admin", "cm", "kam", "sme", "mentor", "student", "fee_manager", "L and D", "hr"
+];
 
 export async function GET(request: Request) {
+  const { errorResponse } = await requireAuth(request, {
+    allowedRoles: ANNOUNCE_READ_ROLES,
+    checkCsrf: false
+  });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
@@ -35,6 +46,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const body = await request.json();
@@ -44,7 +58,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Title is required" }, { status: 400 });
     }
 
-    const newId = `ann_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const newId = generateId("ann");
     const nowStr = new Date().toISOString();
 
     await db.run(
@@ -52,6 +66,62 @@ export async function POST(request: Request) {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [newId, title, description || null, created_by || "Admin", target_role || "All", college_id || null, nowStr]
     );
+
+    // Email mentors (and other target roles) for this announcement.
+    // Only fire emails when a specific college is targeted — system-wide "All"
+    // announcements go to potentially hundreds of colleges; those should use
+    // the in-app notification system rather than mass email to avoid spam.
+    // The directory reads that build the recipient list only feed mail, so they are
+    // deferred with the send instead of holding up the admin's POST.
+    if (college_id) {
+      after(async () => {
+        try {
+          const { dispatchMail } = await import("@/lib/mailAsync");
+          const wantsMentors = !target_role || target_role === "All" || target_role === "mentor";
+          const wantsCms = !target_role || target_role === "All" || target_role === "cm";
+
+          const [mentorRows, cmRows] = await db.multiQuery([
+            wantsMentors
+              ? { sql: "SELECT email FROM mentors WHERE college_id = ? AND email IS NOT NULL AND email != ''", params: [college_id] }
+              : { sql: "SELECT 1 WHERE 1=0" },
+            wantsCms
+              ? { sql: "SELECT email FROM campus_managers WHERE college_id = ? AND email IS NOT NULL AND email != ''", params: [college_id] }
+              : { sql: "SELECT 1 WHERE 1=0" },
+          ]);
+
+          const recipientEmails = Array.from(
+            new Set(
+              [...mentorRows, ...cmRows]
+                .map((r: any) => r.email)
+                .filter(Boolean)
+                .map((e: string) => e.toLowerCase().trim())
+            )
+          );
+
+          if (recipientEmails.length === 0) return;
+
+          const dateStr = new Date().toLocaleDateString("en-IN", {
+            day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata"
+          });
+
+          await dispatchMail({
+            to: recipientEmails[0],       // proper To for the first address
+            bcc: recipientEmails.slice(1), // rest in BCC — no roster leak
+            subject: `${BRAND.emailPrefix} ${title}`,
+            htmlBody: renderAnnouncementEmail({
+              recipientName: "Team",
+              title,
+              message: description || title,
+              category: target_role && target_role !== "All" ? `${target_role} Notice` : "University Notice",
+              dateStr,
+            }),
+            context: "announcement-notify",
+          });
+        } catch (_) {
+          /* Announcement is already stored; mail failure must not undo it. */
+        }
+      });
+    }
 
     return NextResponse.json({ success: true, message: "Announcement created successfully." });
   } catch (error: any) {
@@ -61,6 +131,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+  if (errorResponse) return errorResponse;
+
   try {
     const db = await getDb();
     const { searchParams } = new URL(request.url);

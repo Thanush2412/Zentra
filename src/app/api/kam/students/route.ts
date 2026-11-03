@@ -1,15 +1,20 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireKamScope, resolveScopeParams } from "@/lib/kamScope";
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("collegeId");
-    const kamId = searchParams.get("kamId");
+    const scoped = resolveScopeParams(scope!, searchParams.get("kamId"), searchParams.get("collegeId"));
+    if (scoped.errorResponse) return scoped.errorResponse;
+    const collegeId = scoped.collegeId;
+    const kamId = scoped.kamId;
     const department = searchParams.get("department");
     const classGroup = searchParams.get("classGroup");
     const risk = searchParams.get("risk"); // "all" | "healthy" | "at_risk" | "critical"

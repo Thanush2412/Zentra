@@ -1,8 +1,7 @@
-// Pin to Mumbai (bom1) — co-located with Supabase DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/authGuard";
 import { PARTNER_FEEDBACK, sbRest, normCollegeName } from "@/lib/audit-sources";
 
 // ── Client (Partner) NPS — proxied from the legacy faceprep_feedback table ──
@@ -25,6 +24,8 @@ function classify(score: number): "promoter" | "passive" | "detractor" {
 }
 
 export async function GET(request: Request) {
+  const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "kam", "cm"] });
+  if (errorResponse) return errorResponse;
   try {
     const { searchParams } = new URL(request.url);
     const college = (searchParams.get("college") || "").trim();
@@ -59,22 +60,8 @@ export async function GET(request: Request) {
           );
         `);
 
-        // Check if table is empty, and seed verified partner feedback if needed
-        const countRes = await db.get(`SELECT count(*)::int as count FROM faceprep_feedback`);
-        const rowCount = Number(countRes?.count ?? 0);
-        if (rowCount === 0) {
-          await db.exec(`
-            INSERT INTO faceprep_feedback (full_name, designation, college_university, recommendation_score, best_this_period, improvement_next_quarter, satisfied_faculty, satisfied_content, satisfied_academic_ops, satisfied_skill_development, satisfied_placement_support, submitted_at)
-            VALUES
-            ('Dr. A. Ramasamy', 'Principal & Head of Academics', 'Kamaraj College', 10, 'Technical trainer engagement in BCA & B.Com lab classes has been exemplary. High student attendance.', 'Include additional aptitude mocks prior to upcoming company placements.', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', '2026-03-08 10:30:00+00'),
-            ('Prof. S. Meenakshi', 'Dean of Academic Affairs', 'Kamaraj College', 9, 'Punctuality and daily syllabus completion tracking by CAM is very transparent and well managed.', 'More advanced coding challenges on competitive programming platforms.', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', '2026-02-18 14:15:00+00'),
-            ('Dr. K. Balaji', 'Placement Director & HOD', 'Kamaraj College', 8, 'Students have shown marked improvement in confidence during technical mock interviews.', 'Earlier scheduling of company-specific prep modules for final years.', 'Yes', 'Yes', 'Yes', 'Yes', 'No', '2026-01-22 11:00:00+00'),
-            ('Dr. R. Manickam', 'Vice Principal', 'Rathinam Global Deemed to be University', 10, 'Comprehensive skill development tracking and hands-on GitHub project submissions.', 'Expand elective choices for AI and Cloud specializations.', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', '2026-03-11 09:45:00+00'),
-            ('Prof. Priya Sharma', 'Head of Placements', 'Alliance University', 9, 'Outstanding mentor delivery and structured coursework aligned with modern industrial demands.', 'Continue weekly mock evaluation drives.', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', '2026-03-02 16:20:00+00'),
-            ('Sr. Dr. M. Venissa', 'Principal', 'St. Agnes College (Autonomous)', 9, 'Disciplined execution, prompt attendance sync, and dedicated student mentoring.', 'Organize hackathons at intra-college level.', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', '2026-02-27 12:10:00+00');
-          `);
-        }
-
+        // The table is created empty on purpose: this route used to seed half a dozen
+        // invented "partner" responses here, which then read as real NPS data forever.
         rows = await db.all(`
           SELECT full_name, college_university, recommendation_score, best_this_period, improvement_next_quarter,
                  satisfied_faculty, satisfied_content, satisfied_academic_ops, satisfied_skill_development,

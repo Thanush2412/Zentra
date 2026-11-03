@@ -16,18 +16,16 @@ import {
   Lock,
   Mail,
   AlertCircle,
-  Loader2,
   Building2,
-  Users,
   ArrowRight,
   Eye,
   EyeOff,
   GraduationCap,
   Layers,
-  ClipboardList,
   IndianRupee,
   Award,
-  Calendar
+  Calendar,
+  X
 } from "lucide-react";
 
 
@@ -43,10 +41,9 @@ export default function Home() {
     mentors,
     students,
     colleges,
-    submitSignupRequest
+    submitSignupRequest,
+    logout
   } = useApp();
-
-  const [sessionLoading, setSessionLoading] = useState(true);
 
   // Login Form State
   const [email, setEmail] = useState("");
@@ -54,7 +51,7 @@ export default function Home() {
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
-  const [showDemoDropdown, setShowDemoDropdown] = useState(false);
+  const [showForgotNote, setShowForgotNote] = useState(false);
 
   // Signup Mode States
   const [isSignupMode, setIsSignupMode] = useState(false);
@@ -88,6 +85,22 @@ export default function Home() {
   // Master Role Access Modal — shown when the server reports a super-admin role
   const [showMasterRoleModal, setShowMasterRoleModal] = useState(false);
   const [sessionUserName, setSessionUserName] = useState("");
+  const superAdminUserIdRef = React.useRef<string | undefined>(undefined);
+
+  const handleExitMasterModal = async () => {
+    setShowMasterRoleModal(false);
+    try {
+      // Revoke the cookie-issued session even though no workspace was chosen yet.
+      await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "logout" }),
+      });
+    } catch {
+      // Offline logout still clears local state below.
+    }
+    logout();
+  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,14 +132,25 @@ export default function Home() {
         localStorage.setItem("fp_user_name", resolvedName);
         if (data.collegeId) {
           localStorage.setItem("fp_user_college_id", data.collegeId);
+        } else {
+          localStorage.removeItem("fp_user_college_id");
         }
         setSessionUserName(resolvedName);
+
+        // A forced password change applies to every account, super admins included,
+        // so this must run before the master-role modal early return below.
+        if (data.mustChangePassword) {
+          localStorage.setItem("fp_must_change_pass", "true");
+        } else {
+          localStorage.removeItem("fp_must_change_pass");
+        }
 
         // Super-admin access is decided server-side from the stored role — never from the email
         const isSuperAdmin = !!data.isSuperAdmin;
         setSuperAdminSession(isSuperAdmin);
 
         if (isSuperAdmin) {
+          superAdminUserIdRef.current = data.userId || undefined;
           setShowMasterRoleModal(true);
           return;
         }
@@ -137,14 +161,8 @@ export default function Home() {
           userName: resolvedName,
           isSuperAdmin
         });
-        if (data.mustChangePassword) {
-          localStorage.setItem("fp_must_change_pass", "true");
-        } else {
-          localStorage.removeItem("fp_must_change_pass");
-        }
-        
-        // Redirect based on role
-        router.push(getRoleHomePath(data.role));
+
+        // Navigation is handled by the auth effect above so there is a single redirect authority.
       } else {
         setLoginError(data.message || data.error || "Login failed. Please check your credentials.");
       }
@@ -155,8 +173,7 @@ export default function Home() {
     }
   };
 
-  const handleSignupSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignupSubmit = async (e: React.FormEvent) => {    e.preventDefault();
     setSignupError("");
     setSignupSuccess("");
 
@@ -268,7 +285,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-9 w-auto object-contain" />
           </div>
-          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[9px] font-bold text-slate-550 uppercase tracking-widest flex items-center gap-1">
+          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[9px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
             <Sparkles className="h-2.5 w-2.5 text-amber-500" /> Live Database
           </span>
         </div>
@@ -295,14 +312,14 @@ export default function Home() {
                 // --- SIGNUP FORM ---
                 <form onSubmit={handleSignupSubmit} className="space-y-4">
                   {signupError && (
-                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div role="alert" className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-600 flex items-start gap-2.5 animate-slideDown">
                       <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                       <span className="font-semibold leading-relaxed">{signupError}</span>
                     </div>
                   )}
 
                   {signupSuccess && (
-                    <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div role="status" className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-600 flex items-start gap-2.5 animate-slideDown">
                       <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5" />
                       <span className="font-semibold leading-relaxed">{signupSuccess}</span>
                     </div>
@@ -310,12 +327,14 @@ export default function Home() {
 
                   {/* Name Input */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                    <label htmlFor="signup-name" className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
                       Full Name
                     </label>
                     <input
+                      id="signup-name"
                       type="text"
                       required
+                      autoComplete="name"
                       placeholder="John Doe"
                       value={signupName}
                       onChange={(e) => setSignupName(e.target.value)}
@@ -326,13 +345,15 @@ export default function Home() {
 
                   {/* Email Input */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                    <label htmlFor="signup-email" className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
                       Email address
                     </label>
                     <input
+                      id="signup-email"
                       type="email"
                       required
-                      placeholder="john.doe@university.edu"
+                      autoComplete="email"
+                      placeholder="e.g. john.doe@faceprep.in"
                       value={signupEmail}
                       onChange={(e) => setSignupEmail(e.target.value)}
                       className="w-full bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all shadow-sm"
@@ -342,12 +363,14 @@ export default function Home() {
 
                   {/* Password Input */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                    <label htmlFor="signup-password" className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
                       Password
                     </label>
                     <input
+                      id="signup-password"
                       type="password"
                       required
+                      autoComplete="new-password"
                       placeholder="••••••••"
                       value={signupPassword}
                       onChange={(e) => setSignupPassword(e.target.value)}
@@ -358,12 +381,14 @@ export default function Home() {
 
                   {/* Re-enter Password Input */}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
+                    <label htmlFor="signup-confirm-password" className="text-[10px] font-black text-slate-600 uppercase tracking-wider block">
                       Re-enter Password
                     </label>
                     <input
+                      id="signup-confirm-password"
                       type="password"
                       required
+                      autoComplete="new-password"
                       placeholder="••••••••"
                       value={signupConfirmPassword}
                       onChange={(e) => setSignupConfirmPassword(e.target.value)}
@@ -373,23 +398,16 @@ export default function Home() {
                   </div>
 
                   {/* Submit Button */}
-                  <button
+                  <LoadingButton
                     type="submit"
-                    disabled={signupLoading}
-                    className="w-full btn-gradient font-bold py-3 rounded-xl text-sm transition-all shadow-md mt-2 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-70"
+                    isLoading={signupLoading}
+                    loadingText="Submitting request…"
+                    variant="gradient"
+                    icon={<ArrowRight className="h-4 w-4" />}
+                    className="w-full py-3 rounded-xl text-sm mt-2"
                   >
-                    {signupLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Submitting request…
-                      </>
-                    ) : (
-                      <>
-                        Submit Access Request
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    )}
-                  </button>
+                    Submit Access Request
+                  </LoadingButton>
 
                   <button
                     type="button"
@@ -407,7 +425,7 @@ export default function Home() {
                 // --- LOGIN FORM ---
                 <>
                   {loginError && (
-                    <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-600 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div id="login-error" role="alert" className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-600 flex items-start gap-2.5 animate-slideDown">
                       <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                       <span className="font-semibold leading-relaxed">{loginError}</span>
                     </div>
@@ -424,12 +442,14 @@ export default function Home() {
                         <input
                           id="login-email"
                           type="text"
-                          placeholder="your.name@university.edu"
+                          placeholder="e.g. your.name@faceprep.in"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           className="w-full bg-slate-50/70 border border-slate-200 rounded-xl pl-11 pr-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all duration-200 shadow-sm"
                           disabled={loginLoading}
                           autoComplete="email"
+                          aria-invalid={Boolean(loginError)}
+                          aria-describedby={loginError ? "login-error" : undefined}
                         />
                       </div>
                     </div>
@@ -440,7 +460,7 @@ export default function Home() {
                         Password
                       </label>
                       <div className="relative group">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-450 group-focus-within:text-slate-800 transition-colors pointer-events-none" />
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-slate-800 transition-colors pointer-events-none" />
                         <input
                           id="login-password"
                           type={showPassword ? "text" : "password"}
@@ -450,17 +470,38 @@ export default function Home() {
                           className="w-full bg-slate-50/70 border border-slate-200 rounded-xl pl-11 pr-11 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-800/10 focus:border-slate-800 focus:bg-white transition-all duration-200 shadow-sm"
                           disabled={loginLoading}
                           autoComplete="current-password"
+                          aria-invalid={Boolean(loginError)}
+                          aria-describedby={loginError ? "login-error" : undefined}
                         />
                         <button
                           type="button"
-                          tabIndex={-1}
                           onClick={() => setShowPassword((v) => !v)}
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          aria-pressed={showPassword}
                           className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
                         >
                           {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
                         </button>
                       </div>
                     </div>
+
+                    {/* Forgot Password */}
+                    <div className="flex justify-end -mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotNote((v) => !v)}
+                        aria-expanded={showForgotNote}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+
+                    {showForgotNote && (
+                      <p role="status" className="text-[11px] leading-relaxed text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 animate-slideDown">
+                        Password resets are handled by your administrator — ask your Campus Manager or the Super Admin to reset it from Admin → User Credentials.
+                      </p>
+                    )}
 
                     {/* Sign In Button */}
                     <LoadingButton
@@ -501,7 +542,15 @@ export default function Home() {
       {/* ── MASTER ROLE ACCESS SELECTION MODAL (super-admin accounts only) ── */}
       {showMasterRoleModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 animate-scaleUp max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 animate-scaleUp max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={handleExitMasterModal}
+              aria-label="Cancel and sign out"
+              className="absolute top-3.5 right-3.5 h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
             {/* Modal Header */}
             <div className="text-center space-y-2 border-b border-slate-100 pb-5">
               <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-[#D528A2] text-white shadow-md mx-auto">
@@ -509,7 +558,7 @@ export default function Home() {
               </div>
               <h2 className="text-xl font-black text-slate-900 tracking-tight">Master Role Access Activated</h2>
               <p className="text-xs font-semibold text-slate-500 max-w-md mx-auto">
-                Welcome <span className="text-indigo-600 font-extrabold">{sessionUserName || (typeof window !== "undefined" ? localStorage.getItem("fp_user_name") : "") || "Administrator"}</span>! You have full access to all 9 system workspaces. Choose a dashboard to launch:
+                Welcome <span className="text-indigo-600 font-extrabold">{sessionUserName || (typeof window !== "undefined" ? localStorage.getItem("fp_user_name") : "") || "Administrator"}</span>! You have full access to all 8 system workspaces. Choose a dashboard to launch:
               </p>
             </div>
 
@@ -521,7 +570,6 @@ export default function Home() {
                 { id: "mentor", label: "Faculty Workspace", desc: "Schedules, logs & permissions", path: "/mentor", icon: GraduationCap, color: "from-emerald-600 to-teal-600" },
                 { id: "kam", label: "KAM Portfolio", desc: "Multi-campus account oversight", path: "/kam", icon: Layers, color: "from-purple-600 to-indigo-600" },
                 { id: "student", label: "Student Portal", desc: "Class schedule & task tracker", path: "/student", icon: User, color: "from-blue-600 to-sky-600" },
-                { id: "hr", label: "HR Audit Portal", desc: "Conduction & attendance logs", path: "/hr", icon: ClipboardList, color: "from-orange-600 to-amber-600" },
                 { id: "fee_manager", label: "Fee Collections", desc: "Student fee dues & receipts", path: "/fee-manager", icon: IndianRupee, color: "from-teal-600 to-emerald-600" },
                 { id: "sme", label: "SME Evaluation", desc: "Mock interviews & grading", path: "/sme", icon: Award, color: "from-rose-600 to-pink-600" },
                 { id: "L and D", label: "Learning & Development (L&D)", desc: "L&D sessions & faculty slots", path: "/l-and-d", icon: Calendar, color: "from-amber-600 to-orange-600" },
@@ -532,10 +580,9 @@ export default function Home() {
                     key={w.id}
                     type="button"
                     onClick={() => {
-                      setRole(w.id as any, undefined, { isSuperAdmin: true, userName: sessionUserName });
+                      setRole(w.id as any, superAdminUserIdRef.current, { isSuperAdmin: true, userName: sessionUserName });
                       localStorage.setItem("fp_current_role", w.id);
                       localStorage.setItem("fp_logged_in", "true");
-                      router.push(w.path);
                     }}
                     className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left flex flex-col justify-between group cursor-pointer relative overflow-hidden"
                   >

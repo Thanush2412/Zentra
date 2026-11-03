@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS subjects (
     college_id VARCHAR(255),
     year VARCHAR(50),
     weekly_hours INTEGER DEFAULT 4,
+    shift VARCHAR(50) DEFAULT 'general',
     subject_group VARCHAR(255),
     mentor_group VARCHAR(255)
 );
@@ -282,7 +283,7 @@ CREATE TABLE IF NOT EXISTS approved_handovers (
 CREATE TABLE IF NOT EXISTS student_attendance (
     id VARCHAR(255) PRIMARY KEY,
     studentId VARCHAR(255) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    slotId VARCHAR(255) NOT NULL REFERENCES slots(id) ON DELETE CASCADE,
+    slotId VARCHAR(255) REFERENCES slots(id) ON DELETE SET NULL,
     dateStr VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL,
     markedBy VARCHAR(255),
@@ -290,6 +291,7 @@ CREATE TABLE IF NOT EXISTS student_attendance (
     type VARCHAR(50) DEFAULT 'Regular',
     mode VARCHAR(50) DEFAULT 'Offline',
     attendanceTypeSub VARCHAR(100),
+    coveredsubject TEXT,
     correction_count INTEGER DEFAULT 0,
     notes TEXT,
     UNIQUE(studentId, slotId, dateStr)
@@ -340,6 +342,8 @@ CREATE TABLE IF NOT EXISTS academic_tracker (
     college_id VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    weekly_plan_id TEXT,
+    weekly_plan_week INTEGER,
     UNIQUE(mentor_id, date, period_slot, subject, class_group)
 );
 
@@ -511,6 +515,9 @@ CREATE TABLE IF NOT EXISTS student_interview_slots (
     target_date VARCHAR(50),
     gmeet_link TEXT,
     gcal_link TEXT,
+    actual_start_time TEXT,
+    actual_end_time TEXT,
+    actual_duration_minutes INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -531,6 +538,9 @@ CREATE TABLE IF NOT EXISTS interview_evaluations (
     questions_asked TEXT,
     remarks TEXT,
     status VARCHAR(100) DEFAULT 'Cleared',
+    actual_start_time TEXT,
+    actual_end_time TEXT,
+    actual_duration_minutes INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -549,6 +559,7 @@ CREATE TABLE IF NOT EXISTS student_fees (
     due_date VARCHAR(50),
     status VARCHAR(50) DEFAULT 'unpaid',
     pay_link TEXT,
+    payment_proof TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -572,7 +583,11 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     description TEXT NOT NULL,
     actorName VARCHAR(255) NOT NULL,
     actorRole VARCHAR(100) NOT NULL,
-    timestamp VARCHAR(100) NOT NULL
+    timestamp VARCHAR(100) NOT NULL,
+    old_status TEXT,
+    new_status TEXT,
+    reason TEXT,
+    changed_by TEXT
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -679,6 +694,7 @@ CREATE TABLE IF NOT EXISTS sme_users (
     email VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL DEFAULT 'password123',
     subject VARCHAR(255),
+    department VARCHAR(255),
     is_head_sme INTEGER DEFAULT 0,
     head_subject_group VARCHAR(255),
     mentor_group VARCHAR(255)
@@ -726,6 +742,7 @@ CREATE TABLE IF NOT EXISTS demo_sessions (
     status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
     marks INTEGER,
     comments TEXT,
+    checklist TEXT,
     created_at VARCHAR(100) NOT NULL
 );
 
@@ -822,6 +839,8 @@ CREATE TABLE IF NOT EXISTS kam_tasks (
     id VARCHAR(255) PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     collegeId VARCHAR(255),
+    assigned_cam_id VARCHAR(255),
+    description TEXT,
     priority VARCHAR(50) NOT NULL DEFAULT 'medium',
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     dueDate VARCHAR(50) NOT NULL,
@@ -834,6 +853,7 @@ CREATE TABLE IF NOT EXISTS campus_issues (
     type VARCHAR(100) NOT NULL,
     priority VARCHAR(50) NOT NULL,
     desc_text TEXT,
+    notes TEXT,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     collegeId VARCHAR(255) NOT NULL,
     collegeName VARCHAR(255),
@@ -863,7 +883,16 @@ CREATE TABLE IF NOT EXISTS feedback_reports (
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     status VARCHAR(50) DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    admin_notes TEXT,
+    resolved_by VARCHAR(255),
+    resolved_at TEXT,
+    user_name VARCHAR(255),
+    college_id VARCHAR(255),
+    college_name VARCHAR(255),
+    department VARCHAR(255),
+    register_number VARCHAR(255),
+    contact_info VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS campus_drafts (
@@ -957,6 +986,303 @@ CREATE INDEX IF NOT EXISTS idx_dconfig             ON campus_daily_configs (coll
 CREATE INDEX IF NOT EXISTS idx_handover_slot       ON approved_handovers (slotId, dateStr);
 CREATE INDEX IF NOT EXISTS idx_handover_req        ON handover_requests (requestorId, status);
 CREATE INDEX IF NOT EXISTS idx_mentor_att_clg_date ON mentor_attendance (college_id, date_str);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Applied-migration ledger. Written by src/lib/migrations.ts at server start so
+-- a new instance does not replay every migration on each cold start.
+-- (schema_migrations above is the legacy SQLite version table, left untouched.)
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS applied_migrations (
+    name VARCHAR(255) PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Tables declared here for a complete fresh build. They are also created by
+-- runtime migrations (src/lib/migrations.ts), so existing databases converge
+-- without re-running this file.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    session_id_hash VARCHAR(128) PRIMARY KEY,
+    user_id VARCHAR(128) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_activity_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ NOT NULL,
+    is_revoked BOOLEAN DEFAULT FALSE,
+    revoked_at TIMESTAMPTZ,
+    revoked_reason VARCHAR(255),
+    csrf_secret VARCHAR(128) NOT NULL,
+    ip_address VARCHAR(64) DEFAULT 'Unknown',
+    user_agent TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_sessions_validity ON user_sessions(session_id_hash, is_revoked, expires_at);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id TEXT PRIMARY KEY,
+    email_key TEXT NOT NULL,
+    ip TEXT,
+    success INTEGER NOT NULL DEFAULT 0,
+    attempted_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts (email_key, attempted_at);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts (ip, attempted_at);
+
+CREATE TABLE IF NOT EXISTS campus_audits (
+    id TEXT PRIMARY KEY,
+    uid TEXT UNIQUE NOT NULL,
+    college_id TEXT,
+    campus TEXT NOT NULL,
+    mentor_id TEXT,
+    mentor_name TEXT NOT NULL,
+    department TEXT,
+    dept_name TEXT,
+    subject TEXT NOT NULL,
+    audit_date TEXT NOT NULL,
+    auditor_name TEXT,
+    auditor_role TEXT,
+    skill_criteria TEXT,
+    skill_score INTEGER DEFAULT 0,
+    tasks_assigned INTEGER DEFAULT 0,
+    tasks_completed INTEGER DEFAULT 0,
+    skill_proof_link TEXT,
+    skill_remarks TEXT,
+    coursework_criteria TEXT,
+    coursework_score INTEGER DEFAULT 0,
+    coursework_remarks TEXT,
+    attendance_criteria TEXT,
+    attendance_score INTEGER DEFAULT 0,
+    below_75_count INTEGER DEFAULT 0,
+    attendance_remarks TEXT,
+    kam_id TEXT,
+    kam_name TEXT,
+    reviewer_college_id TEXT,
+    reviewer_campus TEXT NOT NULL,
+    reviewer_cm_name TEXT,
+    peer_status TEXT NOT NULL DEFAULT 'Pending',
+    peer_signoff_notes TEXT,
+    peer_signed_by TEXT,
+    peer_signed_at TEXT,
+    overall_status TEXT NOT NULL DEFAULT 'In Progress',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cm_attendance (
+    id VARCHAR(255) PRIMARY KEY,
+    cam_id VARCHAR(255) NOT NULL,
+    college_id VARCHAR(255) NOT NULL,
+    date_str VARCHAR(32) NOT NULL,
+    status VARCHAR(64) NOT NULL,
+    punch_in_time VARCHAR(32),
+    punch_out_time VARCHAR(32),
+    reason TEXT,
+    approved_by VARCHAR(255),
+    approval_status VARCHAR(32) DEFAULT 'pending',
+    approval_notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (cam_id, date_str)
+);
+
+CREATE TABLE IF NOT EXISTS cm_leave_requests (
+    id VARCHAR(255) PRIMARY KEY,
+    cam_id VARCHAR(255) NOT NULL,
+    college_id VARCHAR(255) NOT NULL,
+    kam_id VARCHAR(255),
+    request_type VARCHAR(64) NOT NULL,
+    start_date VARCHAR(32) NOT NULL,
+    end_date VARCHAR(32) NOT NULL,
+    start_time VARCHAR(32),
+    end_time VARCHAR(32),
+    reason TEXT NOT NULL,
+    status VARCHAR(32) DEFAULT 'pending',
+    approved_by VARCHAR(255),
+    rejection_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS demo_evaluation_criteria (
+    id TEXT PRIMARY KEY,
+    department TEXT NOT NULL,
+    label TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'checkbox',
+    threshold REAL,
+    scale REAL,
+    is_active INTEGER DEFAULT 1,
+    is_system INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS demo_reallocation_requests (
+    id TEXT PRIMARY KEY,
+    demo_session_id TEXT NOT NULL,
+    leave_request_id TEXT,
+    mentor_id TEXT NOT NULL,
+    mentor_name TEXT,
+    sme_id TEXT,
+    sme_name TEXT,
+    subject TEXT,
+    stream TEXT,
+    week INTEGER,
+    original_date_str TEXT NOT NULL,
+    original_time_slot TEXT NOT NULL,
+    proposed_date_str TEXT NOT NULL,
+    proposed_time_slot TEXT NOT NULL,
+    reason TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    request_kind TEXT DEFAULT 'leave',
+    proposed_by TEXT,
+    decided_by TEXT,
+    decided_at TEXT,
+    decision_notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mentor_nps_monthly (
+    id SERIAL PRIMARY KEY,
+    college_name TEXT NOT NULL,
+    month_key TEXT NOT NULL,
+    nps_index INTEGER,
+    promoters INTEGER DEFAULT 0,
+    passives INTEGER DEFAULT 0,
+    detractors INTEGER DEFAULT 0,
+    total_responses INTEGER DEFAULT 0,
+    avg_rating NUMERIC,
+    mentor_count INTEGER DEFAULT 0,
+    payload TEXT,
+    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (college_name, month_key)
+);
+
+CREATE TABLE IF NOT EXISTS mentor_skill_clearances (
+    id TEXT PRIMARY KEY,
+    college_id TEXT,
+    mentor_id TEXT NOT NULL,
+    mentor_name TEXT,
+    subject TEXT NOT NULL,
+    subject_type TEXT DEFAULT 'Skill',
+    week_number INTEGER NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'week',
+    topic TEXT,
+    demo_session_id TEXT,
+    weekly_plan_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    score INTEGER,
+    remarks TEXT,
+    verified_by TEXT,
+    verified_at TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS mentor_weekly_plans (
+    id VARCHAR(255) PRIMARY KEY,
+    college_id VARCHAR(255) NOT NULL,
+    mentor_id VARCHAR(255) NOT NULL,
+    mentor_name VARCHAR(255),
+    department VARCHAR(255),
+    subject VARCHAR(255) NOT NULL,
+    class_group VARCHAR(255) NOT NULL,
+    week_number INTEGER NOT NULL,
+    start_date VARCHAR(50),
+    end_date VARCHAR(50),
+    unit VARCHAR(255),
+    topics_planned TEXT,
+    session_plan TEXT,
+    learning_objectives TEXT,
+    teaching_mode VARCHAR(50) DEFAULT 'Offline',
+    material_url TEXT,
+    status VARCHAR(50) DEFAULT 'Submitted',
+    cam_feedback TEXT,
+    sme_remarks TEXT,
+    verified_by VARCHAR(255),
+    verified_at VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS student_achievements (
+    id VARCHAR(255) PRIMARY KEY,
+    college_id VARCHAR(255) NOT NULL,
+    title TEXT NOT NULL,
+    topic TEXT,
+    participation_type TEXT DEFAULT 'individual',
+    team_name TEXT,
+    achievement_level TEXT DEFAULT 'National Level',
+    organizer TEXT,
+    category VARCHAR(100) DEFAULT 'Hackathon & Competitions',
+    description TEXT,
+    date_str VARCHAR(50) NOT NULL,
+    badge VARCHAR(100) DEFAULT 'Winner',
+    reward_prize TEXT,
+    event_name TEXT,
+    proof_link TEXT,
+    photos TEXT,
+    student_ids TEXT,
+    student_names TEXT,
+    added_by VARCHAR(255) DEFAULT 'Campus Manager',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS student_mentor_feedback (
+    id TEXT PRIMARY KEY,
+    register_number TEXT NOT NULL,
+    student_name TEXT,
+    email TEXT,
+    college_id TEXT,
+    college_name TEXT,
+    department TEXT,
+    class_group TEXT,
+    ape_q1_assessments TEXT,
+    ape_q2_study_materials TEXT,
+    ape_q2_missing_papers TEXT,
+    ape_q3_hands_on_rating INTEGER,
+    ape_q4_confidence_rating INTEGER,
+    challenges_selected TEXT,
+    challenges_detail TEXT,
+    challenges_suggestions TEXT,
+    nps_score INTEGER,
+    nps_fu1_campus_satisfied TEXT,
+    nps_fu2_classroom_satisfied TEXT,
+    nps_fu3_skill_dev TEXT,
+    nps_fu4_placement TEXT,
+    nps_likes TEXT,
+    nps_improve TEXT,
+    mentor_ratings TEXT,
+    full_payload TEXT,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Hot-path indexes (auth fallbacks, attendance windows, feeds).
+CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_mentors_email_lower ON mentors(LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_students_email_lower ON students(LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_campus_managers_email_lower ON campus_managers(LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_kam_users_email_lower ON kam_users(LOWER(email));
+
+CREATE INDEX IF NOT EXISTS idx_student_attendance_studentid    ON student_attendance(studentid);
+CREATE INDEX IF NOT EXISTS idx_student_attendance_slotid       ON student_attendance(slotid);
+CREATE INDEX IF NOT EXISTS idx_student_attendance_student_date ON student_attendance(studentid, datestr);
+CREATE INDEX IF NOT EXISTS idx_student_attendance_slot_date    ON student_attendance(slotid, datestr);
+CREATE INDEX IF NOT EXISTS idx_student_attendance_date         ON student_attendance(datestr);
+CREATE INDEX IF NOT EXISTS idx_students_college                ON students(college_id);
+CREATE INDEX IF NOT EXISTS idx_mentors_college                 ON mentors(college_id);
+
+CREATE INDEX IF NOT EXISTS idx_leave_requests_studentid        ON leave_requests(studentid);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_timestamp        ON leave_requests(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_login_history_user_id           ON login_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created      ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_faculty_leave_status            ON faculty_leave_requests(status);
+CREATE INDEX IF NOT EXISTS idx_handover_requests_timestamp     ON handover_requests(timestamp DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Partner / Client NPS feedback intake (Partner-Feedback-Form submissions).

@@ -1,6 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { getSemestersForCourse } from "@/lib/semesters";
+import { generateId } from "@/lib/id";
 import {
   Award,
   Calendar,
@@ -25,6 +30,9 @@ import {
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { Dialog } from "@/components/ui/dialog";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
 import {
   getCollegeOperatingHours,
   parseTimeToMinutes
@@ -77,17 +85,14 @@ const PRESET_EXAM_SUGGESTIONS = [
 export const ExamScheduleManager: React.FC = () => {
   const { currentCAM, departmentsList, coursesList, subjectsList, colleges, slots } = useApp();
   const { toast, confirm: showConfirm } = useToast();
+  const queryClient = useQueryClient();
 
-  const [exams, setExams] = useState<ExamSchedule[]>([]);
-  const [loading, setLoading] = useState(false);
   const [selectedDeptFilter, setSelectedDeptFilter] = useState("all");
   const [selectedSemFilter, setSelectedSemFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Sub-Tab Switcher: Timetable Schedule vs Performance & Marks Registry
   const [activeMainTab, setActiveMainTab] = useState<"schedules" | "marks_registry">("schedules");
-  const [campusMarksList, setCampusMarksList] = useState<any[]>([]);
-  const [loadingCampusMarks, setLoadingCampusMarks] = useState<boolean>(false);
   const [marksExamTypeFilter, setMarksExamTypeFilter] = useState<string>("all");
   const [marksDeptFilter, setMarksDeptFilter] = useState<string>("all");
   const [marksStatusFilter, setMarksStatusFilter] = useState<"all" | "passed" | "arrears" | "absent">("all");
@@ -111,7 +116,7 @@ export const ExamScheduleManager: React.FC = () => {
   const [subjectRows, setSubjectRows] = useState<SubjectFormRow[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const collegeId = currentCAM?.college_id || "Clg_c";
+  const collegeId = currentCAM?.college_id || colleges[0]?.id || "";
 
   // Helper to format 12-hour time string
   const formatTimeLabel = (totalMinutes: number): string => {
@@ -299,56 +304,43 @@ export const ExamScheduleManager: React.FC = () => {
     }
   }, [availableDepartments, batchDept]);
 
-  // Fetch Exams
-  const fetchExams = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/exams?college_id=${encodeURIComponent(collegeId)}`);
-      const data = await res.json();
-      if (data.success) {
-        setExams(data.exams || []);
-        // Automatically open the first group accordion by default
-        if (data.exams && data.exams.length > 0) {
-          const firstKey = `${data.exams[0].exam_type}_${data.exams[0].department}_${data.exams[0].semester}`;
-          setOpenAccordions((prev) => ({ ...prev, [firstKey]: true }));
-        }
-      } else {
-        toast(data.message || "Failed to load exams", "error");
-      }
-    } catch (e: any) {
-      console.error("Error fetching exams:", e);
-      toast("Error fetching exams: " + e.message, "error");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const batchSemesters = useMemo(() => {
+    const matched = (coursesList || []).find(c => c.name.toLowerCase() === batchDept.toLowerCase());
+    return getSemestersForCourse(matched?.years || 3);
+  }, [coursesList, batchDept]);
 
-  const fetchCampusMarks = async () => {
-    setLoadingCampusMarks(true);
-    try {
-      const res = await fetch(`/api/exams/marks?college_id=${encodeURIComponent(collegeId)}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.marks)) {
-        setCampusMarksList(data.marks);
-      } else {
-        setCampusMarksList([]);
-      }
-    } catch (e: any) {
-      console.error("Error fetching campus marks:", e);
-    } finally {
-      setLoadingCampusMarks(false);
-    }
-  };
+  const allAvailableSemesters = useMemo(() => {
+    const maxYears = Math.max(...(coursesList || []).map(c => c.years || 3), 3);
+    return getSemestersForCourse(maxYears);
+  }, [coursesList]);
+
+  const examsQuery = useQuery({
+    queryKey: qk.exams(collegeId),
+    queryFn: async () => {
+      const data = await apiFetch(`/api/exams?college_id=${encodeURIComponent(collegeId)}`);
+      return data?.success && Array.isArray(data.exams) ? (data.exams as ExamSchedule[]) : [];
+    },
+  });
+  const exams = examsQuery.data || [];
+  const loading = examsQuery.isFetching;
 
   useEffect(() => {
-    fetchExams();
-  }, [collegeId]);
-
-  useEffect(() => {
-    if (activeMainTab === "marks_registry") {
-      fetchCampusMarks();
+    if (exams.length > 0) {
+      const firstKey = `${exams[0].exam_type}_${exams[0].department}_${exams[0].semester}`;
+      setOpenAccordions((prev) => (prev[firstKey] ? prev : { ...prev, [firstKey]: true }));
     }
-  }, [activeMainTab, collegeId]);
+  }, [exams]);
+
+  const marksQuery = useQuery({
+    queryKey: qk.examMarks(collegeId),
+    enabled: activeMainTab === "marks_registry",
+    queryFn: async () => {
+      const data = await apiFetch(`/api/exams/marks?college_id=${encodeURIComponent(collegeId)}`);
+      return data?.success && Array.isArray(data.marks) ? (data.marks as any[]) : [];
+    },
+  });
+  const campusMarksList = marksQuery.data || [];
+  const loadingCampusMarks = marksQuery.isFetching;
 
   // Helper to format local Date object to YYYY-MM-DD cleanly without timezone shift
   const formatLocalDate = (d: Date): string => {
@@ -608,7 +600,7 @@ export const ExamScheduleManager: React.FC = () => {
         const sessionTimeStr = `${row.start_time} - ${row.end_time}`;
 
         return {
-          id: `exam_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          id: generateId("exam"),
           college_id: collegeId,
           department: batchDept,
           semester: batchSem,
@@ -635,7 +627,7 @@ export const ExamScheduleManager: React.FC = () => {
       if (data.success) {
         toast(`Published ${payloadSchedules.length} exam slots for "${batchExamName}" (${batchDept})!`, "success");
         setIsPopupOpen(false);
-        fetchExams();
+        await queryClient.invalidateQueries({ queryKey: qk.exams(collegeId) });
         // Notify student & mentor dashboards to update schedule and timetable
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
@@ -677,7 +669,7 @@ export const ExamScheduleManager: React.FC = () => {
       } else {
         toast(`Deleted exam timetable with ${failed} warnings`, "warning");
       }
-      fetchExams();
+      await queryClient.invalidateQueries({ queryKey: qk.exams(collegeId) });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
         window.dispatchEvent(new CustomEvent("fp_schedule_updated", { detail: { college_id: collegeId } }));
@@ -702,7 +694,7 @@ export const ExamScheduleManager: React.FC = () => {
       const data = await res.json();
       if (data.success) {
         toast("Exam slot deleted", "success");
-        fetchExams();
+        await queryClient.invalidateQueries({ queryKey: qk.exams(collegeId) });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
           window.dispatchEvent(new CustomEvent("fp_schedule_updated", { detail: { college_id: collegeId } }));
@@ -813,6 +805,14 @@ export const ExamScheduleManager: React.FC = () => {
       return true;
     });
   }, [campusMarksList, marksExamTypeFilter, marksDeptFilter, marksStatusFilter, marksSearchQuery]);
+
+  const [marksPage, setMarksPage] = useState<number>(1);
+  const [marksPageSize, setMarksPageSize] = useState<number>(25);
+
+  const paginatedCampusMarks = useMemo(() => {
+    const start = (marksPage - 1) * marksPageSize;
+    return filteredCampusMarks.slice(start, start + marksPageSize);
+  }, [filteredCampusMarks, marksPage, marksPageSize]);
 
   // Overall Campus Exam KPIs
   const campusMarksStats = useMemo(() => {
@@ -985,7 +985,7 @@ export const ExamScheduleManager: React.FC = () => {
             <>
               <button
                 type="button"
-                onClick={fetchCampusMarks}
+                onClick={() => marksQuery.refetch()}
                 disabled={loadingCampusMarks}
                 className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-all cursor-pointer"
               >
@@ -1039,6 +1039,7 @@ export const ExamScheduleManager: React.FC = () => {
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
                 <span className="text-slate-400 text-[10px] uppercase">Dept:</span>
                 <select
+                  aria-label="Department"
                   value={selectedDeptFilter}
                   onChange={(e) => setSelectedDeptFilter(e.target.value)}
                   className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
@@ -1056,12 +1057,13 @@ export const ExamScheduleManager: React.FC = () => {
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
                 <span className="text-slate-400 text-[10px] uppercase">Sem:</span>
                 <select
+                  aria-label="Semester"
                   value={selectedSemFilter}
                   onChange={(e) => setSelectedSemFilter(e.target.value)}
                   className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
                 >
                   <option value="all">All Semesters</option>
-                  {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"].map((s) => (
+                  {allAvailableSemesters.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -1075,6 +1077,7 @@ export const ExamScheduleManager: React.FC = () => {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 type="text"
+                aria-label="Search exam, subject, hall"
                 placeholder="Search exam, subject, hall..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -1159,31 +1162,31 @@ export const ExamScheduleManager: React.FC = () => {
                     {/* Accordion Body: Table of Subjects */}
                     {isOpen && (
                       <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs border-collapse min-w-[650px]">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase text-[9px]">
-                              <th className="p-3.5 w-12 text-center">#</th>
-                              <th className="p-3.5">Subject & Code</th>
-                              <th className="p-3.5">Exam Date & Day Order</th>
-                              <th className="p-3.5">Timing & Session</th>
-                              <th className="p-3.5">Hall / Room</th>
-                              <th className="p-3.5 text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                        <Table className="w-full text-left text-xs border-collapse min-w-[650px]">
+                          <TableHeader>
+                            <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase text-[9px] hover:bg-slate-50">
+                              <TableHead className="p-3.5 w-12 text-center">#</TableHead>
+                              <TableHead className="p-3.5">Subject & Code</TableHead>
+                              <TableHead className="p-3.5">Exam Date & Day Order</TableHead>
+                              <TableHead className="p-3.5">Timing & Session</TableHead>
+                              <TableHead className="p-3.5">Hall / Room</TableHead>
+                              <TableHead className="p-3.5 text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-100 font-medium text-slate-700">
                             {batch.slots.map((slot, sIdx) => {
                               return (
-                                <tr key={slot.id} className="hover:bg-slate-50/70 transition-colors">
-                                  <td className="p-3.5 text-center font-mono text-[11px] text-slate-400">
+                                <TableRow key={slot.id} className="hover:bg-slate-50/70 transition-colors">
+                                  <TableCell className="p-3.5 text-center font-mono text-[11px] text-slate-400">
                                     {sIdx + 1}
-                                  </td>
-                                  <td className="p-3.5">
+                                  </TableCell>
+                                  <TableCell className="p-3.5">
                                     <span className="font-extrabold text-slate-900 block">{slot.subject_name}</span>
                                     {slot.subject_code && (
                                       <span className="text-[10px] text-slate-400 font-mono">{slot.subject_code}</span>
                                     )}
-                                  </td>
-                                  <td className="p-3.5 font-bold text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3.5 font-bold text-slate-800">
                                     <div className="flex flex-col gap-1">
                                       <div className="flex items-center gap-1.5">
                                         <Calendar className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
@@ -1195,14 +1198,14 @@ export const ExamScheduleManager: React.FC = () => {
                                         </span>
                                       ) : null}
                                     </div>
-                                  </td>
-                                  <td className="p-3.5 text-slate-600">
+                                  </TableCell>
+                                  <TableCell className="p-3.5 text-slate-600">
                                     <div className="flex items-center gap-1.5">
                                       <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                                       <span className="font-semibold text-slate-800">{slot.session_time || `${slot.start_time} - ${slot.end_time}`}</span>
                                     </div>
-                                  </td>
-                                  <td className="p-3.5">
+                                  </TableCell>
+                                  <TableCell className="p-3.5">
                                     {slot.hall_room ? (
                                       <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-[10px] text-slate-700 font-bold">
                                         <MapPin className="h-3 w-3 text-slate-400" />
@@ -1211,8 +1214,8 @@ export const ExamScheduleManager: React.FC = () => {
                                     ) : (
                                       <span className="text-[10px] text-slate-300 italic">—</span>
                                     )}
-                                  </td>
-                                  <td className="p-3.5 text-right">
+                                  </TableCell>
+                                  <TableCell className="p-3.5 text-right">
                                     <button
                                       type="button"
                                       onClick={() => handleDeleteSingleExam(slot.id, slot.subject_name)}
@@ -1221,12 +1224,12 @@ export const ExamScheduleManager: React.FC = () => {
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </button>
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               );
                             })}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
@@ -1303,6 +1306,7 @@ export const ExamScheduleManager: React.FC = () => {
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
                 <span className="text-slate-400 text-[10px] uppercase">Dept:</span>
                 <select
+                  aria-label="Department"
                   value={marksDeptFilter}
                   onChange={(e) => setMarksDeptFilter(e.target.value)}
                   className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
@@ -1338,6 +1342,7 @@ export const ExamScheduleManager: React.FC = () => {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 type="text"
+                aria-label="Search student, roll no, subject"
                 placeholder="Search student, roll no, subject..."
                 value={marksSearchQuery}
                 onChange={(e) => setMarksSearchQuery(e.target.value)}
@@ -1347,124 +1352,147 @@ export const ExamScheduleManager: React.FC = () => {
           </div>
 
           {/* Student Exam Mark Submissions Table */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto max-h-[600px] scroll-touch">
-              <table className="w-full text-left text-xs border-collapse min-w-[850px]">
-                <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
-                  <tr>
-                    <th className="p-3.5 text-center w-12">#</th>
-                    <th className="p-3.5">Student Details</th>
-                    <th className="p-3.5">Department / Cohort</th>
-                    <th className="p-3.5">Exam & Subject</th>
-                    <th className="p-3.5 text-center">Score (Out of)</th>
-                    <th className="p-3.5 text-center">Score %</th>
-                    <th className="p-3.5 text-center">Grade</th>
-                    <th className="p-3.5 text-center">Status</th>
-                    <th className="p-3.5">Evaluator Mentor</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150 bg-white font-medium">
-                  {loadingCampusMarks ? (
-                    <tr>
-                      <td colSpan={9} className="p-12 text-center text-slate-400 font-bold">
-                        <RefreshCw className="h-6 w-6 animate-spin mx-auto text-indigo-600 mb-2" />
-                        Loading campus mark submissions...
-                      </td>
-                    </tr>
-                  ) : filteredCampusMarks.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="p-12 text-center text-slate-400 italic">
-                        No evaluated exam marks found matching the criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredCampusMarks.map((m, idx) => {
-                      const isAbs = Boolean(m.is_absent);
-                      const mNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
-                      const maxM = parseFloat(m.max_marks || 50);
-                      const pct = mNum !== null ? Math.round((mNum / maxM) * 100) : 0;
-                      const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
-                      const isPass = mNum !== null && mNum >= passM;
+          <div className="space-y-3">
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+              <div className="overflow-x-auto max-h-[600px] scroll-touch">
+                <Table className="w-full text-left text-xs border-collapse min-w-[850px]">
+                  <TableHeader className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10 hover:bg-slate-50">
+                    <TableRow>
+                      <TableHead className="p-3.5 text-center w-12">#</TableHead>
+                      <TableHead className="p-3.5">Student Details</TableHead>
+                      <TableHead className="p-3.5">Department / Cohort</TableHead>
+                      <TableHead className="p-3.5">Exam & Subject</TableHead>
+                      <TableHead className="p-3.5 text-center">Score (Out of)</TableHead>
+                      <TableHead className="p-3.5 text-center">Score %</TableHead>
+                      <TableHead className="p-3.5 text-center">Grade</TableHead>
+                      <TableHead className="p-3.5 text-center">Status</TableHead>
+                      <TableHead className="p-3.5">Evaluator Mentor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-slate-150 bg-white font-medium">
+                    {loadingCampusMarks ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="p-12 text-center text-slate-400 font-bold">
+                          <RefreshCw className="h-6 w-6 animate-spin mx-auto text-indigo-600 mb-2" />
+                          Loading campus mark submissions...
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredCampusMarks.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="p-12 text-center text-slate-400 italic">
+                          No evaluated exam marks found matching the criteria.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedCampusMarks.map((m, idx) => {
+                        const isAbs = Boolean(m.is_absent);
+                        const mNum = m.marks_obtained !== null && m.marks_obtained !== undefined ? parseFloat(m.marks_obtained) : null;
+                        const maxM = parseFloat(m.max_marks || 50);
+                        const pct = mNum !== null ? Math.round((mNum / maxM) * 100) : 0;
+                        const passM = parseFloat(m.passing_marks || (maxM * 0.4) || 20);
+                        const isPass = mNum !== null && mNum >= passM;
+                        const itemIndex = (marksPage - 1) * marksPageSize + idx + 1;
 
-                      return (
-                        <tr key={m.id || idx} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="p-3.5 text-center font-mono text-[11px] text-slate-400">
-                            {idx + 1}
-                          </td>
-                          <td className="p-3.5">
-                            <div className="font-extrabold text-slate-900">{m.student_name}</div>
-                            <div className="font-mono text-[10px] text-slate-400">{m.roll_number}</div>
-                          </td>
-                          <td className="p-3.5">
-                            <div className="font-semibold text-slate-800">{m.exam_department || m.student_department}</div>
-                            <div className="text-[10px] text-slate-400">{m.classGroup || m.semester}</div>
-                          </td>
-                          <td className="p-3.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
-                                {m.exam_type}
+                        return (
+                          <TableRow key={m.id || idx} className="hover:bg-slate-50/60 transition-colors">
+                            <TableCell className="p-3.5 text-center font-mono text-[11px] text-slate-400">
+                              {itemIndex}
+                            </TableCell>
+                            <TableCell className="p-3.5">
+                              <div className="font-extrabold text-slate-900">{m.student_name}</div>
+                              <div className="font-mono text-[10px] text-slate-400">{m.roll_number}</div>
+                            </TableCell>
+                            <TableCell className="p-3.5">
+                              <div className="font-semibold text-slate-800">{m.exam_department || m.student_department}</div>
+                              <div className="text-[10px] text-slate-400">{m.classGroup || m.semester}</div>
+                            </TableCell>
+                            <TableCell className="p-3.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-black uppercase">
+                                  {m.exam_type}
+                                </span>
+                                <span className="font-extrabold text-slate-900">{m.subject_name}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">Date: {m.exam_date}</div>
+                            </TableCell>
+                            <TableCell className="p-3.5 text-center font-mono font-bold text-slate-900">
+                              {isAbs ? (
+                                <span className="text-rose-600">ABSENT</span>
+                              ) : mNum !== null ? (
+                                <span>{mNum} / {maxM}</span>
+                              ) : (
+                                <span className="text-amber-600 italic">Pending</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="p-3.5 text-center font-bold">
+                              {isAbs || mNum === null ? "—" : `${pct}%`}
+                            </TableCell>
+                            <TableCell className="p-3.5 text-center">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                isAbs
+                                  ? "bg-slate-100 text-slate-600"
+                                  : m.grade === "O" || m.grade === "A+" || m.grade === "A"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : m.grade === "B+" || m.grade === "B"
+                                  ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                  : isPass
+                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                  : "bg-rose-50 text-rose-700 border border-rose-200"
+                              }`}>
+                                {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
                               </span>
-                              <span className="font-extrabold text-slate-900">{m.subject_name}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">Date: {m.exam_date}</div>
-                          </td>
-                          <td className="p-3.5 text-center font-mono font-bold text-slate-900">
-                            {isAbs ? (
-                              <span className="text-rose-600">ABSENT</span>
-                            ) : mNum !== null ? (
-                              <span>{mNum} / {maxM}</span>
-                            ) : (
-                              <span className="text-amber-600 italic">Pending</span>
-                            )}
-                          </td>
-                          <td className="p-3.5 text-center font-bold">
-                            {isAbs || mNum === null ? "—" : `${pct}%`}
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                              isAbs
-                                ? "bg-slate-100 text-slate-600"
-                                : m.grade === "O" || m.grade === "A+" || m.grade === "A"
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : m.grade === "B+" || m.grade === "B"
-                                ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                                : isPass
-                                ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                : "bg-rose-50 text-rose-700 border border-rose-200"
-                            }`}>
-                              {isAbs ? "AB" : m.grade || (isPass ? "PASS" : "RA")}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
-                              isAbs
-                                ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                : isPass
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : "bg-rose-50 text-rose-700 border border-rose-200"
-                            }`}>
-                              {isAbs ? "Absent" : isPass ? "Pass" : "Arrear"}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-slate-600 text-[11px]">
-                            <div className="font-semibold text-slate-800">{m.evaluated_by || "Faculty Mentor"}</div>
-                            {m.remarks && <div className="text-slate-400 text-[10px] italic">{m.remarks}</div>}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                            </TableCell>
+                            <TableCell className="p-3.5 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                                isAbs
+                                  ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                  : isPass
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : "bg-rose-50 text-rose-700 border border-rose-200"
+                              }`}>
+                                {isAbs ? "Absent" : isPass ? "Pass" : "Arrear"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="p-3.5 text-slate-600 text-[11px]">
+                              <div className="font-semibold text-slate-800">{m.evaluated_by || "Faculty Mentor"}</div>
+                              {m.remarks && <div className="text-slate-400 text-[10px] italic">{m.remarks}</div>}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
+
+            {filteredCampusMarks.length > 0 && (
+              <div className="bg-white p-3 rounded-xl border border-slate-200">
+                <Pagination
+                  currentPage={marksPage}
+                  totalItems={filteredCampusMarks.length}
+                  pageSize={marksPageSize}
+                  onPageChange={setMarksPage}
+                  onPageSizeChange={(newSize) => {
+                    setMarksPageSize(newSize);
+                    setMarksPage(1);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* POPUP MODAL: Schedule Exam Timetable with Subject Accordion */}
       {isPopupOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden animate-scaleUp my-8 max-h-[90vh] flex flex-col">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setIsPopupOpen(false); }}
+          ariaLabel="Schedule Exam Timetable"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto"
+          panelClassName="max-w-3xl overflow-hidden animate-scaleUp my-8 max-h-[90vh] flex flex-col p-0 space-y-0 rounded-3xl"
+        >
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-150 flex items-center justify-between bg-slate-50/60 shrink-0">
               <div className="flex items-center gap-3">
@@ -1479,6 +1507,7 @@ export const ExamScheduleManager: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsPopupOpen(false)}
+                aria-label="Close"
                 className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
               >
                 <X className="h-4 w-4" />
@@ -1504,6 +1533,7 @@ export const ExamScheduleManager: React.FC = () => {
                   <input
                     type="text"
                     required
+                    aria-label="Exam Title / Type"
                     placeholder="e.g. CIA 1, CIA 2, Model Exam, Mid-Term..."
                     value={batchExamName}
                     onChange={(e) => setBatchExamName(e.target.value)}
@@ -1536,6 +1566,7 @@ export const ExamScheduleManager: React.FC = () => {
                     </label>
                     <select
                       required
+                      aria-label="Department"
                       value={batchDept}
                       onChange={(e) => setBatchDept(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1554,11 +1585,12 @@ export const ExamScheduleManager: React.FC = () => {
                     </label>
                     <select
                       required
+                      aria-label="Semester"
                       value={batchSem}
                       onChange={(e) => setBatchSem(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                     >
-                      {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"].map((s) => (
+                      {batchSemesters.map((s) => (
                         <option key={s} value={s}>
                           {s}
                         </option>
@@ -1575,6 +1607,7 @@ export const ExamScheduleManager: React.FC = () => {
                     </label>
                     <input
                       type="date"
+                      aria-label="Starting Exam Date"
                       value={batchStartDate}
                       onChange={(e) => setBatchStartDate(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1586,6 +1619,7 @@ export const ExamScheduleManager: React.FC = () => {
                       Day Order
                     </label>
                     <select
+                      aria-label="Day Order"
                       value={batchDefaultDayOrder}
                       onChange={(e) => setBatchDefaultDayOrder(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1609,6 +1643,7 @@ export const ExamScheduleManager: React.FC = () => {
                       type="time"
                       min={collegeMin24}
                       max={collegeMax24}
+                      aria-label="Start Time"
                       value={timeTo24h(batchCustomStartTime)}
                       onChange={(e) => handleBatchStartTimeChange(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1624,6 +1659,7 @@ export const ExamScheduleManager: React.FC = () => {
                       type="time"
                       min={timeTo24h(batchCustomStartTime) || collegeMin24}
                       max={collegeMax24}
+                      aria-label="End Time"
                       value={timeTo24h(batchCustomEndTime)}
                       onChange={(e) => handleBatchEndTimeChange(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1789,6 +1825,7 @@ export const ExamScheduleManager: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveSubjectRow(idx)}
+                                    aria-label="Remove subject row"
                                     className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
                                     title="Remove subject row"
                                   >
@@ -1829,8 +1866,7 @@ export const ExamScheduleManager: React.FC = () => {
                 </div>
               </div>
             </form>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

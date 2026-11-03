@@ -1,15 +1,27 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, chunkList, type QueryFailure } from "@/lib/db";
 import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
+import { requireAuth } from "@/lib/authGuard";
+import { fetchWithTimeout, DEFAULT_FETCH_TIMEOUT_MS } from "@/lib/net";
 
 const HIRE_SCORE_API_BASE = "https://hire-score-fawn.vercel.app/api";
 
+const SYNC_SQL = `UPDATE students SET
+            hire_score = COALESCE(?, hire_score),
+            efset_score = COALESCE(?, efset_score),
+            github_id = COALESCE(?, github_id),
+            leetcode_link = COALESCE(?, leetcode_link),
+            tenth_mark = COALESCE(?, tenth_mark),
+            twelfth_mark = COALESCE(?, twelfth_mark),
+            updated_at = ?
+          WHERE id = ?`;
+
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "kam", "cm"] });
+    if (errorResponse) return errorResponse;
     const { searchParams } = new URL(request.url);
     const regNo = searchParams.get("regNo") || searchParams.get("registrationNumber");
     const college = searchParams.get("college");
@@ -21,16 +33,20 @@ export async function GET(request: Request) {
       url = `${HIRE_SCORE_API_BASE}/students?college=${encodeURIComponent(college)}`;
     }
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { "Accept": "application/json" },
       next: { revalidate: 60 } // cache for 1 minute
-    });
+    }).catch(() => null);
+
+    if (!res) {
+      return NextResponse.json({ success: false, message: `HireScore API did not respond within ${DEFAULT_FETCH_TIMEOUT_MS}ms.` }, { status: 504 });
+    }
 
     if (!res.ok) {
       // Fallback to fetch all students if single score endpoint 404s
       if (regNo) {
-        const allRes = await fetch(`${HIRE_SCORE_API_BASE}/students`);
-        if (allRes.ok) {
+        const allRes = await fetchWithTimeout(`${HIRE_SCORE_API_BASE}/students`).catch(() => null);
+        if (allRes && allRes.ok) {
           const allStudents = await allRes.json();
           const target = allStudents.find((s: any) =>
             (s.registrationNumber && s.registrationNumber.toLowerCase() === regNo.toLowerCase()) ||
@@ -61,10 +77,14 @@ export async function POST(request: Request) {
     const college_id = searchParams.get("college_id");
 
     // Fetch live master data from HireScore API
-    const res = await fetch(`${HIRE_SCORE_API_BASE}/students`, {
+    const res = await fetchWithTimeout(`${HIRE_SCORE_API_BASE}/students`, {
       headers: { "Accept": "application/json" },
       cache: "no-store"
-    });
+    }).catch(() => null);
+
+    if (!res) {
+      return NextResponse.json({ success: false, message: `HireScore API did not respond within ${DEFAULT_FETCH_TIMEOUT_MS}ms.` }, { status: 504 });
+    }
 
     if (!res.ok) {
       return NextResponse.json({ success: false, message: "Could not reach HireScore API." }, { status: 502 });
@@ -82,6 +102,7 @@ export async function POST(request: Request) {
 
     let syncedCount = 0;
     const nowStr = new Date().toISOString();
+    const updates: { sql: string; params: any[] }[] = [];
 
     for (const local of localStudents) {
       const sId = (local.id || "").toLowerCase().trim();
@@ -113,17 +134,9 @@ export async function POST(request: Request) {
         const tenthMark = match.xMarks !== undefined && match.xMarks !== null ? match.xMarks.toString() : null;
         const twelfthMark = match.xiiMarks !== undefined && match.xiiMarks !== null ? match.xiiMarks.toString() : null;
 
-        await db.run(
-          `UPDATE students SET 
-            hire_score = COALESCE(?, hire_score),
-            efset_score = COALESCE(?, efset_score),
-            github_id = COALESCE(?, github_id),
-            leetcode_link = COALESCE(?, leetcode_link),
-            tenth_mark = COALESCE(?, tenth_mark),
-            twelfth_mark = COALESCE(?, twelfth_mark),
-            updated_at = ?
-          WHERE id = ?`,
-          [
+        updates.push({
+          sql: SYNC_SQL,
+          params: [
             hireScore !== null ? hireScore.toString() : null,
             efsetGrade !== null ? efsetGrade.toString() : null,
             githubUrl,
@@ -133,15 +146,28 @@ export async function POST(request: Request) {
             nowStr,
             local.id
           ]
-        );
-        syncedCount++;
+        });
       }
+    }
+
+    // Every matched student used to be its own awaited UPDATE. At ~200ms a round trip
+    // a thousand-student sync ran for 200s+ against maxDuration=60 and died half-applied.
+    const failures: QueryFailure[] = [];
+    for (const chunk of chunkList(updates, 200)) {
+      await db.multiQuery(chunk, failures);
+    }
+    syncedCount = updates.length - failures.length;
+    if (failures.length > 0) {
+      console.error(`[hirescore] ${failures.length}/${updates.length} student updates failed:`, failures[0].error);
     }
 
     return NextResponse.json({
       success: true,
-      message: `Successfully synchronized ${syncedCount} of ${localStudents.length} students with live HireScore and EFSET data.`,
+      message: failures.length > 0
+        ? `Synchronized ${syncedCount} of ${localStudents.length} students; ${failures.length} updates failed and can be re-synced.`
+        : `Successfully synchronized ${syncedCount} of ${localStudents.length} students with live HireScore and EFSET data.`,
       syncedCount,
+      failedCount: failures.length,
       totalLocal: localStudents.length,
       totalHireScoreStudents: hireStudents.length
     });

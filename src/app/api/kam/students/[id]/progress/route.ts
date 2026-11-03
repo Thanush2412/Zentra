@@ -1,8 +1,8 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireKamScope } from "@/lib/kamScope";
 
 export async function GET(
   request: Request,
@@ -10,6 +10,9 @@ export async function GET(
 ) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { id } = await params;
 
     const { searchParams } = new URL(request.url);
@@ -38,23 +41,45 @@ export async function GET(
       return NextResponse.json({ success: false, message: "Student not found" }, { status: 404 });
     }
 
+    if (scope!.allowedCollegeIds && !scope!.allowedCollegeIds.includes(student.college_id)) {
+      return NextResponse.json({ success: false, message: "This student is outside your assigned portfolio." }, { status: 403 });
+    }
+
     const studentId = student.id;
     const rollNo = student.roll_number || "";
     const regNo = student.register_number || "";
 
-    // 2. Fetch Detailed Attendance Records with Slot & Subject Info (Match by ID, Roll No, or Reg No)
+    // 2. Attendance, and the three timeline tables, all key off the resolved student
+    // ids, so one round trip covers the whole page. Attendance feeds every number on
+    // the card, so a failed slice fails the request; the timeline tables only exist
+    // where their migration has run, so those degrade to empty.
     const validIds = Array.from(new Set([studentId, rollNo, regNo].filter(Boolean)));
     const placeholders = validIds.map(() => "?").join(",");
-
-    const attendanceRecords = await db.all(`
-      SELECT sa.id, sa.dateStr, sa.status, sa.markedBy, sa.timestamp,
-             s.course as subject, s.time, s.day, s.location, s.shift
-      FROM student_attendance sa
-      LEFT JOIN slots s ON sa.slotId = s.id
-      WHERE sa.studentId IN (${placeholders})
-      GROUP BY sa.id
-      ORDER BY sa.dateStr ASC, s.time ASC
-    `, ...validIds);
+    const progressFailures: QueryFailure[] = [];
+    const [attendanceRecords, interviews, leaveRequests, tracker] = await db.multiQuery(
+      [
+        {
+          sql: `SELECT sa.id, sa.dateStr, sa.status, sa.markedBy, sa.timestamp,
+                       s.course as subject, s.time, s.day, s.location, s.shift
+                FROM student_attendance sa
+                LEFT JOIN slots s ON sa.slotId = s.id
+                WHERE sa.studentId IN (${placeholders})
+                GROUP BY sa.id
+                ORDER BY sa.dateStr ASC, s.time ASC`,
+          params: validIds,
+        },
+        { sql: "SELECT * FROM student_interviews WHERE student_id = ? ORDER BY created_at DESC LIMIT 10", params: [studentId] },
+        { sql: "SELECT * FROM leave_requests WHERE studentId = ? ORDER BY timestamp DESC LIMIT 10", params: [studentId] },
+        { sql: "SELECT * FROM student_tracker WHERE student_id = ? ORDER BY updated_at DESC LIMIT 10", params: [studentId] },
+      ],
+      progressFailures
+    );
+    if (progressFailures.some(f => f.sql.includes("FROM student_attendance"))) {
+      return NextResponse.json({ success: false, error: "Could not load this student's attendance. Please try again." }, { status: 500 });
+    }
+    if (progressFailures.length > 0) {
+      console.warn("[/api/kam/students/[id]/progress] partial read:", progressFailures.map(f => f.sql.slice(0, 60)));
+    }
 
     // 3. Subject-Wise Breakdown
     const subjectMap: Record<string, { total: number; present: number; absent: number; od: number }> = {};
@@ -96,12 +121,6 @@ export async function GET(
     }));
 
     // 5. Activity Timeline (Interviews, Leaves, Tasks, Attendance Highlights)
-    const [interviews, leaveRequests, tracker] = await Promise.all([
-      db.all("SELECT * FROM student_interviews WHERE student_id = ? ORDER BY created_at DESC LIMIT 10", studentId).catch(() => []),
-      db.all("SELECT * FROM leave_requests WHERE studentId = ? ORDER BY timestamp DESC LIMIT 10", studentId).catch(() => []),
-      db.all("SELECT * FROM student_tracker WHERE student_id = ? ORDER BY updated_at DESC LIMIT 10", studentId).catch(() => [])
-    ]);
-
     const timeline: Array<{ id: string; date: string; type: string; title: string; desc: string; status?: string }> = [];
 
     // Add interviews

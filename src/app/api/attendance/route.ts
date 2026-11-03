@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { requireAuth } from "@/lib/authGuard";
+import { getDb, allCapped, ROW_CAP, type QueryFailure } from "@/lib/db";
+import { requireAuth, Role } from "@/lib/authGuard";
+import { getInstitutionDateStr, getInstitutionDateStrOffset } from "@/lib/localDate";
+import { generateId } from "@/lib/id";
+import { ensureMigration } from "@/lib/migrations";
 
-// ── Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1) ──
 // Without this, Vercel routes to iad1 (Washington DC) → ~200ms per DB call
-export const preferredRegion = "bom1";
 export const maxDuration = 60; // seconds — bulk imports need breathing room
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,8 +16,28 @@ const noCacheHeaders = {
   "Expires": "0",
 };
 
+/**
+ * Bulk imports build hundreds of rows inside the same millisecond, so a
+ * `Date.now()` prefix plus a short random suffix can land on a duplicate
+ * primary key and fail the whole batch. UUID keeps the id unique per row.
+ */
+function makeAttendanceId(): string {
+  return `att_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+}
+
+// Roles allowed to read attendance. This route has no per-student scoping —
+// the college_id / studentId filters are advisory — so a student session must
+// not be able to enumerate other students' records through it.
+const ATTENDANCE_READ_ROLES: Role[] = [
+  "admin", "cm", "kam", "mentor", "sme", "fee_manager", "L and D", "hr"
+];
+
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ATTENDANCE_READ_ROLES });
+    if (errorResponse) return errorResponse;
+
+    await ensureMigration("student_attendance_extended_columns").catch(() => {});
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const slotId = searchParams.get("slotId");
@@ -39,10 +60,8 @@ export async function GET(request: Request) {
       if (endDate) { sql += " AND sa.dateStr <= ?"; args.push(endDate); }
       // Default 60-day window if no date params given — prevents unbounded full-table scan
       if (!startDate && !endDate) {
-        const defaultStart = new Date();
-        defaultStart.setDate(defaultStart.getDate() - 60);
         sql += " AND sa.dateStr >= ?";
-        args.push(defaultStart.toISOString().split("T")[0]);
+        args.push(getInstitutionDateStrOffset(-60));
       }
       sql += " ORDER BY sa.dateStr DESC LIMIT 15000";
       const records = await db.all(sql, args);
@@ -51,15 +70,28 @@ export async function GET(request: Request) {
 
     // ── 1. Student historical logs (for CAM correction modal) ─────────────
     if (studentId && !slotId && !dateStr) {
-      const records = await db.all(
-        `SELECT sa.*, s.time as timeSlot, s.course as subject, s.classGroup
+      // The ledger and the correction counter key off the same studentId, so they leave
+      // as one group instead of two sequential round trips. The ceiling check is kept
+      // here because batching replaces the allCapped() wrapper that used to enforce it.
+      const historyFailures: QueryFailure[] = [];
+      const [records, studentRows] = await db.multiQuery([
+        {
+          sql: `SELECT sa.*, s.time as timeSlot, s.course as subject, s.classGroup
          FROM student_attendance sa
          JOIN slots s ON sa.slotId = s.id
          WHERE sa.studentId = ?
-         ORDER BY sa.dateStr DESC, s.time ASC`,
-        [studentId]
-      );
-      const student = await db.get("SELECT correction_count FROM students WHERE id = ?", [studentId]);
+         ORDER BY sa.dateStr DESC, s.time ASC LIMIT ${ROW_CAP + 1}`,
+          params: [studentId]
+        },
+        { sql: "SELECT correction_count FROM students WHERE id = ?", params: [studentId] }
+      ], historyFailures);
+      if (historyFailures.length > 0) {
+        return NextResponse.json({ success: false, error: "Attendance history could not be loaded. Please retry." }, { status: 500, headers: noCacheHeaders });
+      }
+      if (records.length > ROW_CAP) {
+        return NextResponse.json({ success: false, error: `Read passed its ${ROW_CAP}-row ceiling for student attendance history.` }, { status: 500, headers: noCacheHeaders });
+      }
+      const student = studentRows[0];
       return NextResponse.json({
         success: true,
         records,
@@ -126,8 +158,31 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Missing required fields for correction" }, { status: 400 });
       }
 
+      // The student row, the admin-override probe and the existing record all key off
+      // the body, so one round trip answers all three. The third one picks between an
+      // INSERT and an UPDATE, so a failed slice must not read as "nothing marked yet".
+      const lowerActor = String(changedBy).toLowerCase().trim();
+      const correctFailures: QueryFailure[] = [];
+      const [studentRows, adminRows, existingRows] = await db.multiQuery(
+        [
+          { sql: "SELECT name, correction_count FROM students WHERE id = ?", params: [studentId] },
+          isAdminOverride && changedBy
+            ? {
+                sql: "SELECT id FROM users WHERE (LOWER(id) = ? OR LOWER(email) = ? OR LOWER(reference_id) = ?) AND role = 'admin' " +
+                  "UNION SELECT id FROM admin_users WHERE LOWER(id) = ? OR LOWER(email) = ? OR LOWER(name) = ?",
+                params: [lowerActor, lowerActor, lowerActor, lowerActor, lowerActor, lowerActor],
+              }
+            : { sql: "SELECT 1 WHERE 1=0" },
+          { sql: "SELECT status FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?", params: [studentId, slotId, dateStr] },
+        ],
+        correctFailures
+      );
+      if (correctFailures.length > 0) {
+        return NextResponse.json({ success: false, message: "Could not verify this correction. Please try again." }, { status: 500 });
+      }
+
       // Check current student status & correction count
-      const student = await db.get("SELECT name, correction_count FROM students WHERE id = ?", [studentId]);
+      const student = studentRows[0];
       if (!student) {
         return NextResponse.json({ success: false, message: "Student not found" }, { status: 404 });
       }
@@ -135,13 +190,7 @@ export async function POST(request: Request) {
       const currentCount = student.correction_count || 0;
       let verifiedAdminOverride = false;
       if (isAdminOverride && changedBy) {
-        const lowerActor = String(changedBy).toLowerCase().trim();
-        const adminCheck = await db.get(
-          "SELECT id FROM users WHERE (LOWER(id) = ? OR LOWER(email) = ? OR LOWER(reference_id) = ?) AND role = 'admin' " +
-          "UNION SELECT id FROM admin_users WHERE LOWER(id) = ? OR LOWER(email) = ? OR LOWER(name) = ?",
-          lowerActor, lowerActor, lowerActor, lowerActor, lowerActor, lowerActor
-        );
-        verifiedAdminOverride = !!adminCheck || lowerActor === "admin" || lowerActor === "super admin";
+        verifiedAdminOverride = adminRows.length > 0 || lowerActor === "admin" || lowerActor === "super admin";
       }
 
       if (currentCount >= 2 && !verifiedAdminOverride) {
@@ -152,10 +201,7 @@ export async function POST(request: Request) {
       }
 
       // Check old status
-      const existing = await db.get(
-        "SELECT status FROM student_attendance WHERE studentId = ? AND slotId = ? AND dateStr = ?",
-        [studentId, slotId, dateStr]
-      );
+      const existing = existingRows[0];
       const oldStatus = existing ? existing.status : "not_marked";
 
       if (oldStatus === newStatus) {
@@ -170,7 +216,7 @@ export async function POST(request: Request) {
         );
       } else {
         // Insert new
-        const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const recordId = makeAttendanceId();
         await db.run(
           "INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
           [recordId, studentId, slotId, dateStr, newStatus, changedBy, new Date().toISOString()]
@@ -186,7 +232,7 @@ export async function POST(request: Request) {
       }
 
       // Log into audit trail
-      const logId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const logId = generateId("l");
       const description = `Attendance corrected for ${student.name} (${studentId}) on ${dateStr} in slot ${slotId}. Status changed from ${oldStatus.toUpperCase()} to ${newStatus.toUpperCase()}. Reason: "${reason}"`;
 
       await db.run(
@@ -244,7 +290,7 @@ export async function POST(request: Request) {
             [status, markedBy || "Manager", new Date().toISOString(), existing.id]
           );
         } else {
-          const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          const recordId = makeAttendanceId();
           await db.run(
             "INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [recordId, studentId, slotId, dateStr, status, markedBy || "Manager", new Date().toISOString()]
@@ -300,9 +346,8 @@ export async function POST(request: Request) {
       // Compact records have no slotId — server looks up all slots for (classGroup, dayOfWeek)
       const validSlots = importCollegeId
         ? await db.all("SELECT id, day, classGroup FROM slots WHERE college_id = ?", importCollegeId)
-        : await db.all("SELECT id, day, classGroup FROM slots");
+        : await allCapped(db, "SELECT id, day, classGroup FROM slots", [], 30000);
       const validSlotIds = new Set(validSlots.map((s: any) => s.id));
-      const fallbackSlotId = validSlots.length > 0 ? validSlots[0].id : null;
 
       // Expansion cache: "dayName||classGroup" → slotId[] (avoids repeated filter scans)
       const expansionCache = new Map<string, string[]>();
@@ -316,27 +361,32 @@ export async function POST(request: Request) {
           const sg = s.classGroup.toLowerCase().trim();
           return sg === cg || sg.includes(cg) || cg.includes(sg);
         }).map((s: any) => s.id);
-        const result = matched.length > 0 ? matched : (fallbackSlotId ? [fallbackSlotId] : []);
-        expansionCache.set(key, result);
-        return result;
+        expansionCache.set(key, matched);
+        return matched;
       };
 
       const deleteItems: Array<{ studentId: string; slotId: string; dateStr: string }> = [];
       const upsertRows: any[] = [];
+      let skippedRecords = 0;
 
       for (const item of records) {
         const { studentId, slotId, dateStr, status, classGroup } = item;
         if (!studentId || !dateStr || !status) continue;
 
         if (slotId) {
-          // Explicit slotId format (period-specific marks from client-side resolution)
-          const effectiveSlotId = validSlotIds.has(slotId) ? slotId : fallbackSlotId;
-          if (!effectiveSlotId) continue;
+          // Explicit slotId format (period-specific marks from client-side resolution).
+          // An id outside this college's timetable is rejected: substituting another
+          // slot filed the marks against a class the student never sat in.
+          if (!validSlotIds.has(slotId)) {
+            skippedRecords++;
+            continue;
+          }
+          const effectiveSlotId = slotId;
           if (status === "not_marked") {
             deleteItems.push({ studentId, slotId: effectiveSlotId, dateStr });
           } else {
             upsertRows.push({
-              id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+              id: makeAttendanceId(),
               studentId, slotId: effectiveSlotId, dateStr, status,
               markedBy: markedBy || "Master Import", timestamp: nowStr
             });
@@ -349,12 +399,16 @@ export async function POST(request: Request) {
             ? new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(dateObj)
             : "";
           const matchedSlotIds = getExpansionSlotIds(dayName, classGroup || "");
+          if (matchedSlotIds.length === 0) {
+            skippedRecords++;
+            continue;
+          }
           for (const sId of matchedSlotIds) {
             if (status === "not_marked") {
               deleteItems.push({ studentId, slotId: sId, dateStr });
             } else {
               upsertRows.push({
-                id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                id: makeAttendanceId(),
                 studentId, slotId: sId, dateStr, status,
                 markedBy: markedBy || "Master Import", timestamp: nowStr
               });
@@ -433,20 +487,26 @@ export async function POST(request: Request) {
 
       if (count === 0 && upsertRows.length > 0) count = upsertRows.length;
 
+      const skippedNote = skippedRecords > 0
+        ? ` Skipped ${skippedRecords} record(s) that matched no slot in this college.`
+        : "";
+
       if (failedStatements > 0) {
         return NextResponse.json({
           success: false,
-          message: `Imported ${count} attendance entries but ${failedStatements} statements failed permanently. Check server logs for details.`,
+          message: `Imported ${count} attendance entries but ${failedStatements} statements failed permanently. Check server logs for details.${skippedNote}`,
           count,
-          failedStatements
+          failedStatements,
+          skipped: skippedRecords
         }, { status: 207 });
       }
 
 
       return NextResponse.json({
         success: true,
-        message: `Successfully imported ${count} attendance entries.`,
-        count
+        message: `Successfully imported ${count} attendance entries.${skippedNote}`,
+        count,
+        skipped: skippedRecords
       });
     }
 
@@ -475,7 +535,7 @@ export async function POST(request: Request) {
 
     // ── FUTURE DATE ATTENDANCE GUARD ─────────────────────────────────────
     // Faculty mentors cannot record student attendance in advance for future dates
-    const todayDateStr = new Date().toISOString().split("T")[0];
+    const todayDateStr = getInstitutionDateStr();
     if (dateStr > todayDateStr) {
       return NextResponse.json({
         success: false,
@@ -510,59 +570,62 @@ export async function POST(request: Request) {
     }
     // ── END DAY ORDER / TYPE GUARD ────────────────────────────────────────
 
-    // Delete existing
-    await db.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ?", [slotId, dateStr]);
-
-    if (coveredSubject) {
-      await db.run(
-        "UPDATE approved_handovers SET course = ? WHERE slotId = ? AND dateStr = ?",
-        [coveredSubject, slotId, dateStr]
-      );
-    }
-
     // ── Batch insert all attendance rows in one multi-row INSERT ──────────
-    // Filter out "not_marked" — those are just absences from the delete above.
+    // Filter out "not_marked" — those are just absences from the delete below.
     const validItems = attendance.filter((a: any) => a.status && a.status !== "not_marked");
     const timestamp = new Date().toISOString();
-    let insertedCount = 0;
-
-    if (validItems.length > 0) {
-      const placeholders = validItems.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
-      const params: any[] = [];
-      validItems.forEach((item: any) => {
-        const recordId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        params.push(
-          recordId, item.studentId, slotId, dateStr, item.status,
-          markedBy || "System", timestamp,
-          type || "Regular", mode || "Offline", attendanceTypeSub || null
-        );
-      });
-      await db.run(
-        `INSERT INTO student_attendance
-           (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub)
-           VALUES ${placeholders}
-           ON CONFLICT(studentId, slotId, dateStr) DO UPDATE SET
-             status = excluded.status,
-             markedBy = excluded.markedBy,
-             timestamp = excluded.timestamp,
-             type = excluded.type,
-             mode = excluded.mode,
-             attendanceTypeSub = excluded.attendanceTypeSub`,
-        params
-      );
-      insertedCount = validItems.length;
-    }
-
+    const logId = generateId("l");
     const presentCount = attendance.filter((a: any) => a.status === "present").length;
     const absentCount = attendance.filter((a: any) => a.status === "absent").length;
-
-    const logId = `l_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const description = `Marked ${type || "Regular"} attendance (${mode || "Offline"}) for class ${slot.classGroup || "General"} in course "${slot.course}" on date ${dateStr} (${presentCount} present, ${absentCount} absent).`;
 
-    await db.run(
-      "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-      [logId, "booking", description, actorName || "Faculty", actorRole || "Mentor", timestamp]
-    );
+    // Clearing the period and re-writing it are one unit. Autocommitted, an insert
+    // that failed after the DELETE left the whole period's attendance erased.
+    const insertedCount = await db.transaction(async (tx) => {
+      await tx.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ?", [slotId, dateStr]);
+
+      if (coveredSubject) {
+        await tx.run(
+          "UPDATE approved_handovers SET course = ? WHERE slotId = ? AND dateStr = ?",
+          [coveredSubject, slotId, dateStr]
+        );
+      }
+
+      if (validItems.length > 0) {
+        const placeholders = validItems.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+        const params: any[] = [];
+        validItems.forEach((item: any) => {
+          const recordId = makeAttendanceId();
+          params.push(
+            recordId, item.studentId, slotId, dateStr, item.status,
+            markedBy || "System", timestamp,
+            type || "Regular", mode || "Offline", attendanceTypeSub || null,
+            coveredSubject || null
+          );
+        });
+        await tx.run(
+          `INSERT INTO student_attendance
+             (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub, coveredSubject)
+             VALUES ${placeholders}
+             ON CONFLICT(studentId, slotId, dateStr) DO UPDATE SET
+               status = excluded.status,
+               markedBy = excluded.markedBy,
+               timestamp = excluded.timestamp,
+               type = excluded.type,
+               mode = excluded.mode,
+               attendanceTypeSub = excluded.attendanceTypeSub,
+               coveredSubject = COALESCE(excluded.coveredSubject, student_attendance.coveredSubject)`,
+          params
+        );
+      }
+
+      await tx.run(
+        "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+        [logId, "booking", description, actorName || "Faculty", actorRole || "Mentor", timestamp]
+      );
+
+      return validItems.length;
+    });
 
     // DATA_FLOW_AUDIT D6: return the authoritative stored rows (real DB ids, markedBy,
     // timestamp) so the client patches state instead of synthesizing fake ids.
@@ -582,6 +645,11 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const { errorResponse } = await requireAuth(request, {
+      allowedRoles: ["admin", "cm", "kam"]
+    });
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const dateStr = searchParams.get("dateStr");

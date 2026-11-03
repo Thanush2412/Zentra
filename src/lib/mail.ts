@@ -1,14 +1,19 @@
 import nodemailer from "nodemailer";
 import { getDb } from "./db";
+import { fetchWithTimeout, MAIL_FETCH_TIMEOUT_MS } from "./net";
+import { generateId } from "@/lib/id";
 
 /**
  * Brand UI Constants matching FACE Prep E-Campus website design system
  */
-const BRAND = {
+export const BRAND = {
   name: "FACE Prep",
   subtext: "E-CAMPUS",
   tagline: "University Operations Platform",
-  portalUrl: "https://e-campus.faceprepcampus.com",
+  portalUrl: process.env.NEXT_PUBLIC_APP_URL || "https://e-campus.faceprepcampus.com",
+  // Logo served from the production domain — never from an external third-party deploy (MAIL-C01)
+  logoUrl: `${process.env.NEXT_PUBLIC_APP_URL || "https://e-campus.faceprepcampus.com"}/E-Campus.png`,
+  emailPrefix: "[FACE Prep E-Campus]", // MAIL-M10 — single source of truth
   primaryPink: "#D528A2",
   peachCoral: "#F4A863",
   darkHeaderBg: "linear-gradient(135deg, #0F172A 0%, #1E1B4B 100%)",
@@ -82,7 +87,7 @@ export function renderEmailShell({
           <!-- Official FACE Prep E-Campus Image Logo Header -->
           <div style="background-color: #ffffff; padding: 28px 24px 20px 24px; text-align: center; border-bottom: 1px solid #f1f5f9;">
             <a href="${BRAND.portalUrl}" target="_blank" style="display: inline-block; text-decoration: none;">
-              <img src="https://zentra-ruddy-chi.vercel.app/E-Campus.png" alt="FACE Prep E-Campus" style="height: 52px; width: auto; max-width: 240px; border: 0; outline: none; text-decoration: none; display: block; margin: 0 auto;" />
+              <img src="${BRAND.logoUrl}" alt="FACE Prep E-Campus" style="height: 52px; width: auto; max-width: 240px; border: 0; outline: none; text-decoration: none; display: block; margin: 0 auto;" />
             </a>
             <div style="color: #64748b; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; margin-top: 10px;">University Operations Platform</div>
           </div>
@@ -125,27 +130,13 @@ export function renderEmailShell({
           <!-- Footer Branding -->
           <div style="background-color: #f8fafc; padding: 22px 28px; text-align: center; border-top: 1px solid #f1f5f9;">
             <p style="color: #94a3b8; font-size: 11.5px; margin: 0; font-weight: 600;">${footerText}</p>
-            <p style="color: #cbd5e1; font-size: 10.5px; margin-top: 6px; font-weight: 500;">&copy; 2026 FACE Prep E-Campus Operations. All rights reserved.</p>
+            <p style="color: #cbd5e1; font-size: 10.5px; margin-top: 6px; font-weight: 500;">&copy; ${new Date().getFullYear()} FACE Prep E-Campus Operations. All rights reserved.</p>
           </div>
         </div>
       </div>
     </body>
     </html>
   `;
-}
-
-/**
- * Backwards Compatible Legacy Format Wrapper
- */
-export function formatZentraEmail(opts: {
-  title: string;
-  badgeText: string;
-  badgeColor: "indigo" | "emerald" | "amber" | "rose";
-  description: string;
-  details: EmailDetailItem[];
-  footerText?: string;
-}) {
-  return renderEmailShell(opts);
 }
 
 /* ==========================================================================
@@ -163,6 +154,8 @@ export function renderHandoverRequestEmail(data: {
   course: string;
   classGroup: string;
   reason?: string;
+  /** Defaults to the portal homepage; pass the recipient's handover tab so the CTA lands on the request. */
+  ctaUrl?: string;
 }) {
   return renderEmailShell({
     title: "Class Coverage Requested",
@@ -177,6 +170,7 @@ export function renderHandoverRequestEmail(data: {
       { label: "Reason", value: data.reason || "Operational Handover" },
     ],
     ctaText: "Review & Accept Handover Request →",
+    ctaUrl: data.ctaUrl,
   });
 }
 
@@ -240,26 +234,32 @@ export function renderHandoverRejectionEmail(data: {
 /**
  * 4. Demo Swap Proposal Email
  */
-export function renderDemoSwapEmail(data: {
+export function renderSwapOfferEmail(data: {
   requestorName: string;
   targetMentorName: string;
   dateStr: string;
   time: string;
   course: string;
   classGroup: string;
+  /** "demo" for demo-session swaps, "class" for a regular lecture swap compensation. */
+  kind?: "demo" | "class";
+  ctaUrl?: string;
 }) {
+  const isDemo = (data.kind || "demo") === "demo";
+  const label = isDemo ? "Demo" : "Class";
   return renderEmailShell({
-    title: "Demo Swap Request Received",
-    badgeText: "Demo Swap Proposal",
+    title: `${label} Swap Request Received`,
+    badgeText: `${label} Swap Proposal`,
     badgeColor: "amber",
-    description: `Dear <strong>${data.targetMentorName}</strong>, <strong>${data.requestorName}</strong> has proposed a demo session swap with you.`,
+    description: `Dear <strong>${data.targetMentorName}</strong>, <strong>${data.requestorName}</strong> has proposed a ${isDemo ? "demo session" : "class"} swap with you.`,
     details: [
       { label: "Proposer", value: data.requestorName, highlight: true },
-      { label: "Proposed Session", value: `${data.dateStr} • ${data.time}` },
+      { label: isDemo ? "Proposed Session" : "Proposed Class", value: `${data.dateStr} • ${data.time}` },
       { label: "Subject", value: data.course },
       { label: "Cohort", value: data.classGroup },
     ],
-    ctaText: "Respond to Swap Proposal →",
+    ctaText: `Respond to ${label} Swap Proposal →`,
+    ctaUrl: data.ctaUrl,
   });
 }
 
@@ -396,138 +396,263 @@ export function renderDemoComplianceEmail(data: {
   });
 }
 
+/**
+ * 7. Account Welcome / Activation Email
+ * The initial password is deliberately NOT included: DEFAULT_PASSWORD is one shared
+ * secret for every account, so mailing it would broadcast it to every inbox.
+ */
+export function renderAccountWelcomeEmail(data: {
+  recipientName: string;
+  loginEmail: string;
+  roleLabel: string;
+}) {
+  return renderEmailShell({
+    title: "Welcome to FACE Prep E-Campus",
+    badgeText: "Account Created",
+    badgeColor: "emerald",
+    description: `Dear <strong>${data.recipientName}</strong>, your E-Campus account has been created by your campus administrator.`,
+    details: [
+      { label: "Login Email", value: data.loginEmail, highlight: true },
+      { label: "Role", value: data.roleLabel },
+      { label: "Initial Password", value: "Issued to your administrator. Please change it right after your first sign-in.", highlight: true },
+      { label: "Action Required", value: "Sign in once, then set a private password from your profile." },
+    ],
+    ctaText: "Log In to E-Campus Portal →",
+    footerText: "This is your official account activation notice. Never share your credentials with anyone, including staff.",
+  });
+}
+
+/** Non-fatal welcome dispatch — account creation must not fail because mail is down. */
+export async function sendAccountWelcomeEmail(data: {
+  to: string;
+  recipientName: string;
+  roleLabel: string;
+}) {
+  if (!data.to?.includes("@")) return;
+  try {
+    await sendMail({
+      to: data.to,
+      subject: `${BRAND.emailPrefix} Your Account Is Ready`,
+      htmlBody: renderAccountWelcomeEmail({
+        recipientName: data.recipientName,
+        loginEmail: data.to,
+        roleLabel: data.roleLabel,
+      }),
+    });
+  } catch (err) {
+    console.warn(`Failed to send welcome email to ${data.to}:`, err);
+  }
+}
+
 /* ==========================================================================
    CENTRALIZED BREVO DISPATCH UTILITY
    ========================================================================== */
 
+/** Strip HTML tags to produce a plain-text fallback (MAIL-M05) */
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&copy;/g, "©")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /**
- * Centralized sendMail function utilizing Brevo REST API v3 with SMTP fallback
+ * The admin "mailing_enabled" toggle was read from the database in front of every single
+ * send, so each message paid an extra round trip (and, in a bulk notify, one per recipient
+ * batch). A short process-local cache costs up to that TTL in staleness for an admin
+ * switch that is flipped rarely; a failed read is never cached, so mail still gets its
+ * check when the setting read hiccups.
  */
-export async function sendMail({ to, subject, htmlBody }: { to: string; subject: string; htmlBody: string }) {
+const MAILING_TOGGLE_TTL_MS = Math.max(0, Number(process.env.MAILING_TOGGLE_TTL_MS || 60000));
+let mailingToggleCache: { at: number; value: string | null } | null = null;
+
+async function readMailingToggle(db: any): Promise<string | null> {
+  if (mailingToggleCache && Date.now() - mailingToggleCache.at < MAILING_TOGGLE_TTL_MS) {
+    return mailingToggleCache.value;
+  }
+  const setting = await db.get("SELECT value FROM system_settings WHERE key = 'mailing_enabled'");
+  const value = setting?.value ?? null;
+  mailingToggleCache = { at: Date.now(), value };
+  return value;
+}
+
+/**
+ * Centralized sendMail — Brevo REST v3 → Brevo SMTP → GAS webhook.
+ * Fixes: MAIL-M01 (proper BCC), MAIL-M05 (plain text), MAIL-M12 (CC support),
+ *        MAIL-H03 (failure audit log), MAIL-L03 (https check), MAIL-L04 (List-Unsubscribe).
+ */
+export async function sendMail({
+  to,
+  subject,
+  htmlBody,
+  cc,
+  bcc,
+}: {
+  to?: string | string[];
+  subject: string;
+  htmlBody: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+}) {
   try {
     // 0. GLOBAL ADMIN TOGGLE CHECK
     try {
       const db = await getDb();
-      const setting = await db.get("SELECT value FROM system_settings WHERE key = 'mailing_enabled'");
-      if (setting && (setting.value === "false" || setting.value === "0")) {
-        console.log("🛑 [Mail Utility] Email dispatch skipped — Global Mailing is toggled OFF by Admin.");
+      const mailingEnabled = await readMailingToggle(db);
+      if (mailingEnabled === "false" || mailingEnabled === "0") {
+        console.log("🛑 [Mail] Skipped — mailing disabled by Admin.");
         return { success: true, disabled: true, message: "Email delivery disabled by Admin toggle" };
       }
     } catch (checkErr) {
-      console.warn("Mailing setting check failed, proceeding with default dispatch...", checkErr);
+      console.warn("Mailing setting check failed, proceeding...", checkErr);
     }
 
-    if (!to || !to.includes("@")) {
-      return { success: false, error: "Invalid recipient email address" };
-    }
+    // Callers pass a CSV list or an array. An array used to fail the "@" check
+    // below, so the mail was dropped silently while the caller saw success:true.
+    const splitEmails = (value?: string | string[]) => {
+      const csv = Array.isArray(value) ? value.join(",") : value;
+      return csv
+        ? Array.from(new Set(csv.split(",").map((e) => e.trim()).filter((e) => e && e.includes("@"))))
+        : [];
+    };
 
+    const senderName = process.env.BREVO_SENDER_NAME || "FACE Prep E-Campus";
+    const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SUPER_ADMIN_EMAIL || "no-reply@faceprep.in";
 
-    const auditBcc = process.env.ADMIN_AUDIT_EMAIL || "";
-    const rawEmails = to.split(",").map((e) => e.trim()).filter((e) => e && e.includes("@"));
-    if (auditBcc && auditBcc.includes("@") && !rawEmails.includes(auditBcc.trim())) {
-      rawEmails.push(auditBcc.trim());
-    }
-    const recipients = Array.from(new Set(rawEmails));
+    const bccList = splitEmails(bcc);
+    // A campus-wide notice addressed to every mentor shows each faculty member
+    // the whole roster, so a bcc-only send keeps the audience hidden and puts
+    // our own mailbox in the visible To field.
+    const toList = splitEmails(to);
+    const recipients = toList.length > 0 ? toList : bccList.length > 0 ? [senderEmail] : [];
     if (recipients.length === 0) {
       return { success: false, error: "No valid recipient email addresses provided" };
     }
 
-    // 1. PRIMARY: Brevo Transactional Email REST API v3 (xkeysib Key)
-    const brevoApiKey = process.env.BREVO_API_KEY || "";
-    const senderName = process.env.BREVO_SENDER_NAME || "FACE Prep E-Campus";
-    const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SUPER_ADMIN_EMAIL || "no-reply@faceprep.in";
+    const auditBcc = (process.env.ADMIN_AUDIT_EMAIL || "").trim(); // MAIL-M01 — proper BCC below
+    const hiddenBcc = Array.from(new Set([
+      ...bccList,
+      ...(auditBcc && auditBcc.includes("@") ? [auditBcc] : [])
+    ]));
+    const ccList = splitEmails(cc);
+    const plainText = htmlToPlainText(htmlBody);
 
+    // Helper: log failure to audit_logs (MAIL-H03)
+    const logFailure = async (provider: string, err: string) => {
+      try {
+        const db = await getDb();
+        await db.run(
+          "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'mail_failure', ?, 'System', 'System', ?)",
+          [generateId("mail_fail"), `[${provider}] → ${recipients.join(",")} : ${err}`, new Date().toISOString()]
+        );
+      } catch (_) { /* never block on logging */ }
+    };
+
+    // 1. PRIMARY: Brevo REST API v3
+    const brevoApiKey = process.env.BREVO_API_KEY || "";
     if (brevoApiKey) {
       try {
-        const toList = recipients.map((email) => ({ email }));
-        const res = await fetch("https://api.brevo.com/v3/smtp/email", {
-          method: "POST",
-          headers: {
-            accept: "application/json",
-            "api-key": brevoApiKey,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            sender: { name: senderName, email: senderEmail },
-            to: toList,
-            subject,
-            htmlContent: htmlBody,
-          }),
-        });
+        const brevoBody: Record<string, any> = {
+          sender: { name: senderName, email: senderEmail },
+          to: recipients.map((email) => ({ email })),
+          subject,
+          htmlContent: htmlBody,
+          textContent: plainText,
+          headers: { "List-Unsubscribe": `<${BRAND.portalUrl}/notifications/settings>` }, // MAIL-L04
+        };
+        if (hiddenBcc.length > 0) brevoBody.bcc = hiddenBcc.map((email) => ({ email }));
+        if (ccList.length > 0) brevoBody.cc = ccList.map((email) => ({ email }));
 
+        const res = await fetchWithTimeout("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: { accept: "application/json", "api-key": brevoApiKey, "content-type": "application/json" },
+          body: JSON.stringify(brevoBody),
+        }, MAIL_FETCH_TIMEOUT_MS);
         const data = await res.json();
         if (res.ok && data.messageId) {
-          console.log("Email dispatched via Brevo REST API! Message ID:", data.messageId);
+          console.log("✅ [Brevo REST] sent:", data.messageId);
           return { success: true, messageId: data.messageId };
-        } else {
-          console.warn("Brevo REST API notice:", data);
         }
-      } catch (brevoErr) {
-        console.error("Brevo API call failed, falling back to SMTP...", brevoErr);
+        await logFailure("Brevo REST", data?.message || JSON.stringify(data));
+      } catch (e: any) {
+        await logFailure("Brevo REST (exception)", e.message);
       }
     }
 
-    // 2. SECONDARY: Brevo SMTP Relay Delivery via nodemailer (smtp-relay.brevo.com)
-    const host = process.env.SMTP_HOST || "smtp-relay.brevo.com";
-    const port = parseInt(process.env.SMTP_PORT || "587", 10);
-    const user = process.env.SMTP_USER || "";
-    const pass = process.env.SMTP_PASS || "";
-
-    if (user && pass) {
+    // 2. SECONDARY: Brevo SMTP via nodemailer
+    // A REST timeout still falls through here. Worst case is a duplicate send (the REST
+    // call landed after all); the alternative — holding the request open indefinitely —
+    // is what made mail look like a hung button.
+    const smtpUser = process.env.SMTP_USER || "";
+    const smtpPass = process.env.SMTP_PASS || "";
+    if (smtpUser && smtpPass) {
       try {
+        const port = parseInt(process.env.SMTP_PORT || "587", 10);
         const transporter = nodemailer.createTransport({
-          host,
+          host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
           port,
           secure: port === 465,
-          auth: { user, pass },
+          auth: { user: smtpUser, pass: smtpPass },
+          // Without these a dead SMTP relay hangs the send until the function is killed.
+          connectionTimeout: MAIL_FETCH_TIMEOUT_MS,
+          greetingTimeout: MAIL_FETCH_TIMEOUT_MS,
+          socketTimeout: MAIL_FETCH_TIMEOUT_MS * 2,
         });
-
-        const info = await transporter.sendMail({
+        const mailOpts: any = {
           from: `"${senderName}" <${senderEmail}>`,
           to: recipients.join(", "),
           subject,
           html: htmlBody,
-        });
-
-        console.log("Email dispatched via Brevo SMTP:", info.messageId);
+          text: plainText,
+          headers: { "List-Unsubscribe": `<${BRAND.portalUrl}/notifications/settings>` }, // MAIL-L04
+        };
+        if (hiddenBcc.length > 0) mailOpts.bcc = hiddenBcc.join(", ");
+        if (ccList.length > 0) mailOpts.cc = ccList.join(", ");
+        const info = await transporter.sendMail(mailOpts);
+        console.log("✅ [Brevo SMTP] sent:", info.messageId);
         return { success: true, messageId: info.messageId };
-      } catch (smtpErr) {
-        console.error("Brevo SMTP failed:", smtpErr);
+      } catch (e: any) {
+        await logFailure("Brevo SMTP", e.message);
       }
     }
 
     // 3. FALLBACK: Google Apps Script Webhook
     const gasUrl = process.env.NEXT_PUBLIC_GAS_MAIL_URL || "";
     if (gasUrl) {
-      try {
-        const res = await fetch(gasUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: recipients.join(","),
-            subject,
-            htmlBody,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          console.log("Email dispatched via GAS Webhook Fallback:", data);
-          return { success: true, ...data };
+      if (!gasUrl.startsWith("https://")) {
+        await logFailure("GAS Webhook", "URL does not use HTTPS — skipped");
+      } else {
+        try {
+          const res = await fetchWithTimeout(gasUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: recipients.join(","),
+              bcc: hiddenBcc.join(","),
+              subject,
+              htmlBody
+            }),
+          }, MAIL_FETCH_TIMEOUT_MS);
+          if (res.ok) {
+            const data = await res.json();
+            console.log("✅ [GAS Webhook] sent:", data);
+            return { success: true, ...data };
+          }
+        } catch (e: any) {
+          await logFailure("GAS Webhook", e.message);
         }
-      } catch (gasErr) {
-        console.error("GAS Fallback error:", gasErr);
       }
     }
 
-
-
-
-
-    // 4. Fallback: Console Mock Log
-    console.log("------------------- MOCK EMAIL TRIGGERED -------------------");
-    console.log(`To: ${recipients.join(",")}`);
-    console.log(`Subject: ${subject}`);
-    console.log("------------------------------------------------------------");
+    // 4. All providers failed — mock log
+    await logFailure("All providers", "No working mail provider configured");
+    console.log("⚠️  [Mail] MOCK — To:", recipients.join(","), "| Subject:", subject);
     return { success: true, mocked: true };
   } catch (err: any) {
     console.error("Mail utility error:", err);

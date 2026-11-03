@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
 
 export interface ProposedAllocation {
   id?: string;
@@ -181,17 +181,38 @@ export async function generateCapacityFirstPrioritySplit(options: {
   const allocations: ProposedAllocation[] = [];
   let overflowOccurred = false;
 
+  // One read for every accepted pool's mentors instead of one read per pool.
+  const mentorCollegeIds = Array.from(
+    new Set(acceptedCamResponses.map((r: any) => r.college_id).filter(Boolean))
+  );
+  const mentorsByCollege = new Map<string, any[]>();
+  if (mentorCollegeIds.length > 0) {
+    const mentorReadFailures: QueryFailure[] = [];
+    const mentorPlaceholders = mentorCollegeIds.map(() => "?").join(",");
+    const [mentorRows] = await db.multiQuery([
+      {
+        sql: `SELECT * FROM mentors WHERE college_id IN (${mentorPlaceholders}) ORDER BY name ASC`,
+        params: mentorCollegeIds,
+      },
+    ], mentorReadFailures);
+    if (mentorReadFailures.length > 0) {
+      throw new Error(`priority engine mentor roster unreadable: ${mentorReadFailures[0].error}`);
+    }
+    for (const m of mentorRows) {
+      const key = String(m.college_id);
+      if (!mentorsByCollege.has(key)) mentorsByCollege.set(key, []);
+      mentorsByCollege.get(key)!.push(m);
+    }
+  }
+
   // Process accepted CAM capacity pools
   for (const camResp of acceptedCamResponses) {
     if (studentsToAllocate <= 0) break;
 
     const camCapacity = Number(camResp.accepted_student_capacity) || 0;
 
-    // Fetch mentors at this accepted CAM's college
-    const collegeMentors = await db.all(
-      "SELECT * FROM mentors WHERE college_id = ? ORDER BY name ASC",
-      [camResp.college_id]
-    );
+    // Mentors at this accepted CAM's college, already ordered by name
+    const collegeMentors = mentorsByCollege.get(String(camResp.college_id)) || [];
 
     const availableMentor = collegeMentors[0] || {
       id: `mentor_cam_${camResp.college_id}`,

@@ -3,6 +3,7 @@ import { getDb, PostgresDbAdapter } from "@/lib/db";
 import { validateSession, SESSION_COOKIE_NAME, UserSessionRecord } from "@/lib/session";
 import { verifyCsrfToken, CSRF_HEADER_NAME, generateCsrfToken } from "@/lib/csrf";
 import { roleGrantsSuperAdmin } from "@/lib/superadmin";
+import { logger } from "@/lib/logger";
 
 export type Role = "admin" | "cm" | "mentor" | "student" | "kam" | "sme" | "fee_manager" | "L and D" | "hr";
 
@@ -75,18 +76,76 @@ export function extractSessionToken(request: Request): string | null {
 }
 
 /**
+ * A dashboard fan-out fires several API calls per interaction, each of which
+ * otherwise repeats the same session and user lookups. Sharing the in-flight
+ * promise collapses concurrent identical reads into one round trip and keeps
+ * nothing past the request, so revocation and role changes stay immediate.
+ * Each waiter gets its own copy (the `.then` runs per caller, not per lookup)
+ * so a route mutating its user or session cannot leak into another request
+ * that was coalesced with it.
+ */
+const identityInFlight = new Map<string, Promise<any>>();
+
+function coalesce<T>(key: string, make: () => Promise<T>): Promise<T> {
+  const existing = identityInFlight.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const pending = make().finally(() => {
+    if (identityInFlight.get(key) === pending) identityInFlight.delete(key);
+  });
+  identityInFlight.set(key, pending);
+  return pending;
+}
+
+/**
+ * Accounts an administrator has turned off. `users.status` is free text written by
+ * several routes ('Inactive', 'Blocked', ...), so the test is case-insensitive and
+ * covers the synonyms rather than one exact string.
+ */
+const DISABLED_STATUSES = new Set(["inactive", "blocked", "suspended", "disabled", "deactivated"]);
+
+export function isAccountDisabled(status: unknown): boolean {
+  return DISABLED_STATUSES.has(String(status ?? "").toLowerCase().trim());
+}
+
+export function loadSession(rawToken: string) {
+  return coalesce(`session:${rawToken}`, async () => {
+    const db = await getDb();
+    return validateSession(db, rawToken);
+  }).then((res) => ({
+    ...res,
+    session: res.session ? { ...res.session } : res.session
+  }));
+}
+
+export function loadUser(userId: string) {
+  return coalesce(`user:${userId}`, async () => {
+    const db = await getDb();
+    return resolveLiveUser(db, userId);
+  }).then((user) => (user ? { ...user } : null));
+}
+
+/**
  * Resolves current live user record and role details from the database
  */
 export async function resolveLiveUser(
   db: PostgresDbAdapter,
   userId: string
 ): Promise<AuthenticatedUser | null> {
-  const user = await db.get(
-    "SELECT * FROM users WHERE id = ? OR reference_id = ? OR LOWER(email) = ?",
-    [userId, userId, userId.toLowerCase()]
-  );
+  // Session rows store users.id, so the primary-key lookup covers the hot path.
+  let user = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
+  if (!user) {
+    user = await db.get(
+      "SELECT * FROM users WHERE reference_id = ? OR LOWER(email) = ? LIMIT 1",
+      [userId, userId.toLowerCase()]
+    );
+  }
 
   if (!user) return null;
+
+  // A revoked status must end the session, not just the next login: until this check,
+  // an account switched to Inactive kept working for the remaining 30 days of its
+  // cookie, and /api/me kept handing back a full dashboard.
+  if (isAccountDisabled(user.status)) return null;
 
   const role = normalizeRole(user.role);
   let name = user.name || "";
@@ -96,16 +155,24 @@ export async function resolveLiveUser(
   try {
     const table = ROLE_PROFILE_TABLES[role];
     if (table) {
-      const profile = await db.get(
-        `SELECT * FROM ${table} WHERE id = ? OR LOWER(email) = ?`,
-        [user.reference_id || user.id, String(user.email || "").toLowerCase()]
-      );
+      const profileId = user.reference_id || user.id;
+      let profile = await db.get(`SELECT * FROM ${table} WHERE id = ?`, [profileId]);
+      if (!profile) {
+        profile = await db.get(
+          `SELECT * FROM ${table} WHERE LOWER(email) = ? LIMIT 1`,
+          [String(user.email || "").toLowerCase()]
+        );
+      }
       if (profile) {
         if (profile.name) name = profile.name;
         if (profile.college_id) collegeId = profile.college_id;
       }
     }
-  } catch (_) {}
+  } catch (err: any) {
+    // A missing/renamed profile table must not fail the request, but it silently
+    // degraded every role's display name and campus scope when it happened.
+    logger.warn("resolveLiveUser profile lookup failed", { role, error: err?.message || String(err) });
+  }
 
   return {
     id: user.id,
@@ -115,7 +182,7 @@ export async function resolveLiveUser(
     name: name || user.email || "User",
     college_id: collegeId,
     isSuperAdmin: roleGrantsSuperAdmin(role),
-    mustChangePassword: user.must_change_password === 1
+    mustChangePassword: Boolean(user.must_change_password)
   };
 }
 
@@ -144,8 +211,7 @@ export async function requireAuth(
       };
     }
 
-    const db = await getDb();
-    const sessionRes = await validateSession(db, rawToken);
+    const sessionRes = await loadSession(rawToken);
 
     if (!sessionRes.isValid || !sessionRes.session || !sessionRes.userId) {
       const code = sessionRes.reason === "idle_timeout" ? "SESSION_IDLE" : "SESSION_EXPIRED";
@@ -181,7 +247,7 @@ export async function requireAuth(
     }
 
     // Authoritative Live User Resolution
-    const user = await resolveLiveUser(db, sessionRes.userId);
+    const user = await loadUser(sessionRes.userId!);
     if (!user) {
       return {
         errorResponse: NextResponse.json(

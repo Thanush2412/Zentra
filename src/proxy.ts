@@ -17,7 +17,6 @@ const SESSION_COOKIE_NAME = "ecampus_session";
 const PUBLIC_PATHS = new Set<string>([
   "/api/login",
   "/api/signup",
-  "/api/change-password",
   "/api/health",
   "/api/student-feedback",
   "/api/auth/me",

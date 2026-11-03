@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
 import { IndianRupee, CalendarCheck2, MessageSquare, Sparkles, TrendingUp, AlertTriangle, CheckCircle2, Clock, Building2, Download } from "lucide-react";
 
 export const KAMFinanceAndWelfare: React.FC<{
@@ -9,36 +12,25 @@ export const KAMFinanceAndWelfare: React.FC<{
   kamId?: string;
 }> = ({ initialSubTab = "fees", selectedCollegeId = "all", kamId }) => {
   const [subTab, setSubTab] = useState<"fees" | "leaves" | "issues" | "events">(initialSubTab);
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
 
   useEffect(() => {
     setSubTab(initialSubTab);
   }, [initialSubTab]);
 
-  useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
-        if (kamId) params.set("kamId", kamId);
-        const query = params.toString() ? `?${params.toString()}` : "";
-        const res = await fetch(`/api/kam/finance-and-welfare${query}`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setData(json);
-        }
-      } catch (err) {
-        console.error("Failed to load finance & welfare data:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    loadData();
-    return () => { isMounted = false; };
-  }, [selectedCollegeId, kamId]);
+  const params = new URLSearchParams();
+  if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
+  if (kamId) params.set("kamId", kamId);
+  const queryString = params.toString();
+
+  const financeQuery = useQuery({
+    queryKey: qk.kamPanel("finance-and-welfare", selectedCollegeId, queryString),
+    queryFn: async () => {
+      const json = await apiFetch<any>(`/api/kam/finance-and-welfare${queryString ? `?${queryString}` : ""}`);
+      return json?.success ? json : null;
+    },
+  });
+  const data = financeQuery.data ?? null;
+  const loading = financeQuery.isPending;
 
   const fees = data?.fees || {
     totalFees: 0,
@@ -225,7 +217,9 @@ export const KAMFinanceAndWelfare: React.FC<{
                 <div key={idx} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
                   <div>
                     <h4 className="font-black text-slate-900">{cat.category}</h4>
-                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Average Turnaround: {cat.avgResolutionDays} Days</p>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                      Average Turnaround: {cat.avgResolutionDays != null ? `${cat.avgResolutionDays} Days` : "No resolved cases yet"}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="font-black text-slate-800">{cat.count} Issues</span>

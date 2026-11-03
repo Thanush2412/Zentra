@@ -1,12 +1,15 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "sme", "cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
 
@@ -34,15 +37,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Ensure actual duration tracking columns exist in DB
-    try {
-      await db.run("ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_start_time TEXT");
-      await db.run("ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_end_time TEXT");
-      await db.run("ALTER TABLE interview_evaluations ADD COLUMN IF NOT EXISTS actual_duration_minutes INTEGER");
-      await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_start_time TEXT");
-      await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_end_time TEXT");
-      await db.run("ALTER TABLE student_interview_slots ADD COLUMN IF NOT EXISTS actual_duration_minutes INTEGER");
-    } catch (_) {}
+    // Actual-time columns are added once by the startup migration
+    // `interview_actual_time_columns`, not by six DDL statements per evaluation.
 
     const isAbsent = body.is_absent === true || attendance === "absent";
     const finalAttendance = isAbsent ? "absent" : "present";
@@ -50,7 +46,23 @@ export async function POST(request: Request) {
 
     const actualStartTime = isAbsent ? null : (body.actual_start_time || null);
     const actualEndTime = isAbsent ? null : (body.actual_end_time || null);
-    const actualDurationMinutes = isAbsent ? 0 : (Number(body.actual_duration_minutes) || (actualStartTime && actualEndTime ? 15 : null));
+
+    // Duration is measured, never assumed: derive it from the start/end stamps the
+    // evaluator actually submitted, and store null when they did not include them.
+    const parseClockMinutes = (value: any): number | null => {
+      const match = String(value || "").match(/(\d{1,2}):(\d{2})/);
+      return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+    };
+    const requestedDuration = Number(body.actual_duration_minutes);
+    let derivedDuration: number | null = null;
+    if (actualStartTime && actualEndTime) {
+      const startMins = parseClockMinutes(actualStartTime);
+      const endMins = parseClockMinutes(actualEndTime);
+      if (startMins != null && endMins != null && endMins >= startMins) derivedDuration = endMins - startMins;
+    }
+    const actualDurationMinutes = isAbsent
+      ? 0
+      : (Number.isFinite(requestedDuration) && requestedDuration > 0 ? requestedDuration : derivedDuration);
 
     const evalId = `eval_${interview_id}_${student_id}`;
     const commScore = isAbsent ? 0 : (Number(communication_score) || 0);
@@ -141,19 +153,22 @@ export async function POST(request: Request) {
       ]
     );
 
-    const interview = await db.get("SELECT * FROM student_interviews WHERE id = ?", [interview_id]);
-
     // ── Asynchronous Resilient Period Attendance Sync & Student-Level Execution Logging ──
-    (async () => {
+    // Started once the post-write batch below yields the interview row, so the row is
+    // read in the same round trip as the counts instead of one round trip earlier.
+    const syncInterviewAttendance = async (interview: any) => {
       try {
-        const targetDate = interview?.target_date || now.slice(0, 10);
-        const d = new Date(targetDate);
+        // target_date is a YYYY-MM-DD string; `now` is UTC, which would resolve to the
+        // previous day between 00:00 and 05:30 IST, hence the institution-date fallback.
+        const rawTargetDate = interview?.target_date ? String(interview.target_date).split("T")[0].trim() : "";
+        const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawTargetDate) ? rawTargetDate : getInstitutionDateStr();
+        const d = new Date(`${targetDate}T00:00:00`);
         const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         const dayOfWeek = dayNames[d.getDay()];
 
         // 1. Resolve student record
         const student = await db.get(
-          `SELECT id, name, classgroup as "classGroup", department, college_id FROM students WHERE id = $1 OR LOWER(name) = LOWER($2)`,
+          `SELECT id, name, classgroup as "classGroup", department, college_id FROM students WHERE id = ? OR LOWER(name) = LOWER(?)`,
           [student_id, student_name || ""]
         );
         const resolvedClassGroup = student?.classGroup || class_group || interview?.class_group || "";
@@ -211,10 +226,12 @@ export async function POST(request: Request) {
           );
 
           // Write student-level interview execution log
-          const logId = `l_iv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          const logId = generateId("l_iv");
           const durationStr = actualDurationMinutes
             ? ` Duration: ${actualDurationMinutes} mins (${actualStartTime || '—'} – ${actualEndTime || '—'}).`
-            : " Duration: 0 mins (Absent).";
+            : isAbsent
+              ? " Duration: absent."
+              : "";
           const description = `Interview execution logged: ${student?.name || student_name} (${student_id}) marked ${attStatus.toUpperCase()} for Period ${matchingSlot.time} (${matchingSlot.course || interview?.subject || 'Class'}).${durationStr} Rubric: ${totalScore}/10. Evaluator: ${mentor_name}`;
 
           await db.run(
@@ -235,18 +252,39 @@ export async function POST(request: Request) {
       } catch (attErr) {
         console.error("Asynchronous interview period attendance sync error:", attErr);
       }
-    })();
+    };
+
+    // The interview row, the two counts and the read-back all key off interview_id /
+    // evalId and run after the insert, so they share one round trip.
+    const postFailures: QueryFailure[] = [];
+    const [interviewRows, evalRows, slotRows, savedEvalRows] = await db.multiQuery(
+      [
+        { sql: "SELECT * FROM student_interviews WHERE id = ?", params: [interview_id] },
+        { sql: "SELECT COUNT(*) as count FROM interview_evaluations WHERE interview_id = ?", params: [interview_id] },
+        { sql: "SELECT COUNT(*) as count FROM student_interview_slots WHERE interview_id = ?", params: [interview_id] },
+        { sql: "SELECT * FROM interview_evaluations WHERE id = ?", params: [evalId] },
+      ],
+      postFailures
+    );
+    if (postFailures.length > 0) {
+      // A missed count leaves the interview stuck in "assigned" and a missed read-back
+      // answers with an empty evaluation, so neither is reported as a clean save.
+      throw new Error(postFailures[0].error);
+    }
+    const interview = interviewRows[0];
+
+    // Awaited: the response ends the serverless invocation, and a floating promise
+    // here was routinely frozen before the period attendance row and audit log landed.
+    await syncInterviewAttendance(interview);
 
     // Auto-complete if all students are now evaluated or marked absent
     if (interview) {
-      const evalCount = await db.get(
-        "SELECT COUNT(*) as count FROM interview_evaluations WHERE interview_id = ?",
-        [interview_id]
-      );
-      const expectedCount = Number(interview.student_count) || Number(interview.requested_students) || 0;
-      const actualCount = Number(evalCount?.count) || 0;
+      // Fix: compare against allocated_students (actual slots), not student_count (original request)
+      const allocatedCount = Number(interview.allocated_students) || Number(slotRows[0]?.count) || 0;
+      const expectedCount = allocatedCount > 0 ? allocatedCount : (Number(interview.student_count) || Number(interview.requested_students) || 0);
+      const actualCount = Number(evalRows[0]?.count) || 0;
 
-      // Transition to pending_verification when all students processed
+      // Transition to pending_verification when all allocated students processed
       if (expectedCount > 0 && actualCount >= expectedCount) {
         await db.run(
           "UPDATE student_interviews SET status = 'pending_verification', updated_at = ? WHERE id = ? AND status = 'assigned'",
@@ -255,7 +293,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const savedEval = await db.get("SELECT * FROM interview_evaluations WHERE id = ?", [evalId]);
+    const savedEval = savedEvalRows[0] || null;
 
     return NextResponse.json({
       success: true,

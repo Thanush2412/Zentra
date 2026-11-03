@@ -1,9 +1,15 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
-import { getRoleHomePath } from "@/lib/utils";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import {
+  resolveNotificationDestination,
+  type NotificationAction,
+} from "@/lib/notificationTarget";
 import {
   Bell,
   CheckCircle2,
@@ -22,30 +28,41 @@ import {
   CheckCheck
 } from "lucide-react";
 
+const ACTION_ICONS: Record<NotificationAction, React.ComponentType<{ className?: string }>> = {
+  external: ExternalLink,
+  details: ArrowRight,
+  schedule: Calendar,
+  interviews: Video,
+  approvals: ClipboardList,
+  exams: Award,
+  marks: Award,
+  tasks: BookOpen,
+  fees: IndianRupee,
+  library: BookOpen,
+  profile: User,
+  fallback: ArrowRight,
+};
+
 export function NotificationsView({ userId, portalType }: { userId?: string; portalType: string }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const notificationsQuery = useQuery<any[]>({
+    queryKey: qk.notificationsFull(userId || "anonymous"),
+    enabled: !!userId,
+    queryFn: async () => {
+      const data = await apiFetch<any>(`/api/notifications?userId=${encodeURIComponent(userId!)}&limit=50`);
+      return data?.success ? (data.notifications || []) : [];
+    },
+  });
+  const notifications = notificationsQuery.data || [];
+  const loading = notificationsQuery.isPending;
 
-  const fetchNotifications = useCallback(async () => {
-    if (!userId) return;
-    try {
-      const res = await fetch(`/api/notifications?userId=${encodeURIComponent(userId)}&limit=50`);
-      const data = await res.json();
-      if (data.success) {
-        setNotifications(data.notifications || []);
-      }
-    } catch (e) {
-      toast("Failed to fetch notifications", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, toast]);
-
-  useEffect(() => {
-    if (userId) fetchNotifications();
-  }, [userId, fetchNotifications]);
+  const patchCachedNotifications = (patch: (rows: any[]) => any[]) => {
+    const uid = userId || "anonymous";
+    queryClient.setQueryData<any[]>(qk.notificationsFull(uid), prev => patch(prev || []));
+    queryClient.setQueryData<any[]>(qk.notifications(uid), prev => patch(prev || []));
+  };
 
   const markAsRead = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -57,7 +74,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
       });
       const data = await res.json();
       if (data.success) {
-        setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
+        patchCachedNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
       }
     } catch (e) {
       toast("Failed to update status", "error");
@@ -69,11 +86,11 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
       const res = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, markAll: true })
+        body: JSON.stringify({ userId, markAllRead: true })
       });
       const data = await res.json();
       if (data.success) {
-        setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
+        patchCachedNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
         toast("All marked as read", "success");
       }
     } catch (e) {
@@ -82,89 +99,9 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
   };
 
   const resolveTarget = (n: any) => {
-    if (!n) return null;
-    const rawLink = n.link?.trim();
-    if (rawLink && (rawLink.startsWith("http://") || rawLink.startsWith("https://"))) {
-      return { url: rawLink, isExternal: true, actionLabel: "Open Link", icon: ExternalLink };
-    }
-
-    const title = (n.title || "").toLowerCase();
-    const message = (n.message || "").toLowerCase();
-    const fullText = `${title} ${message}`;
-
-    // Extract any YYYY-MM-DD date mentioned
-    const dateMatch = `${n.title || ""} ${n.message || ""}`.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-    const targetDate = dateMatch ? dateMatch[1] : null;
-
-    const role = portalType || "student";
-    const roleBase = getRoleHomePath(role);
-
-    if (rawLink) {
-      let cleanLink = rawLink.startsWith("/") ? rawLink : `${roleBase}/${rawLink}`;
-      if (cleanLink.startsWith("/cm") && role === "student") {
-        cleanLink = cleanLink.replace(/^\/cm/, "/student");
-      } else if (cleanLink.startsWith("/cm") && role === "mentor") {
-        cleanLink = cleanLink.replace(/^\/cm/, "/mentor");
-      }
-      return { url: cleanLink, isExternal: false, targetDate, actionLabel: "View Details", icon: ArrowRight };
-    }
-
-    if (fullText.includes("schedule") || fullText.includes("calendar") || fullText.includes("timetable") || fullText.includes("day order") || fullText.includes("holiday") || fullText.includes("class session") || fullText.includes("campus schedule")) {
-      if (role === "student") return { url: `/student/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Class Schedule", icon: Calendar };
-      if (role === "mentor") return { url: `/mentor/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Timetable", icon: Calendar };
-      if (role === "cm") return { url: `/cm/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule", icon: Calendar };
-      if (role === "kam") return { url: `/kam/attendance${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Attendance", icon: Calendar };
-      if (role === "admin") return { url: `/admin/schedule${targetDate ? `?date=${targetDate}` : ""}`, isExternal: false, targetDate, actionLabel: "Open Schedule", icon: Calendar };
-    }
-
-    if (fullText.includes("interview") || fullText.includes("mock") || fullText.includes("gmeet") || fullText.includes("evaluat") || fullText.includes("split")) {
-      if (role === "student") return { url: `/student/interviews`, isExternal: false, targetDate, actionLabel: "View Mock Interview", icon: Video };
-      if (role === "mentor") return { url: `/mentor/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews", icon: Video };
-      if (role === "cm") return { url: `/cm/interviews`, isExternal: false, targetDate, actionLabel: "Open Interview Hub", icon: Video };
-      if (role === "kam") return { url: `/kam/analytics`, isExternal: false, targetDate, actionLabel: "View Analytics", icon: Video };
-      if (role === "admin") return { url: `/admin/interviews`, isExternal: false, targetDate, actionLabel: "View Interviews", icon: Video };
-    }
-
-    if (fullText.includes("leave") || fullText.includes("on-duty") || fullText.includes("on duty") || fullText.includes(" od ") || fullText.includes("handover") || fullText.includes("permission") || fullText.includes("approval")) {
-      if (role === "student") return { url: `/student/dashboard`, isExternal: false, targetDate, actionLabel: "View Dashboard", icon: ClipboardList };
-      if (role === "mentor") return { url: `/mentor/leaves`, isExternal: false, targetDate, actionLabel: "Review Leaves", icon: ClipboardList };
-      if (role === "cm") return { url: `/cm/leave-approvals`, isExternal: false, targetDate, actionLabel: "Review Approvals", icon: ClipboardList };
-      if (role === "admin") return { url: `/admin/approvals`, isExternal: false, targetDate, actionLabel: "View Approvals", icon: ClipboardList };
-      if (role === "hr") return { url: `/hr`, isExternal: false, targetDate, actionLabel: "View HR Portal", icon: ClipboardList };
-    }
-
-    if (fullText.includes("exam") || fullText.includes("test") || fullText.includes("assessment") || fullText.includes("cia")) {
-      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Exam Marks", icon: Award };
-      if (role === "mentor") return { url: `/mentor/exams`, isExternal: false, targetDate, actionLabel: "Open Exam Manager", icon: Award };
-      if (role === "cm") return { url: `/cm/exams`, isExternal: false, targetDate, actionLabel: "Open Exam Studio", icon: Award };
-      if (role === "admin") return { url: `/admin/exams`, isExternal: false, targetDate, actionLabel: "View Exams", icon: Award };
-    }
-
-    if (fullText.includes("mark") || fullText.includes("grade") || fullText.includes("score")) {
-      if (role === "student") return { url: `/student/exams`, isExternal: false, targetDate, actionLabel: "View Test Marks", icon: Award };
-      if (role === "mentor") return { url: `/mentor/marks`, isExternal: false, targetDate, actionLabel: "Open Mark Entry", icon: Award };
-    }
-
-    if (fullText.includes("task") || fullText.includes("tracker") || fullText.includes("practical") || fullText.includes("submission") || fullText.includes("assignment")) {
-      if (role === "student") return { url: `/student/tracker`, isExternal: false, targetDate, actionLabel: "Open Task Tracker", icon: BookOpen };
-      if (role === "mentor") return { url: `/mentor/submissions`, isExternal: false, targetDate, actionLabel: "View Submissions", icon: BookOpen };
-    }
-
-    if (fullText.includes("fee") || fullText.includes("due") || fullText.includes("payment") || fullText.includes("tuition") || fullText.includes("invoice")) {
-      if (role === "student") return { url: `/student/fees`, isExternal: false, targetDate, actionLabel: "Pay / View Fees", icon: IndianRupee };
-      if (role === "fee_manager" || role === "admin") return { url: `/fee-manager`, isExternal: false, targetDate, actionLabel: "Open Fee Manager", icon: IndianRupee };
-    }
-
-    if (fullText.includes("library") || fullText.includes("book") || fullText.includes("opac")) {
-      if (role === "student") return { url: `/student/library`, isExternal: false, targetDate, actionLabel: "Open Library OPAC", icon: BookOpen };
-    }
-
-    if (fullText.includes("profile") || fullText.includes("password") || fullText.includes("account")) {
-      if (role === "student") return { url: `/student/profile`, isExternal: false, targetDate, actionLabel: "View Profile", icon: User };
-      if (role === "mentor") return { url: `/mentor/profile`, isExternal: false, targetDate, actionLabel: "View Profile", icon: User };
-    }
-
-    return { url: `${roleBase}/dashboard`, isExternal: false, targetDate, actionLabel: "Open Workspace", icon: ArrowRight };
+    const target = resolveNotificationDestination(n, portalType);
+    if (!target) return null;
+    return { ...target, icon: ACTION_ICONS[target.action] };
   };
 
   const handleNotificationAction = (n: any) => {

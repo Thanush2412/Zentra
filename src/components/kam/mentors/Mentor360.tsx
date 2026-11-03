@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { Dialog } from "@/components/ui/dialog";
 import {
   X,
   User,
@@ -26,34 +30,20 @@ interface Mentor360Props {
 }
 
 export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
-  const [data, setData] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"schedule" | "courses" | "demos" | "handovers">("schedule");
   const [selectedDay, setSelectedDay] = useState<string>("Monday");
 
-  useEffect(() => {
-    let isMounted = true;
-    async function fetchMentor360() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/kam/mentors/${encodeURIComponent(mentorId)}/progress`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setData(json);
-        } else if (isMounted) {
-          setError(json.message || "Failed to load faculty member details");
-        }
-      } catch (err: any) {
-        if (isMounted) setError(err.message);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    fetchMentor360();
-    return () => { isMounted = false; };
-  }, [mentorId]);
+  const mentorQuery = useQuery({
+    queryKey: qk.kamMentorProgress(mentorId),
+    queryFn: async () => {
+      const json = await apiFetch<any>(`/api/kam/mentors/${encodeURIComponent(mentorId)}/progress`);
+      if (!json?.success) throw new Error(json?.message || "Failed to load faculty member details");
+      return json;
+    },
+  });
+  const data = mentorQuery.data ?? null;
+  const loading = mentorQuery.isPending;
+  const error = mentorQuery.error ? (mentorQuery.error as Error).message : null;
 
   // Close on Escape Key
   useEffect(() => {
@@ -178,19 +168,23 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
 
   if (error || !data) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-        <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl text-center space-y-3 border border-slate-100">
-          <AlertTriangle className="h-8 w-8 text-rose-500 mx-auto" />
-          <h3 className="text-sm font-black text-slate-900">Error Loading Faculty Profile</h3>
-          <p className="text-xs font-medium text-slate-500">{error || "Faculty member not found"}</p>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-          >
-            Close
-          </button>
-        </div>
-      </div>
+      <Dialog
+        open={true}
+        onOpenChange={(next) => { if (!next) onClose(); }}
+        ariaLabel="Error loading faculty profile"
+        overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+        panelClassName="max-w-sm max-h-[90vh] rounded-2xl p-5 space-y-3 text-center border-slate-100"
+      >
+        <AlertTriangle className="h-8 w-8 text-rose-500 mx-auto" />
+        <h3 className="text-sm font-black text-slate-900">Error Loading Faculty Profile</h3>
+        <p role="alert" className="text-xs font-medium text-slate-500">{error || "Faculty member not found"}</p>
+        <button
+          onClick={onClose}
+          className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+        >
+          Close
+        </button>
+      </Dialog>
     );
   }
 
@@ -200,14 +194,13 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
   const daySlots = slots.filter((s: any) => s.day?.toLowerCase() === selectedDay.toLowerCase());
 
   return (
-    <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-in fade-in duration-150 overflow-y-auto"
+    <Dialog
+      open={true}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      ariaLabel="Faculty 360 profile"
+      overlayClassName="bg-slate-900/60 backdrop-blur-xs p-3 overflow-y-auto"
+      panelClassName="max-w-3xl my-auto max-h-[92vh] flex flex-col overflow-hidden rounded-2xl border-slate-200 animate-in zoom-in-95 duration-150 p-0 space-y-0"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-150"
-      >
         {/* Compact Header Card with FacePrep Brand Gradient */}
         <div className="bg-gradient-to-r from-[#D528A2] via-pink-600 to-indigo-700 p-4 text-white relative shrink-0">
           <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
@@ -222,6 +215,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
             </button>
             <button
               onClick={onClose}
+              aria-label="Close faculty profile"
               className="h-7 w-7 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer shadow-2xs"
             >
               <X className="h-3.5 w-3.5" />
@@ -508,7 +502,6 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
             Close
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };

@@ -1,12 +1,14 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const rules = await db.all("SELECT * FROM demo_rules ORDER BY created_at DESC");
     return NextResponse.json({ success: true, rules });
@@ -18,6 +20,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { action } = body;
@@ -34,7 +38,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "A rule for this subject group and week already exists." });
       }
 
-      const id = "rule_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+      const id = generateId("rule");
       await db.run(
         "INSERT INTO demo_rules (id, subject, week, target, created_at) VALUES (?, ?, ?, ?, ?)",
         [id, subject, week, target, new Date().toISOString()]

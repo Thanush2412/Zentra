@@ -1,13 +1,10 @@
-// Pin to Mumbai (bom1) — co-located with Supabase DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { normCollegeName } from "@/lib/audit-sources";
-
-const DEFAULT_SUPABASE_URL = "https://apzsuclpydjkmaffppmr.supabase.co";
-const DEFAULT_SERVICE_ROLE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwenN1Y2xweWRqa21hZmZwcG1yIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODE2MTY3OCwiZXhwIjoyMTAzNzM3Njc4fQ.CQYy1IAXGnh-jyqnmwgAB8GQXJ4XE8npl5SUPtuWjeQ";
+import { fetchWithTimeout } from "@/lib/net";
+import { getDb, chunkList } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 interface StudentRow {
   id: string;
@@ -45,27 +42,132 @@ interface CampusRow {
   cities?: { name: string } | null;
 }
 
+const OFFER_SELECT = "id,student_id,drive_id,source,drive_type,offer_category,ctc_lpa,company_name,role_title,declared_at";
+const SEMESTER_SELECT = "student_id,semester_number,cgpa,current_arrears,history_of_arrears,status";
+
+/** Ids go into a PostgREST `in.(…)` list, so anything unexpected is dropped, not escaped. */
+const ID_SAFE = /^[A-Za-z0-9_-]{1,64}$/;
+const ID_CHUNK = 100;
+
+/**
+ * Read one placement resource scoped to a set of students.
+ *
+ * offers and student_semesters have no campus column, so this used to pull both
+ * tables whole out of the placement project and filter them here — a payload that
+ * grew with the institution, not with the campus being reported on. The roster ids
+ * are pushed into the read instead, a chunk per URL, because one URL carrying every
+ * uuid of a campus outgrows the gateway's request line.
+ */
+async function fetchScopedByStudent(
+  supabaseUrl: string,
+  headers: Record<string, string>,
+  resource: string,
+  select: string,
+  studentIds: string[]
+): Promise<any[]> {
+  const ids = Array.from(new Set(studentIds.filter((id) => ID_SAFE.test(String(id)))));
+  if (ids.length < studentIds.length) {
+    // Dropping an id silently would report that student as having no offers.
+    console.warn(`[audit/placement] ${studentIds.length - ids.length} student id(s) rejected from the ${resource} scope read`);
+  }
+  if (ids.length === 0) return [];
+
+  // A failed chunk throws instead of contributing nothing: an empty offers list reads
+  // as "this campus has no placements" in every KPI below.
+  const rows: any[] = [];
+  for (const group of chunkList(chunkList(ids, ID_CHUNK), 4)) {
+    // Four URLs in flight — a large roster is dozens of chunks, and firing them all
+    // at once is a self-inflicted outage for the placement project.
+    const settled = await Promise.all(
+      group.map(async (chunk) => {
+        const url = `${supabaseUrl}/rest/v1/${resource}?select=${select}&student_id=in.(${chunk.join(",")})`;
+        const res = await fetchWithTimeout(url, { headers, next: { revalidate: 60 } });
+        if (!res.ok) throw new Error(`Placement ${resource} read failed with ${res.status}`);
+        const page = await res.json();
+        return Array.isArray(page) ? page : [];
+      })
+    );
+    rows.push(...settled.flat());
+  }
+  return rows;
+}
+
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const collegeParam = searchParams.get("college") || "";
-    const passingYearParam = searchParams.get("passingYear") || "all";
-    const degreeParam = searchParams.get("degree") || "all";
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
 
-    const supabaseUrl = process.env.PLACEMENT_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+    // This is a second Supabase project and the key bypasses its RLS policies,
+    // so it is read from the environment only — never with a source fallback.
+    const supabaseUrl = process.env.PLACEMENT_SUPABASE_URL || "";
     const apiKey =
       process.env.PLACEMENT_SUPABASE_SERVICE_ROLE_KEY ||
       process.env.PLACEMENT_SUPABASE_ANON_KEY ||
-      DEFAULT_SERVICE_ROLE_KEY;
+      "";
 
+    if (!supabaseUrl || !apiKey) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Placement reporting is not configured. Set PLACEMENT_SUPABASE_URL and PLACEMENT_SUPABASE_SERVICE_ROLE_KEY."
+        },
+        { status: 503 }
+      );
+    }
+
+    const user = auth!.user;
     const headers: Record<string, string> = {
       apikey: apiKey,
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     };
 
+    // Campus roster for the caller: admins are institution-wide, a CM sees only
+    // their own college and a KAM only the colleges in their portfolio.
+    let allowedCollegeNames: string[] | null = null;
+    if (user.role !== "admin") {
+      const db = await getDb();
+      const email = String(user.email || "").toLowerCase();
+      if (user.role === "cm") {
+        const cam = await db.get(
+          `SELECT c.name FROM campus_managers cm
+           LEFT JOIN colleges c ON cm.college_id = c.id
+           WHERE cm.id = ? OR LOWER(cm.email) = ?
+           LIMIT 1`,
+          [user.reference_id, email]
+        );
+        if (!cam?.name) {
+          return NextResponse.json(
+            { success: false, message: "No campus is linked to this account." },
+            { status: 403 }
+          );
+        }
+        allowedCollegeNames = [String(cam.name)];
+      } else {
+        const portfolio = await db.all(
+          `SELECT c.name FROM colleges c
+           JOIN kam_users k ON c.kam_id = k.id
+           WHERE k.id = ? OR LOWER(k.email) = ?`,
+          [user.reference_id, email]
+        );
+        allowedCollegeNames = portfolio.map((c: any) => String(c.name));
+        if (allowedCollegeNames.length === 0) {
+          return NextResponse.json(
+            { success: false, message: "No campus is assigned to this portfolio." },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    const { searchParams } = new URL(request.url);
+    const collegeParam = searchParams.get("college") || "";
+    const passingYearParam = searchParams.get("passingYear") || "all";
+    const degreeParam = searchParams.get("degree") || "all";
+
     // 1. Fetch all campuses to match college
-    const campusRes = await fetch(
+    const campusRes = await fetchWithTimeout(
       `${supabaseUrl}/rest/v1/campuses?select=id,name,code,is_active,cities(name)`,
       { headers, next: { revalidate: 300 } }
     );
@@ -77,6 +179,17 @@ export async function GET(request: Request) {
         message: "Failed to fetch campuses from Placement database"
       });
     }
+
+    // The placement project has no notion of this app's accounts, so the fuzzy
+    // name match used to pick a campus is reused to decide whether the caller
+    // may see it at all.
+    const inScope = (campusName: string) =>
+      !allowedCollegeNames ||
+      allowedCollegeNames.some(owner => {
+        const a = normCollegeName(campusName);
+        const b = normCollegeName(owner);
+        return !!a && !!b && (a === b || a.includes(b) || b.includes(a));
+      });
 
     // Find matched campus
     let matchedCampus: CampusRow | null = null;
@@ -100,10 +213,27 @@ export async function GET(request: Request) {
         matchedCampus =
           campuses.find(c => (c.code || "").toLowerCase() === collegeParam.toLowerCase()) || null;
       }
+
+      if (matchedCampus && !inScope(matchedCampus.name)) {
+        return NextResponse.json(
+          { success: false, message: "This campus is outside your assigned portfolio." },
+          { status: 403 }
+        );
+      }
     }
 
-    // If no matching campus found, pick the first or return list of available campuses
-    const activeCampus = matchedCampus || campuses[0];
+    // A scoped caller with no (or an unresolvable) ?college= still lands on their
+    // own campus — never on campuses[0], which is somebody else's roster.
+    const activeCampus =
+      matchedCampus ||
+      (allowedCollegeNames ? campuses.find(c => inScope(c.name)) || null : campuses[0]);
+
+    if (!activeCampus) {
+      return NextResponse.json(
+        { success: false, message: "No placement campus is linked to your account." },
+        { status: 403 }
+      );
+    }
     const campusId = activeCampus.id;
 
     // 2. Fetch students for this campus
@@ -113,25 +243,15 @@ export async function GET(request: Request) {
       studentQuery += `&passing_year=eq.${encodeURIComponent(passingYearParam)}`;
     }
 
-    const [studentsRes, offersRes, semestersRes] = await Promise.all([
-      fetch(studentQuery, { headers, next: { revalidate: 60 } }),
-      fetch(
-        `${supabaseUrl}/rest/v1/offers?select=id,student_id,drive_id,source,drive_type,offer_category,ctc_lpa,company_name,role_title,declared_at`,
-        { headers, next: { revalidate: 60 } }
-      ),
-      fetch(
-        `${supabaseUrl}/rest/v1/student_semesters?select=student_id,semester_number,cgpa,current_arrears,history_of_arrears,status`,
-        { headers, next: { revalidate: 60 } }
-      )
-    ]);
-
+    const studentsRes = await fetchWithTimeout(studentQuery, { headers, next: { revalidate: 60 } });
     const rawStudents: StudentRow[] = await studentsRes.json().catch(() => []);
-    const allOffers: OfferRow[] = await offersRes.json().catch(() => []);
-    const allSemesters: any[] = await semestersRes.json().catch(() => []);
+    const safeStudents: StudentRow[] = Array.isArray(rawStudents) ? rawStudents : [];
 
-    const safeStudents = Array.isArray(rawStudents) ? rawStudents : [];
-    const safeOffers = Array.isArray(allOffers) ? allOffers : [];
-    const safeSemesters = Array.isArray(allSemesters) ? allSemesters : [];
+    const rosterIds = safeStudents.map(s => s.id);
+    const [safeOffers, safeSemesters] = await Promise.all([
+      fetchScopedByStudent(supabaseUrl, headers, "offers", OFFER_SELECT, rosterIds),
+      fetchScopedByStudent(supabaseUrl, headers, "student_semesters", SEMESTER_SELECT, rosterIds)
+    ]);
 
     // Map semesters by student_id
     const semestersByStudent = new Map<string, any[]>();
@@ -144,7 +264,7 @@ export async function GET(request: Request) {
 
     // Map offers to students
     const studentIdSet = new Set(safeStudents.map(s => s.id));
-    const campusOffers = safeOffers.filter(o => studentIdSet.has(o.student_id));
+    const campusOffers: OfferRow[] = safeOffers.filter(o => studentIdSet.has(o.student_id));
 
     // Attach computed CGPA & verified arrears to each student
     const studentsWithOffers: StudentRow[] = safeStudents.map(s => {
@@ -287,12 +407,14 @@ export async function GET(request: Request) {
         code: activeCampus.code,
         city: activeCampus.cities?.name || "—"
       },
-      availableCampuses: campuses.map(c => ({
-        id: c.id,
-        name: c.name,
-        code: c.code,
-        city: c.cities?.name || ""
-      })),
+      availableCampuses: campuses
+        .filter(c => inScope(c.name))
+        .map(c => ({
+          id: c.id,
+          name: c.name,
+          code: c.code,
+          city: c.cities?.name || ""
+        })),
       availablePassingYears,
       availableDegrees,
       summary: {

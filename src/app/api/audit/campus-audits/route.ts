@@ -1,11 +1,13 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 const noCacheHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -15,6 +17,8 @@ const noCacheHeaders = {
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     await ensureMigration("campus_audits_tables");
     const db = await getDb();
 
@@ -22,8 +26,13 @@ export async function GET(request: Request) {
     const collegeId = (searchParams.get("collegeId") || "").trim();
     const collegeName = (searchParams.get("collegeName") || "").trim();
 
-    // 1. Fetch all colleges with their assigned KAM from the database
-    const collegesWithKAM = await db.all(`
+    // 1. Colleges with their assigned KAM, 2. incoming peer reviews for this campus,
+    // 3. audits this campus submitted. All three key only off the query string, so they
+    // are issued as one batched group instead of three sequential round trips.
+    const scoped = !!(collegeName || collegeId);
+    const slices: { sql: string; params: any[] }[] = [
+      {
+        sql: `
       SELECT 
         c.id, c.name, c.address, c.kam_id,
         k.name as kam_name, k.email as kam_email, k.title as kam_title,
@@ -31,7 +40,42 @@ export async function GET(request: Request) {
       FROM colleges c
       LEFT JOIN kam_users k ON c.kam_id = k.id
       ORDER BY c.name ASC
-    `);
+    `,
+        params: []
+      }
+    ];
+    if (scoped) {
+      slices.push(
+        {
+          sql: `SELECT * FROM campus_audits 
+         WHERE (reviewer_campus = ? OR reviewer_college_id = ?)
+         ORDER BY created_at DESC`,
+          params: [collegeName, collegeId]
+        },
+        {
+          sql: `SELECT * FROM campus_audits 
+         WHERE (campus = ? OR college_id = ?)
+         ORDER BY created_at DESC`,
+          params: [collegeName, collegeId]
+        }
+      );
+    } else {
+      slices.push({ sql: `SELECT * FROM campus_audits ORDER BY created_at DESC LIMIT 100`, params: [] });
+    }
+
+    const failedSlices: QueryFailure[] = [];
+    const batch = await db.multiQuery(slices, failedSlices);
+    if (failedSlices.length > 0) {
+      console.error("GET /api/audit/campus-audits partial read:", failedSlices.map(f => `${f.sql.trim().slice(0, 60)} → ${f.error}`).join(" | "));
+      return NextResponse.json(
+        { success: false, message: "Campus audits could not be loaded. Please retry." },
+        { status: 500, headers: noCacheHeaders }
+      );
+    }
+
+    const collegesWithKAM: any[] = batch[0] || [];
+    const assignedAudits: any[] = batch[1] || [];
+    const submittedAudits: any[] = (scoped ? batch[2] : []) || [];
 
     // Build dynamic clusters by KAM
     const clusters: Record<string, { kamId: string; kamName: string; campuses: { id: string; name: string }[] }> = {};
@@ -72,32 +116,6 @@ export async function GET(request: Request) {
       }
     }
 
-    // 2. Fetch incoming peer reviews assigned to this campus
-    let assignedAudits: any[] = [];
-    if (collegeName || collegeId) {
-      assignedAudits = await db.all(
-        `SELECT * FROM campus_audits 
-         WHERE (reviewer_campus = ? OR reviewer_college_id = ?)
-         ORDER BY created_at DESC`,
-        [collegeName, collegeId]
-      );
-    } else {
-      assignedAudits = await db.all(
-        `SELECT * FROM campus_audits ORDER BY created_at DESC LIMIT 100`
-      );
-    }
-
-    // 3. Fetch audits submitted by this campus
-    let submittedAudits: any[] = [];
-    if (collegeName || collegeId) {
-      submittedAudits = await db.all(
-        `SELECT * FROM campus_audits 
-         WHERE (campus = ? OR college_id = ?)
-         ORDER BY created_at DESC`,
-        [collegeName, collegeId]
-      );
-    }
-
     return NextResponse.json({
       success: true,
       assignedAudits,
@@ -117,6 +135,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "admin"] });
+    if (errorResponse) return errorResponse;
+    const actor = auth!.user;
     await ensureMigration("campus_audits_tables");
     const db = await getDb();
 
@@ -131,7 +152,6 @@ export async function POST(request: Request) {
       subject,
       audit_date,
       auditor_name,
-      auditor_role,
 
       skill_criteria,
       skill_score = 0,
@@ -171,30 +191,38 @@ export async function POST(request: Request) {
     const kamId = collegeRow?.kam_id || null;
     const kamName = collegeRow?.kam_name || "General Cluster";
 
-    // 2. Query peer candidates from DB: other colleges with the same kam_id
-    let peerCandidates: any[] = [];
-    if (kamId) {
-      peerCandidates = await db.all(
-        `SELECT c.id, c.name,
+    // 2. Peer candidates come from the cluster first and from the whole roster as a
+    // fallback. Both key off the resolved campus, so they leave as one round trip;
+    // the fallback is still only used when the cluster is empty. The result decides
+    // who reviews this audit, so a failed slice must not read as "no peers".
+    const peerFailures: QueryFailure[] = [];
+    const [clusterPeers, fallbackPeers] = await db.multiQuery([
+      kamId
+        ? {
+            sql: `SELECT c.id, c.name,
                 (SELECT cm.name FROM campus_managers cm WHERE cm.college_id = c.id LIMIT 1) as cm_name
          FROM colleges c
          WHERE c.kam_id = ? AND c.id != ?
          ORDER BY c.name ASC`,
-        [kamId, actualCollegeId]
-      );
-    }
-
-    // Fallback if no peers in cluster: other colleges overall
-    if (peerCandidates.length === 0) {
-      peerCandidates = await db.all(
-        `SELECT c.id, c.name,
+            params: [kamId, actualCollegeId],
+          }
+        : { sql: "SELECT 1 WHERE 1=0" },
+      {
+        sql: `SELECT c.id, c.name,
                 (SELECT cm.name FROM campus_managers cm WHERE cm.college_id = c.id LIMIT 1) as cm_name
          FROM colleges c
          WHERE c.id != ?
          ORDER BY c.name ASC
          LIMIT 5`,
-        [actualCollegeId]
-      );
+        params: [actualCollegeId],
+      },
+    ], peerFailures);
+    if (peerFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not resolve peer reviewers. Please try again." }, { status: 500 });
+    }
+    let peerCandidates: any[] = kamId ? clusterPeers : [];
+    if (peerCandidates.length === 0) {
+      peerCandidates = fallbackPeers;
     }
 
     let reviewerCollegeId = actualCollegeId;
@@ -234,9 +262,8 @@ export async function POST(request: Request) {
     // 3. Generate IDs
     const now = new Date();
     const yearStr = now.getFullYear();
-    const randSuffix = Math.floor(100 + Math.random() * 900);
-    const id = `AUD-${yearStr}-${randSuffix}`;
-    const uid = `aud_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const uid = generateId("aud");
+    const id = `AUD-${yearStr}-${uid.slice(-4).toUpperCase()}`;
 
     // 4. Insert into campus_audits
     await db.run(
@@ -267,9 +294,9 @@ export async function POST(request: Request) {
         department || null,
         dept_name || department || null,
         subject,
-        audit_date || now.toISOString().slice(0, 10),
-        auditor_name || "Campus Manager",
-        auditor_role || "cm",
+        audit_date || getInstitutionDateStr(now),
+        auditor_name || actor.name,
+        actor.role,
 
         typeof skill_criteria === "object" ? JSON.stringify(skill_criteria) : skill_criteria || null,
         skill_score,
@@ -300,11 +327,11 @@ export async function POST(request: Request) {
       `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        `log_${Date.now()}`,
+        generateId("log"),
         "E-AUDIT_RECORDED",
         `Campus audit recorded for mentor ${mentor_name} (${subject}) at ${campus}. Routed to ${reviewerCampus} for peer review.`,
-        auditor_name || "Campus Manager",
-        auditor_role || "cm",
+        auditor_name || actor.name,
+        actor.role,
         now.toISOString()
       ]
     ).catch(() => {});
@@ -330,26 +357,20 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "admin"] });
+    if (errorResponse) return errorResponse;
+    const actor = auth!.user;
     await ensureMigration("campus_audits_tables");
     const db = await getDb();
 
     const body = await request.json();
-    const { id, signoff_notes, signed_by, user_role = "cm" } = body;
+    const { id, signoff_notes } = body;
+    const signed_by = actor.name;
 
     if (!id || !signoff_notes) {
       return NextResponse.json(
         { success: false, message: "Missing audit ID or reviewer inspection notes." },
         { status: 400 }
-      );
-    }
-
-    if (user_role === "kam") {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Policy Notice: Key Account Managers (KAMs) cannot sign off on peer reviews. Peer reviews must be verified by peer Campus Managers."
-        },
-        { status: 403 }
       );
     }
 
@@ -371,11 +392,11 @@ export async function PATCH(request: Request) {
       `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        `log_${Date.now()}`,
+        generateId("log"),
         "PEER_AUDIT_SIGNED_OFF",
         `Peer audit ${id} signed off by ${signed_by || "Campus Manager"}: "${signoff_notes.slice(0, 80)}..."`,
         signed_by || "Campus Manager",
-        user_role,
+        actor.role,
         now
       ]
     ).catch(() => {});

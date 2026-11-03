@@ -1,13 +1,14 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 // GET /api/class-teachers?college_id=...
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("college_id");
@@ -34,6 +35,8 @@ export async function GET(request: Request) {
 // POST /api/class-teachers (Assign or replace a Class Teacher for Year/ClassGroup)
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { college_id, year, department, classGroup, mentor_id } = body;
@@ -85,6 +88,8 @@ export async function POST(request: Request) {
 // DELETE /api/class-teachers?id=...
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

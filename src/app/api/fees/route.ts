@@ -1,20 +1,31 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { randomBytes } from "crypto";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
-// GET /api/fees?role=fee_manager
-// GET /api/fees?role=cam&camId=Cam1
-// GET /api/fees?role=student&studentId=student_fin_01
+// receipt_no is UNIQUE. Truncating a millisecond clock wraps every ~17 minutes,
+// so two same-window payments raised a 500; date + 8 hex stays readable and unique.
+function makeReceiptNo() {
+  return `RCP${getInstitutionDateStr().replace(/-/g, "").slice(2)}${randomBytes(4).toString("hex").toUpperCase()}`;
+}
+
+// GET /api/fees
+// Scope is derived from the signed-in session, never from caller-supplied role IDs:
+// student → own fees, cm → own campus, fee_manager/admin → full portfolio.
 export async function GET(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
-    const role = searchParams.get("role");
-    const camId = searchParams.get("camId");
-    const studentId = searchParams.get("studentId");
+    const sessionRole = auth!.user.role;
+    const sessionRef = auth!.user.reference_id;
     const fromDate = searchParams.get("from");
     const toDate = searchParams.get("to");
 
@@ -33,7 +44,7 @@ export async function GET(request: Request) {
       dateParams.push(toDate.includes("T") ? toDate : `${toDate}T23:59:59.999Z`);
     }
 
-    if (role === "fee_manager") {
+    if (sessionRole === "fee_manager" || sessionRole === "admin") {
       // Parallel fetch + LIMIT guard to prevent unbounded memory load
       const [colleges, students, fees, payments, cams] = await Promise.all([
         db.all("SELECT * FROM colleges ORDER BY name"),
@@ -59,23 +70,35 @@ export async function GET(request: Request) {
       });
     }
 
-    if ((role === "cm" || role === "cam") && camId) {
+    if (sessionRole === "cm") {
+      const camId = sessionRef;
       const cam = await db.get("SELECT * FROM campus_managers WHERE id = ?", camId);
       if (!cam) return NextResponse.json({ success: false, message: "CM not found" }, { status: 404 });
 
       const collegeId = cam.college_id;
-      const students = await db.all(
-        "SELECT id, name, email, classGroup, department, batch_start_year, batch_end_year, semester, year FROM students WHERE college_id = ? ORDER BY name",
-        collegeId
-      );
-      const studentIds = students.map((s: any) => s.id);
-
-      let fees: any[] = [];
-      let payments: any[] = [];
-      if (studentIds.length > 0) {
-        const ph = studentIds.map(() => "?").join(",");
-        fees = await db.all(`SELECT * FROM student_fees WHERE student_id IN (${ph}) ${dateFilterFees} ORDER BY created_at DESC`, ...studentIds, ...dateParams);
-        payments = await db.all(`SELECT * FROM fee_payments WHERE student_id IN (${ph}) ${dateFilterPayments} ORDER BY payment_date DESC`, ...studentIds, ...dateParams);
+      // The roster and both ledgers all key off collegeId, so they go out as one group
+      // instead of three sequential round trips.
+      const failedSlices: QueryFailure[] = [];
+      const [students, fees, payments] = await db.multiQuery([
+        {
+          sql: "SELECT id, name, email, classGroup, department, batch_start_year, batch_end_year, semester, year FROM students WHERE college_id = ? ORDER BY name",
+          params: [collegeId]
+        },
+        {
+          // Scope the fee rows by campus membership in SQL. Binding one parameter per
+          // student id made this statement grow with the college (thousands of ids, and
+          // the whole payload had to be read into memory first to build the list).
+          sql: `SELECT * FROM student_fees WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) ${dateFilterFees} ORDER BY created_at DESC`,
+          params: [collegeId, ...dateParams]
+        },
+        {
+          sql: `SELECT * FROM fee_payments WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) ${dateFilterPayments} ORDER BY payment_date DESC`,
+          params: [collegeId, ...dateParams]
+        }
+      ], failedSlices);
+      if (failedSlices.length > 0) {
+        console.error("GET /api/fees partial read:", failedSlices.map(f => `${f.sql.slice(0, 60)} → ${f.error}`).join(" | "));
+        return NextResponse.json({ success: false, error: "Fee data could not be loaded. Please retry." }, { status: 500 });
       }
 
       const totalFees = fees.reduce((s: number, f: any) => s + f.amount, 0);
@@ -100,12 +123,23 @@ export async function GET(request: Request) {
       });
     }
 
-    if (role === "student" && studentId) {
-      const student = await db.get("SELECT * FROM students WHERE id = ?", studentId);
+    if (sessionRole === "student") {
+      const studentId = sessionRef;
+      // One group for the profile and both ledgers. A failed profile read must not be
+      // reported as "Student not found" (404); that pushed students off their own fee page
+      // on a transient database error.
+      const failedStudentSlices: QueryFailure[] = [];
+      const [studentRows, fees, payments] = await db.multiQuery([
+        { sql: "SELECT * FROM students WHERE id = ?", params: [studentId] },
+        { sql: `SELECT * FROM student_fees WHERE student_id = ? ${dateFilterFees} ORDER BY created_at DESC`, params: [studentId, ...dateParams] },
+        { sql: `SELECT * FROM fee_payments WHERE student_id = ? ${dateFilterPayments} ORDER BY payment_date DESC`, params: [studentId, ...dateParams] }
+      ], failedStudentSlices);
+      if (failedStudentSlices.length > 0) {
+        console.error("GET /api/fees partial read:", failedStudentSlices.map(f => `${f.sql.slice(0, 60)} → ${f.error}`).join(" | "));
+        return NextResponse.json({ success: false, error: "Fee data could not be loaded. Please retry." }, { status: 500 });
+      }
+      const student = studentRows[0];
       if (!student) return NextResponse.json({ success: false, message: "Student not found" }, { status: 404 });
-
-      const fees = await db.all(`SELECT * FROM student_fees WHERE student_id = ? ${dateFilterFees} ORDER BY created_at DESC`, studentId, ...dateParams);
-      const payments = await db.all(`SELECT * FROM fee_payments WHERE student_id = ? ${dateFilterPayments} ORDER BY payment_date DESC`, studentId, ...dateParams);
 
       const totalFees = fees.reduce((s: number, f: any) => s + f.amount, 0);
       const totalPaid = fees.reduce((s: number, f: any) => s + f.paid_amount, 0);
@@ -126,7 +160,7 @@ export async function GET(request: Request) {
       });
     }
 
-    return NextResponse.json({ success: false, message: "Invalid role or missing parameters" }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Fee data is not available for this role." }, { status: 403 });
   } catch (error: any) {
     console.error("GET /api/fees error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
@@ -136,7 +170,17 @@ export async function GET(request: Request) {
 // POST /api/fees — CRUD endpoint for Semester Fees
 export async function POST(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
+
+    const role = auth!.user.role;
+    const isFeeAdmin = role === "fee_manager" || role === "admin";
+    if (!isFeeAdmin && role !== "student") {
+      return NextResponse.json({ success: false, message: "You are not authorized to modify fee records." }, { status: 403 });
+    }
+
     const db = await getDb();
+    await ensureMigration("schema_alignment_2026_10");
     const body = await request.json();
     const {
       feeId, studentId, amount, paymentMethod, referenceNo,
@@ -148,6 +192,9 @@ export async function POST(request: Request) {
 
     // 1. Create a new Semester Fee Record
     if (isCreateFee) {
+      if (!isFeeAdmin) {
+        return NextResponse.json({ success: false, message: "Only fee managers can create fee records." }, { status: 403 });
+      }
       if (!studentId || !termName) {
         return NextResponse.json({ success: false, message: "Missing studentId or termName" }, { status: 400 });
       }
@@ -155,7 +202,7 @@ export async function POST(request: Request) {
       const student = await db.get("SELECT college_id FROM students WHERE id = ?", studentId);
       if (!student) return NextResponse.json({ success: false, message: "Student not found" }, { status: 404 });
 
-      const newFeeId = "fee_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+      const newFeeId = generateId("fee");
       const targetAmount = Number(amount) || 0;
       const targetPaid = Number(paidAmount) || 0;
       const targetStatus = status || (targetPaid >= targetAmount && targetAmount > 0 ? "paid" : targetPaid > 0 ? "partial" : "unpaid");
@@ -175,6 +222,9 @@ export async function POST(request: Request) {
 
     // 2. Delete a Fee Record
     if (isDeleteFee) {
+      if (!isFeeAdmin) {
+        return NextResponse.json({ success: false, message: "Only fee managers can delete fee records." }, { status: 403 });
+      }
       if (!feeId) return NextResponse.json({ success: false, message: "Missing feeId" }, { status: 400 });
       await db.transaction(async (tx) => {
         await tx.run("DELETE FROM fee_payments WHERE fee_id = ?", feeId);
@@ -188,10 +238,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing feeId" }, { status: 400 });
     }
 
-    const fee = await db.get("SELECT * FROM student_fees WHERE id = ?", feeId);
+    const method = paymentMethod || "manual";
+    const payAmount = Number(amount);
+
+    // The fee row and the duplicate-payment probe both key off feeId alone, so they leave
+    // as one group. The probe only matters on the payment pathway.
+    const feeFailures: QueryFailure[] = [];
+    const [feeRows, dupRows] = await db.multiQuery([
+      { sql: "SELECT * FROM student_fees WHERE id = ?", params: [feeId] },
+      !isDirectUpdate && payAmount > 0
+        ? {
+            sql: "SELECT id, receipt_no FROM fee_payments WHERE fee_id = ? AND amount = ? AND (reference_no = ? OR payment_date >= ?) LIMIT 1",
+            params: [feeId, payAmount, referenceNo || "NOMATCH", new Date(Date.now() - 5000).toISOString()]
+          }
+        : { sql: "SELECT 1 WHERE 1=0" },
+    ], feeFailures);
+    if (feeFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not verify this payment against the fee record. Please try again." }, { status: 500 });
+    }
+
+    const fee = feeRows[0];
     if (!fee) return NextResponse.json({ success: false, message: "Fee record not found" }, { status: 404 });
 
+    if (role === "student" && fee.student_id !== auth!.user.reference_id) {
+      return NextResponse.json({ success: false, message: "You can only pay your own fee records." }, { status: 403 });
+    }
+
     if (isDirectUpdate) {
+      if (!isFeeAdmin) {
+        return NextResponse.json({ success: false, message: "Only fee managers can edit fee records." }, { status: 403 });
+      }
       const targetPaid = paidAmount !== undefined ? Number(paidAmount) : fee.paid_amount;
       const targetAmount = amount !== undefined ? Number(amount) : fee.amount;
       const targetTerm = termName || fee.term_name;
@@ -210,8 +286,8 @@ export async function POST(request: Request) {
 
         const diff = targetPaid - fee.paid_amount;
         if (diff !== 0) {
-          const payId = "pay_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
-          const receiptNo = "RCP" + Date.now().toString().slice(-6);
+          const payId = generateId("pay");
+          const receiptNo = makeReceiptNo();
           const refNo = referenceNo || "MANUAL_ADJ";
           const method = "Manual Adjustment";
 
@@ -231,17 +307,12 @@ export async function POST(request: Request) {
       });
     } else {
       // Standard transaction pathway
-      const method = paymentMethod || "manual";
-      const payAmount = Number(amount);
       if (payAmount <= 0) {
         return NextResponse.json({ success: false, message: "Payment amount must be greater than zero" }, { status: 400 });
       }
 
       // Backend Idempotency Check: Prevent duplicate payment submitted within last 5 seconds with same amount and fee_id
-      const recentDup = await db.get(
-        "SELECT id, receipt_no FROM fee_payments WHERE fee_id = ? AND amount = ? AND (reference_no = ? OR payment_date >= ?) LIMIT 1",
-        feeId, payAmount, referenceNo || "NOMATCH", new Date(Date.now() - 5000).toISOString()
-      );
+      const recentDup = dupRows[0] || null;
       if (recentDup && !referenceNo) {
         return NextResponse.json({
           success: true,
@@ -253,9 +324,9 @@ export async function POST(request: Request) {
       const newPaid = Math.min(fee.paid_amount + payAmount, fee.amount);
       const newStatus = newPaid >= fee.amount ? 'paid' : newPaid > 0 ? 'partial' : 'unpaid';
 
-      const payId = "pay_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
-      const receiptNo = "RCP" + Date.now().toString().slice(-6);
-      const refNo = referenceNo || ("REF" + Date.now().toString(36).toUpperCase());
+      const payId = generateId("pay");
+      const receiptNo = makeReceiptNo();
+      const refNo = referenceNo || (`REF${getInstitutionDateStr().replace(/-/g, "").slice(2)}${randomBytes(3).toString("hex").toUpperCase()}`);
 
       await db.transaction(async (tx) => {
         await tx.run(
@@ -274,7 +345,8 @@ export async function POST(request: Request) {
         success: true,
         message: "Payment recorded successfully",
         newStatus,
-        newPaid
+        newPaid,
+        receiptNo
       });
     }
   } catch (error: any) {

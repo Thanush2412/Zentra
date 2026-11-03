@@ -1,8 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useDeferredValue, useRef, useTransition, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp, Slot, Mentor, ApprovedHandover, Holiday } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
+import { apiFetch } from "@/lib/apiFetch";
+import { ALL_SEMESTERS, DEFAULT_SEMESTERS, getSemestersForCourse } from "@/lib/semesters";
+import { qk } from "@/lib/queryKeys";
+import { prefetchRoleTab } from "@/lib/prefetch";
 import {
   Calendar,
   Clock,
@@ -71,6 +76,7 @@ import { SkillTrackerPanel } from "./SkillTrackerPanel";
 import { CourseInfoButton } from "./CourseInfoModal";
 import { formatDate, formatTimeLabel, isSubjectNameMatch, resolveClassGroupDetailsFromState, parseDbDate, isCohortMatching, isCohortMatch, getDeptFromClassGroup, evaluateDailyStudentAttendance, isExamDate, isSkillSubject, isAcademicSubject, calculateWeekOffsetForDate, isSlotOverlappingExamWindow, parseTimeToMinutes } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
+import { Dialog } from "@/components/ui/dialog";
 
 const formatPunchTime = (timeStr?: string | null) => {
   if (!timeStr) return "—";
@@ -92,7 +98,7 @@ const formatPunchTime = (timeStr?: string | null) => {
 const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const { toast } = useToast();
   const { requests, setRequests, refreshData, colleges, attendanceLockEnabled } = useApp();
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [punchStatus, setPunchStatus] = useState<string>("Not Punched");
   const [punchTime, setPunchTime] = useState<string | null>(null);
   const [punchReason, setPunchReason] = useState<string | null>(null);
@@ -178,29 +184,24 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   const isPunchLocked = isDeadlinePassed && punchStatus === "Not Punched" && !approvedLateCamReq && attendanceLockEnabled;
   const isAlreadyPunched = punchStatus !== "Not Punched";
 
-  const fetchMyAttendance = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/mentor-attendance?mentorId=${encodeURIComponent(mentor.id)}`);
-      const json = await res.json();
-      if (json.success && json.records) {
-        const todayRec = json.records.find((r: any) => r.date_str === todayStr);
-        if (todayRec) {
-          setPunchStatus(todayRec.status);
-          setPunchTime(todayRec.punch_in_time);
-          setPunchReason(todayRec.reason);
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const attendanceQuery = useQuery({
+    queryKey: qk.mentorAttendance(mentor.id),
+    queryFn: async () => {
+      const json = await apiFetch(`/api/mentor-attendance?mentorId=${encodeURIComponent(mentor.id)}`);
+      return json?.success && Array.isArray(json.records) ? (json.records as any[]) : [];
+    },
+  });
+  const loading = attendanceQuery.isFetching;
+  const statusLoading = loading && attendanceQuery.data === undefined;
 
   useEffect(() => {
-    fetchMyAttendance();
-  }, [mentor.id, todayStr]);
+    const todayRec = attendanceQuery.data?.find((r: any) => r.date_str === todayStr);
+    if (todayRec) {
+      setPunchStatus(todayRec.status);
+      setPunchTime(todayRec.punch_in_time);
+      setPunchReason(todayRec.reason);
+    }
+  }, [attendanceQuery.data, todayStr]);
 
   const handlePunch = async (status: "Present" | "OD" | "Leave", reasonText?: string) => {
     setSubmitting(true);
@@ -225,6 +226,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
         setPunchTime(new Date().toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit" }));
         setPunchReason(reasonText || null);
         setShowReasonInput(false);
+        queryClient.invalidateQueries({ queryKey: qk.mentorAttendance(mentor.id) });
       } else {
         toast(json.message || "Failed to punch attendance", "error");
       }
@@ -270,7 +272,12 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
               )}
             </div>
             <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-              {punchStatus === "Not Punched" ? (
+              {statusLoading ? (
+                <span className="text-slate-500 font-bold flex items-center gap-1">
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  Checking today's attendance…
+                </span>
+              ) : punchStatus === "Not Punched" ? (
                 isPunchLocked ? (
                   <span className="text-rose-600 font-bold flex items-center gap-1">
                     <Clock className="h-3 w-3 shrink-0" />
@@ -297,12 +304,12 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            disabled={submitting || isPunchLocked || isAlreadyPunched}
+            disabled={submitting || statusLoading || isPunchLocked || isAlreadyPunched}
             onClick={() => triggerPunchClick("Present")}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               punchStatus === "Present"
                 ? "bg-emerald-600 text-white shadow-xs cursor-default ring-2 ring-emerald-600/30"
-                : isAlreadyPunched || isPunchLocked
+                : isAlreadyPunched || isPunchLocked || statusLoading
                   ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
                   : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 cursor-pointer"
             }`}
@@ -312,12 +319,12 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
           </button>
           <button
             type="button"
-            disabled={submitting || isPunchLocked || isAlreadyPunched}
+            disabled={submitting || statusLoading || isPunchLocked || isAlreadyPunched}
             onClick={() => triggerPunchClick("OD")}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               punchStatus === "OD"
                 ? "bg-indigo-600 text-white shadow-xs cursor-default ring-2 ring-indigo-600/30"
-                : isAlreadyPunched || isPunchLocked
+                : isAlreadyPunched || isPunchLocked || statusLoading
                   ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
                   : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 cursor-pointer"
             }`}
@@ -327,12 +334,12 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
           </button>
           <button
             type="button"
-            disabled={submitting || isPunchLocked || isAlreadyPunched}
+            disabled={submitting || statusLoading || isPunchLocked || isAlreadyPunched}
             onClick={() => triggerPunchClick("Leave")}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               punchStatus === "Leave"
                 ? "bg-amber-500 text-white shadow-xs cursor-default ring-2 ring-amber-500/30"
-                : isAlreadyPunched || isPunchLocked
+                : isAlreadyPunched || isPunchLocked || statusLoading
                   ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-50"
                   : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 cursor-pointer"
             }`}
@@ -448,23 +455,47 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
 /* ─── Faculty Leave & Permission Request Panel ─── */
 const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSessions?: any[] }> = ({ mentor, slots = [], demoSessions = [] }) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [panelTab, setPanelTab] = useState<"leave_apps" | "incoming_covers" | "punch_history">("leave_apps");
 
-  const [loading, setLoading] = useState(true);
-  const [requests, setRequests] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const leaveRequestsQuery = useQuery({
+    queryKey: qk.facultyLeave(`mentor:${mentor.id}`),
+    queryFn: async () => {
+      const json = await apiFetch(`/api/requests/faculty-leave?mentorId=${encodeURIComponent(mentor.id)}`);
+      return json?.success && Array.isArray(json.records) ? (json.records as any[]) : [];
+    },
+  });
+  const requests = leaveRequestsQuery.data || [];
+  const loading = leaveRequestsQuery.isFetching;
+
   // Incoming cover requests assigned to this mentor
-  const [incomingCovers, setIncomingCovers] = useState<any[]>([]);
-  const [loadingCovers, setLoadingCovers] = useState(false);
+  const incomingCoversQuery = useQuery({
+    queryKey: qk.incomingCovers(mentor.id),
+    queryFn: async () => {
+      const json = await apiFetch(`/api/requests?targetStaffId=${encodeURIComponent(mentor.id)}`);
+      return json?.success && Array.isArray(json.requests) ? (json.requests as any[]) : [];
+    },
+  });
+  const incomingCovers = incomingCoversQuery.data || [];
+  const loadingCovers = incomingCoversQuery.isFetching;
   const [actionCoverId, setActionCoverId] = useState<string | null>(null);
   const [coverPage, setCoverPage] = useState(1);
   const [coverPageSize, setCoverPageSize] = useState(25);
 
   // Past attendance history state
-  const [attLogs, setAttLogs] = useState<any[]>([]);
-  const [loadingAttLogs, setLoadingAttLogs] = useState(false);
+  const attendanceLogsQuery = useQuery({
+    queryKey: qk.mentorAttendance(mentor.id),
+    enabled: panelTab === "punch_history",
+    queryFn: async () => {
+      const json = await apiFetch(`/api/mentor-attendance?mentorId=${encodeURIComponent(mentor.id)}`);
+      return json?.success && Array.isArray(json.records) ? (json.records as any[]) : [];
+    },
+  });
+  const attLogs = attendanceLogsQuery.data || [];
+  const loadingAttLogs = attendanceLogsQuery.isFetching;
 
   // Pagination states
   const [punchPage, setPunchPage] = useState(1);
@@ -503,6 +534,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
   const [requestType, setRequestType] = useState<"Casual Leave" | "Emergency" | "On Duty" | "Permission">("Casual Leave");
   const [startDate, setStartDate] = useState(() => formatLocalDateYMD(new Date()));
   const [endDate, setEndDate] = useState(() => formatLocalDateYMD(new Date()));
+  const safeEndDate = (endDate || "").trim() || startDate;
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("11:00");
   const [reason, setReason] = useState("");
@@ -510,6 +542,8 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
   const [coverSelections, setCoverSelections] = useState<Record<string, string>>({});
   // Map of "slotId_dateStr" -> { loading, mentors[] } for suggested cover mentors
   const [coverOptions, setCoverOptions] = useState<Record<string, { loading: boolean; mentors: any[] }>>();
+  // Tracks slots already fetched so a date/slot recalculation cannot fire duplicate requests.
+  const coverFetchState = useRef<Record<string, "loading" | "loaded">>({});
 
   // Dynamically calculate scheduled classes in the selected leave/permission window
   const affectedSlots = useMemo(() => {
@@ -518,7 +552,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
     const affected: { dateStr: string; slot: Slot }[] = [];
 
     const [sY, sM, sD] = startDate.split("-").map(Number);
-    const [eY, eM, eD] = (endDate || startDate).split("-").map(Number);
+    const [eY, eM, eD] = safeEndDate.split("-").map(Number);
     const cur = new Date(sY, sM - 1, sD, 12, 0, 0);
     const end = requestType === "Permission" ? new Date(sY, sM - 1, sD, 12, 0, 0) : new Date(eY, eM - 1, eD, 12, 0, 0);
 
@@ -536,7 +570,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
 
   const impactedDemos = useMemo(() => {
     if (!startDate) return [];
-    const effectiveEnd = requestType === "Permission" ? startDate : (endDate || startDate);
+    const effectiveEnd = requestType === "Permission" ? startDate : safeEndDate;
     return (demoSessions || []).filter((ds: any) => {
       const mId = ds.mentorId || ds.mentor_id;
       return mId === mentor.id &&
@@ -550,71 +584,55 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
   // Automatically prefetch available cover mentors whenever affected slots change
   useEffect(() => {
     if (!mentor.college_id || affectedSlots.length === 0) return;
+    const controller = new AbortController();
 
     affectedSlots.forEach(item => {
       const key = `${item.slot.id}_${item.dateStr}`;
-      // Fetch if not already loaded or loading
-      fetch(`/api/requests/faculty-leave?availableForSlotId=${encodeURIComponent(item.slot.id)}&availableForDate=${encodeURIComponent(item.dateStr)}&availableForCollegeId=${encodeURIComponent(mentor.college_id!)}&excludeMentorId=${encodeURIComponent(mentor.id)}`)
-        .then(r => r.json())
+      if (coverFetchState.current[key]) return;
+      coverFetchState.current[key] = "loading";
+      setCoverOptions(prev => ({
+        ...(prev || {}),
+        [key]: { loading: true, mentors: [] }
+      }));
+
+      fetch(`/api/requests/faculty-leave?availableForSlotId=${encodeURIComponent(item.slot.id)}&availableForDate=${encodeURIComponent(item.dateStr)}&availableForCollegeId=${encodeURIComponent(mentor.college_id!)}&excludeMentorId=${encodeURIComponent(mentor.id)}`, {
+        signal: controller.signal
+      })
+        .then(r => {
+          if (!r.ok) throw new Error(`Cover lookup failed (${r.status})`);
+          return r.json();
+        })
         .then(data => {
+          coverFetchState.current[key] = "loaded";
           setCoverOptions(prev => ({
-            ...prev,
+            ...(prev || {}),
             [key]: { loading: false, mentors: data.mentors || [] }
           }));
         })
-        .catch(() => {
+        .catch((err) => {
+          if (err?.name === "AbortError") {
+            delete coverFetchState.current[key];
+            return;
+          }
+          delete coverFetchState.current[key];
           setCoverOptions(prev => ({
-            ...prev,
+            ...(prev || {}),
             [key]: { loading: false, mentors: [] }
           }));
         });
     });
+
+    return () => controller.abort();
   }, [affectedSlots, mentor.college_id, mentor.id]);
 
-  const fetchRequests = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/requests/faculty-leave?mentorId=${encodeURIComponent(mentor.id)}`);
-      const json = await res.json();
-      if (json.success) {
-        setRequests(json.records || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchRequests = () =>
+    queryClient.invalidateQueries({ queryKey: qk.facultyLeave(`mentor:${mentor.id}`) });
 
-  const fetchAttendanceLogs = async () => {
-    setLoadingAttLogs(true);
-    try {
-      const res = await fetch(`/api/mentor-attendance?mentorId=${encodeURIComponent(mentor.id)}`);
-      const json = await res.json();
-      if (json.success) {
-        setAttLogs(json.records || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingAttLogs(false);
-    }
-  };
+  const fetchAttendanceLogs = () =>
+    queryClient.invalidateQueries({ queryKey: qk.mentorAttendance(mentor.id) });
 
-  const fetchIncomingCovers = async () => {
-    setLoadingCovers(true);
-    try {
-      const res = await fetch(`/api/requests?targetStaffId=${encodeURIComponent(mentor.id)}`);
-      const json = await res.json();
-      if (json.success) {
-        setIncomingCovers(json.requests || []);
-      }
-    } catch (e) {
-      console.error("Failed to fetch incoming covers:", e);
-    } finally {
-      setLoadingCovers(false);
-    }
-  };
+  const fetchIncomingCovers = () =>
+    queryClient.invalidateQueries({ queryKey: qk.incomingCovers(mentor.id) });
 
   const handleResolveCover = async (requestId: string, status: "approved" | "rejected") => {
     setActionCoverId(requestId);
@@ -643,18 +661,6 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
     }
   };
 
-  useEffect(() => {
-    fetchRequests();
-    fetchIncomingCovers();
-  }, [mentor.id]);
-
-  useEffect(() => {
-    if (panelTab === "punch_history") {
-      fetchAttendanceLogs();
-    } else if (panelTab === "incoming_covers") {
-      fetchIncomingCovers();
-    }
-  }, [mentor.id, panelTab]);
 
   // Step form state: 1 = Details, 2 = Cover Mapping
   const [formStep, setFormStep] = useState<1 | 2>(1);
@@ -699,7 +705,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
           demoSessionId: demo.id,
           proposedDateStr: pick.dateStr,
           proposedTimeSlot: pick.timeSlot,
-          reason: `Mentor ${requestType} from ${startDate} to ${endDate || startDate}`,
+          reason: `Mentor ${requestType} from ${startDate} to ${safeEndDate}`,
           proposedBy: mentor.name
         })
       });
@@ -755,7 +761,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
         payload.startTime = startTime;
         payload.endTime = endTime;
       } else {
-        payload.endDate = endDate || startDate;
+        payload.endDate = safeEndDate;
       }
 
       if (formStep === 2 && affectedSlots.length > 0) {
@@ -1182,8 +1188,16 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
 
       {/* Styled Popup Modal: 2-Step Wizard matching CM Dashboard Palette */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <form onSubmit={handleSubmit} className="bg-white rounded-xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp space-y-0">
+        <Dialog
+          open={showModal}
+          onOpenChange={(next) => {
+            if (!next) setShowModal(false);
+          }}
+          ariaLabel="Apply leave, permission or on duty"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-lg rounded-xl p-0 space-y-0 overflow-y-auto max-h-[90vh] bg-white"
+        >
+          <form onSubmit={handleSubmit} className="w-full space-y-0">
 
             {/* Modal Header with 2-Step Wizard Indicator */}
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
@@ -1240,6 +1254,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                     value={requestType}
                     onChange={(e) => setRequestType(e.target.value as any)}
                     className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer"
+                    aria-label="Request Type"
                   >
                     <option value="Casual Leave">Casual Leave</option>
                     <option value="Emergency">Emergency</option>
@@ -1262,6 +1277,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
                         className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                        aria-label="Permission Date"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -1273,6 +1289,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                           value={startTime}
                           onChange={(e) => setStartTime(e.target.value)}
                           className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                          aria-label="From Time"
                         />
                       </div>
                       <div>
@@ -1283,6 +1300,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                           value={endTime}
                           onChange={(e) => setEndTime(e.target.value)}
                           className="w-full text-xs font-bold p-2 rounded-md border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500"
+                          aria-label="To Time"
                         />
                       </div>
                     </div>
@@ -1303,6 +1321,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                           if (e.target.value > endDate) setEndDate(e.target.value);
                         }}
                         className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
+                        aria-label="From Date"
                       />
                     </div>
                     <div>
@@ -1316,6 +1335,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
                         className="w-full text-xs font-bold p-2.5 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
+                        aria-label="To Date"
                       />
                     </div>
                   </div>
@@ -1474,6 +1494,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
                     className="w-full text-xs font-medium p-3 rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:border-indigo-500 transition-all"
+                    aria-label="Mandatory Reason / Remarks"
                   />
                 </div>
 
@@ -1548,6 +1569,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                                 ? "border-emerald-500 bg-emerald-50/50 text-emerald-950 ring-1 ring-emerald-400/50"
                                 : "border-slate-300 bg-white text-slate-700 hover:border-slate-400"
                             }`}
+                            aria-label="Select Replacement Faculty Member"
                           >
                             <option value="">👤 Select Available Faculty Member...</option>
                             {opts?.loading && <option disabled>⏳ Checking faculty availability...</option>}
@@ -1616,7 +1638,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
     </div>
   );
@@ -1637,8 +1659,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
   subjectsList = []
 }) => {
   const { toast } = useToast();
-  const [materials, setMaterials] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [selectedSubject, setSelectedSubject] = useState<string>(mentorSubjects[0] || "");
   const [selectedUnit, setSelectedUnit] = useState<number | "all">("all");
   const [selectedType, setSelectedType] = useState<string>("all");
@@ -1664,33 +1685,30 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
   // Deleting item tracking
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const fetchMaterials = useCallback(async (subj?: string) => {
-    setLoading(true);
-    try {
-      const targetSubj = subj !== undefined ? subj : selectedSubject;
-      const url = targetSubj ? `/api/materials?subject=${encodeURIComponent(targetSubj)}` : `/api/materials`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.success) {
-        setMaterials(data.materials || []);
-      }
-    } catch (err: any) {
-      console.error("Error fetching study materials:", err);
-      toast("Failed to load study materials", "error");
-    } finally {
-      setLoading(false);
+  const materialsQuery = useQuery({
+    queryKey: qk.materials(`mentor:${mentor.id}:${selectedSubject || "all"}`),
+    queryFn: async () => {
+      const url = selectedSubject ? `/api/materials?subject=${encodeURIComponent(selectedSubject)}` : `/api/materials`;
+      const data = await apiFetch(url);
+      return data?.success && Array.isArray(data.materials) ? (data.materials as any[]) : [];
+    },
+  });
+  const materials = materialsQuery.data || [];
+  const loading = materialsQuery.isFetching;
+
+  const fetchMaterials = (subj?: string) => {
+    if (subj !== undefined && subj !== selectedSubject) {
+      setSelectedSubject(subj);
+      return Promise.resolve();
     }
-  }, [selectedSubject, toast]);
+    return materialsQuery.refetch();
+  };
 
   useEffect(() => {
     if (mentorSubjects.length > 0 && !selectedSubject) {
       setSelectedSubject(mentorSubjects[0]);
     }
   }, [mentorSubjects, selectedSubject]);
-
-  useEffect(() => {
-    fetchMaterials(selectedSubject);
-  }, [selectedSubject, fetchMaterials]);
 
   const handleOpenUpload = (itemToEdit?: any) => {
     if (itemToEdit) {
@@ -1753,7 +1771,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
         toast(editingItem ? "Study material updated successfully!" : "Study material published to student portal!", "success");
         setShowModal(false);
         setEditingItem(null);
-        await fetchMaterials(selectedSubject);
+        await queryClient.invalidateQueries({ queryKey: ["materials"] });
       } else {
         toast(data.message || "Failed to save study material", "error");
       }
@@ -1774,7 +1792,9 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
       const data = await res.json();
       if (data.success) {
         toast("Material deleted successfully", "success");
-        setMaterials(prev => prev.filter(m => m.id !== id));
+        queryClient.setQueryData(qk.materials(`mentor:${mentor.id}:${selectedSubject || "all"}`), (prev: any[] | undefined) =>
+          (prev || []).filter((m) => m.id !== id)
+        );
       } else {
         toast(data.message || "Failed to delete material", "error");
       }
@@ -2155,10 +2175,18 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
 
       {/* ── Publish / Edit Study Material Modal ── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <Dialog
+          open={showModal}
+          onOpenChange={(next) => {
+            if (!next) setShowModal(false);
+          }}
+          ariaLabel={editingItem ? "Edit study material" : "Publish study material"}
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-lg rounded-2xl p-0 space-y-0 overflow-hidden flex flex-col max-h-[90vh] bg-white dark:bg-slate-900"
+        >
           <form
             onSubmit={handleSubmit}
-            className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 space-y-0 flex flex-col max-h-[90vh]"
+            className="w-full flex flex-col min-h-0 space-y-0"
           >
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 shrink-0">
@@ -2199,6 +2227,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                   onChange={(e) => setFormSubject(e.target.value)}
                   required
                   className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  aria-label="Course Subject"
                 >
                   <option value="" disabled>Select Subject</option>
                   {displaySubjects.map((s: string) => (
@@ -2216,6 +2245,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                   value={formClassGroup}
                   onChange={(e) => setFormClassGroup(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  aria-label="Target Class / Cohort (Optional)"
                 >
                   <option value="">All Students (General / Enrolled)</option>
                   {mentorClasses.map((cg: string) => (
@@ -2235,6 +2265,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                     onChange={(e) => setFormUnit(parseInt(e.target.value, 10) || 1)}
                     required
                     className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    aria-label="Curriculum Unit"
                   >
                     {[1, 2, 3, 4, 5].map(u => (
                       <option key={u} value={u}>Unit {u}</option>
@@ -2251,6 +2282,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                     onChange={(e) => setFormType(e.target.value)}
                     required
                     className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    aria-label="Material Type"
                   >
                     <option value="notes">Lecture Notes (PDF / Doc)</option>
                     <option value="ppt">Presentation Slides (PPT / Canva)</option>
@@ -2273,6 +2305,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                   value={formTitle}
                   onChange={(e) => setFormTitle(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                  aria-label="Material Title / Chapter Name"
                 />
               </div>
 
@@ -2287,6 +2320,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                  aria-label="Description / Topic Highlights (Optional)"
                 />
               </div>
 
@@ -2301,6 +2335,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                   value={formFileUrl}
                   onChange={(e) => setFormFileUrl(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                  aria-label="Resource Link / Document URL (Google Drive, OneDrive, GitHub, YouTube)"
                 />
               </div>
 
@@ -2315,6 +2350,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                   value={formFileSize}
                   onChange={(e) => setFormFileSize(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-slate-400"
+                  aria-label="Format / Size Badge"
                 />
               </div>
             </div>
@@ -2350,13 +2386,20 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {/* ── Document Preview Modal ── */}
       {previewItem && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200 p-6 space-y-4">
+        <Dialog
+          open={Boolean(previewItem)}
+          onOpenChange={(next) => {
+            if (!next) setPreviewItem(null);
+          }}
+          ariaLabel={previewItem ? `Preview ${previewItem.material_type || "study material"}` : "Document preview"}
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-md rounded-2xl p-6 space-y-4 bg-white max-h-[90vh]"
+        >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white font-black text-[10px] uppercase">
@@ -2412,8 +2455,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
                 </a>
               )}
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );
@@ -2480,8 +2522,41 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     systemSettings
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
+  const queryClient = useQueryClient();
 
-  const [dailyConfigsList, setDailyConfigsList] = useState<any[]>([]);
+  const mentorCollegeId = currentMentor?.college_id || "";
+  const dailyConfigsQuery = useQuery({
+    queryKey: qk.dailyConfigs(mentorCollegeId || "all"),
+    enabled: !!mentorCollegeId,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/daily-configs?college_id=${encodeURIComponent(mentorCollegeId)}`);
+      return data?.success && Array.isArray(data.configs) ? (data.configs as any[]) : [];
+    },
+  });
+  const dailyConfigsList = dailyConfigsQuery.data || [];
+
+  const mentorExamsQuery = useQuery({
+    queryKey: qk.exams(mentorCollegeId || "all"),
+    enabled: !!mentorCollegeId,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/exams?college_id=${encodeURIComponent(mentorCollegeId)}`);
+      return data?.success && Array.isArray(data.exams) ? (data.exams as any[]) : [];
+    },
+  });
+  const mentorExamsList = mentorExamsQuery.data || [];
+
+  useEffect(() => {
+    const handleSync = () => {
+      queryClient.invalidateQueries({ queryKey: ["exams"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-configs"] });
+    };
+    window.addEventListener("fp_exams_updated", handleSync);
+    window.addEventListener("fp_schedule_updated", handleSync);
+    return () => {
+      window.removeEventListener("fp_exams_updated", handleSync);
+      window.removeEventListener("fp_schedule_updated", handleSync);
+    };
+  }, [queryClient]);
 
 
   const handleRemindCm = async (dateStr: string, dateFormatted: string) => {
@@ -2531,59 +2606,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     setWeekOffset(0);
   }, []);
 
-  const [mentorExamsList, setMentorExamsList] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (currentMentor?.college_id) {
-      const loadDailyConfigsAndExams = () => {
-        fetch(`/api/daily-configs?college_id=${currentMentor.college_id}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.success && data.configs) {
-              setDailyConfigsList(data.configs);
-            }
-          })
-          .catch(err => console.error("Error fetching daily configs:", err));
-
-        fetch(`/api/exams?college_id=${encodeURIComponent(currentMentor.college_id || "")}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.success && Array.isArray(data.exams)) {
-              setMentorExamsList(data.exams);
-            }
-          })
-          .catch(err => console.error("Error fetching exams for mentor:", err));
-      };
-
-      loadDailyConfigsAndExams();
-
-      window.addEventListener("fp_exams_updated", loadDailyConfigsAndExams);
-      window.addEventListener("fp_schedule_updated", loadDailyConfigsAndExams);
-      return () => {
-        window.removeEventListener("fp_exams_updated", loadDailyConfigsAndExams);
-        window.removeEventListener("fp_schedule_updated", loadDailyConfigsAndExams);
-      };
-    }
-  }, [currentMentor?.college_id]);
-
   // Live Batch Coding Statistics (LeetCode & HackerRank) for Mentor's Students
-  const [mentorBatchCodingStats, setMentorBatchCodingStats] = useState<any | null>(null);
-
-  useEffect(() => {
-    if (!currentMentor?.college_id) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const cid = currentMentor.college_id || "";
-        const res = await fetch(`/api/coding-stats?collegeId=${encodeURIComponent(cid)}&batch=true`);
-        const data = await res.json();
-        if (!cancelled && data.success) {
-          setMentorBatchCodingStats(data);
-        }
-      } catch (_) {}
-    })();
-    return () => { cancelled = true; };
-  }, [currentMentor?.college_id]);
+  const mentorCodingStatsQuery = useQuery({
+    queryKey: qk.codingStats(mentorCollegeId || "all"),
+    enabled: !!mentorCollegeId,
+    queryFn: async () => {
+      const data = await apiFetch(`/api/coding-stats?collegeId=${encodeURIComponent(mentorCollegeId)}&batch=true`);
+      return data?.success ? (data as any) : null;
+    },
+  });
+  const mentorBatchCodingStats = mentorCodingStatsQuery.data ?? null;
 
   const getStudentCodingStats = useCallback((st: any) => {
     if (!mentorBatchCodingStats || !st) return { lc: null, hr: null };
@@ -2618,8 +2650,17 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     handover?: ApprovedHandover;
   } | null>(null);
 
-  const [weeklyPlansForVerification, setWeeklyPlansForVerification] = useState<any[]>([]);
-  const [weeklyPlansLoaded, setWeeklyPlansLoaded] = useState(false);
+  const verificationPlansQuery = useQuery({
+    queryKey: qk.weeklyPlanBasic(mentorCollegeId || "all", currentMentor?.id || "none"),
+    enabled: isAttendanceStudioOpen && !!currentMentor?.id,
+    queryFn: async () => {
+      const q = `mentorId=${encodeURIComponent(currentMentor?.id || "")}${mentorCollegeId ? `&collegeId=${encodeURIComponent(mentorCollegeId)}` : ""}&includeAudit=false`;
+      const data = await apiFetch(`/api/weekly-plan?${q}`);
+      return data?.success && Array.isArray(data.plans) ? (data.plans as any[]) : [];
+    },
+  });
+  const weeklyPlansForVerification = verificationPlansQuery.data || [];
+  const weeklyPlansLoaded = verificationPlansQuery.isSuccess;
   const [planVerificationChoice, setPlanVerificationChoice] = useState<"as_planned" | "with_changes" | "not_conducted" | null>(null);
   const [planActualTopic, setPlanActualTopic] = useState("");
   const matchedPlannedTask = useMemo(() => {
@@ -2658,24 +2699,6 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     return null;
   }, [selectedCell, weeklyPlansForVerification, weeklyPlansLoaded]);
 
-  // Fetch approved plans when the attendance studio opens (once per session, then cached)
-  useEffect(() => {
-    if (!isAttendanceStudioOpen || !currentMentor?.id) return;
-    if (weeklyPlansLoaded) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const q = `mentorId=${encodeURIComponent(currentMentor.id)}${currentMentor.college_id ? `&collegeId=${encodeURIComponent(currentMentor.college_id)}` : ""}&includeAudit=false`;
-        const res = await fetch(`/api/weekly-plan?${q}`);
-        const data = await res.json();
-        if (!cancelled && data.success && Array.isArray(data.plans)) {
-          setWeeklyPlansForVerification(data.plans);
-        }
-      } catch { /* verification is best-effort — never block marking */ }
-      finally { if (!cancelled) setWeeklyPlansLoaded(true); }
-    })();
-    return () => { cancelled = true; };
-  }, [isAttendanceStudioOpen, currentMentor?.id, currentMentor?.college_id, weeklyPlansLoaded]);
 
   // Handover & Attendance form state
   const [modalTab, setModalTab] = useState<"attendance" | "handover">("attendance");
@@ -3041,21 +3064,16 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
   }, []);
 
-  // Fetch interviews assigned to this mentor (Fetched on-demand once, not on every tab switch)
-  const [mentorInterviews, setMentorInterviews] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (currentMentor?.id && (activeTab === "tracker" || activeTab === "demo_evaluations")) {
-      fetch(`/api/interviews?role=mentor&mentorId=${currentMentor.id}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
-            setMentorInterviews(data.interviews || []);
-          }
-        })
-        .catch(() => { });
-    }
-  }, [currentMentor?.id, activeTab === "tracker"]);
+  // Interviews assigned to this mentor (cached; loaded only for tracker/demo tabs)
+  const mentorInterviewsQuery = useQuery({
+    queryKey: qk.interviewList(`mentor-dashboard|${currentMentor?.id || "none"}`),
+    enabled: !!currentMentor?.id && (activeTab === "tracker" || activeTab === "demo_evaluations"),
+    queryFn: async () => {
+      const data = await apiFetch(`/api/interviews?role=mentor&mentorId=${encodeURIComponent(currentMentor?.id || "")}`);
+      return data?.success && Array.isArray(data.interviews) ? (data.interviews as any[]) : [];
+    },
+  });
+  const mentorInterviews = mentorInterviewsQuery.data || [];
 
   // Student Tracker filter and management states
   const [trackerSubView, setTrackerSubView] = useState<"tracker" | "interviews">("tracker");
@@ -3102,7 +3120,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         .filter(c => c.name.toLowerCase().includes(deptLower) || deptLower.includes(c.name.toLowerCase()));
 
       const deptNames = matchingCourses.length > 0 ? matchingCourses.map(c => c.name) : [currentMentor.mentor_group];
-      const sems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6"];
+      const sems = DEFAULT_SEMESTERS;
       const shifts = ["Shift 1", "Shift 2"];
 
       deptNames.forEach(d => {
@@ -3394,10 +3412,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     if (cg.includes("sem ii") || cg.includes("sem 2") || cg.includes("semester ii") || cg.includes("semester 2")) return "1st Year";
     if (cg.includes("sem i") || cg.includes("sem 1") || cg.includes("semester i") || cg.includes("semester 1")) return "1st Year";
 
-    // 2. Check by cohort year in parentheses (fallback)
-    if (cg.includes("2026-2029")) return "1st Year";
-    if (cg.includes("2025-2028")) return "2nd Year";
-    if (cg.includes("2024-2027")) return "3rd Year";
+    // 2. Check by cohort year in parentheses (dynamic calculation)
+    const batchMatch = cg.match(/(20\d{2})\s*[-–]\s*(20\d{2})/);
+    if (batchMatch) {
+      const batchStart = parseInt(batchMatch[1], 10);
+      const batchEnd = parseInt(batchMatch[2], 10);
+      const now = new Date();
+      const academicYear = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+      const yearLabels = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+      const maxYear = Math.max(1, batchEnd - batchStart);
+      const yearOfStudy = academicYear - batchStart + 1;
+      return yearLabels[Math.min(Math.max(yearOfStudy, 1), maxYear) - 1] ?? "";
+    }
 
     // 3. Fallback to explicit year strings and Roman numeral prefixes (e.g. III BCA, II BCA)
     if (cg.includes("3rd year") || cg.includes("3rdyr") || cg.includes("3rd yr") || cg.includes("3nd year") || cg.includes("3ndyr") || cg.startsWith("iii ") || cg.startsWith("iii-") || cg.includes(" iii ") || cg.endsWith(" iii")) return "3rd Year";
@@ -4797,7 +4823,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
     const selectedCourseObj = coursesList.find(c => c.name.trim().toLowerCase() === activeDept.trim().toLowerCase());
     const courseYears = selectedCourseObj?.years || 3;
-    const standardSemesters = Array.from({ length: courseYears * 2 }, (_, i) => `Semester ${i + 1}`);
+    const standardSemesters = getSemestersForCourse(courseYears);
 
     const semesterOptions = Array.from(new Set([
       ...standardSemesters,
@@ -4814,7 +4840,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
         .filter(Boolean)
     ])).sort((a, b) => parseInt((a || "").replace(/\D/g, "") || "0") - parseInt((b || "").replace(/\D/g, "") || "0"));
 
-    const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+    const defaultSems = ALL_SEMESTERS;
     const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
     const activeSem = trackerSem && finalSemOptions.includes(trackerSem) ? trackerSem : finalSemOptions[0] || "Semester 1";
 
@@ -5028,6 +5054,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   return (
                     <button
                       key={t.id}
+                      onMouseEnter={() => prefetchRoleTab(queryClient, "mentor", t.id, { collegeId: mentorCollegeId, mentorId: currentMentor?.id || "" })}
                       onClick={() => setActiveTab(t.id as any)}
                       className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
                         } ${isActive
@@ -6949,7 +6976,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Class filter */}
-                  <select
+                  <select aria-label="Class filter"
                     value={attCalendarClassFilter}
                     onChange={e => setAttCalendarClassFilter(e.target.value)}
                     className="text-[11px] font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-400 cursor-pointer shadow-xs"
@@ -7220,9 +7247,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           const approvedReq = approvedHandovers.find(h => h.slotId === selectedCell.slot!.id && h.dateStr === selectedCell.dateStr);
 
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-              <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-
+            <Dialog
+              open={true}
+              onOpenChange={(next) => { if (!next) setIsModalOpen(false); }}
+              ariaLabel="Period action"
+              overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4"
+              panelClassName="max-w-md bg-white rounded-2xl border-slate-200 p-5 space-y-0 flex flex-col overflow-hidden max-h-[90vh]"
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3.5">
                   <div>
@@ -7231,6 +7262,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
                   <button
                     onClick={() => setIsModalOpen(false)}
+                    aria-label="Close period action"
                     className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   >
                     <X className="w-5 h-5" />
@@ -7392,7 +7424,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
 
                     {formError && (
-                      <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-1.5">
+                      <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-1.5" role="alert">
                         <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                         <span>{formError}</span>
                       </div>
@@ -7404,6 +7436,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         value={targetStaffId}
                         onChange={(e) => setTargetStaffId(e.target.value)}
                         className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-medium focus:outline-none focus:border-slate-900"
+                        aria-label="Select Covering Staff"
                       >
                         <option value="">-- Choose Covering Staff --</option>
                         {memoizedCoveringStaff.map(m => (
@@ -7422,6 +7455,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         value={reasonText}
                         onChange={(e) => setReasonText(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 focus:outline-none focus:border-slate-900"
+                        aria-label="Reason for Handover"
                       />
                     </div>
 
@@ -7464,8 +7498,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     Close
                   </button>
                 </div>
-              </div>
-            </div>
+            </Dialog>
           );
         })()}
 
@@ -7640,8 +7673,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           };
 
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
-              <div className="relative w-full max-w-5xl h-[90vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <Dialog
+              open={true}
+              onOpenChange={(next) => { if (!next) setIsAttendanceStudioOpen(false); }}
+              ariaLabel={`Attendance — ${selectedCell.slot.course}`}
+              overlayClassName="bg-slate-900/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto"
+              panelClassName="max-w-5xl h-[90vh] max-h-[90vh] bg-white rounded-2xl border-slate-200 p-0 space-y-0 flex flex-col overflow-hidden"
+            >
 
                 {/* Full-modal saving overlay — blocks UI during re-render after attendance submit */}
                 {isSubmittingAttendance && (
@@ -7694,6 +7732,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
                   <button
                     onClick={() => setIsAttendanceStudioOpen(false)}
+                    aria-label="Close attendance studio"
                     className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   >
                     <X className="w-5 h-5" />
@@ -7927,7 +7966,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {formError && (
-                  <div className="p-3 mx-4 mt-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-600 shrink-0">
+                  <div className="p-3 mx-4 mt-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-600 shrink-0" role="alert">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{formError}</span>
                   </div>
@@ -8041,8 +8080,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
+            </Dialog>
           );
         })()}
 
@@ -8088,8 +8126,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           };
 
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-              <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <Dialog
+              open={true}
+              onOpenChange={(next) => {
+                if (!next) {
+                  setIsCamEditRequestModalOpen(false);
+                  setCamRequestReason("");
+                  setFormError("");
+                }
+              }}
+              ariaLabel="Request edit permission for locked attendance"
+              overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4"
+              panelClassName="max-w-lg bg-white rounded-2xl border-slate-200 p-6 space-y-0 flex flex-col overflow-hidden max-h-[90vh]"
+            >
                 {/* Header */}
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
                   <div>
@@ -8107,6 +8156,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       setCamRequestReason("");
                       setFormError("");
                     }}
+                    aria-label="Close edit permission request"
                     className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   >
                     <X className="w-5 h-5" />
@@ -8155,7 +8205,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {formError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-600 mb-4">
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-600 mb-4" role="alert">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{formError}</span>
                   </div>
@@ -8174,6 +8224,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       onChange={(e) => setCamRequestReason(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                       required
+                      aria-label="Reason for Edit Request"
                     />
                     <p className="text-[11px] text-slate-400 font-medium">
                       Provide a clear justification for why this attendance record needs to be modified after the deadline.
@@ -8212,8 +8263,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </button>
                   </div>
                 </form>
-              </div>
-            </div>
+            </Dialog>
           );
         })()}
 
@@ -8245,7 +8295,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
           const selectedCourseObj = coursesList.find(c => c.name.trim().toLowerCase() === activeDept.trim().toLowerCase());
           const courseYears = selectedCourseObj?.years || 3;
-          const standardSemesters = Array.from({ length: courseYears * 2 }, (_, i) => `Semester ${i + 1}`);
+          const standardSemesters = getSemestersForCourse(courseYears);
 
           const semesterOptions = Array.from(new Set([
             ...standardSemesters,
@@ -8266,7 +8316,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             return na - nb;
           });
 
-          const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+          const defaultSems = ALL_SEMESTERS;
           const finalSemOptions = semesterOptions.length > 0 ? semesterOptions : defaultSems;
           const activeSem = trackerSem && finalSemOptions.includes(trackerSem)
             ? trackerSem
@@ -8387,6 +8437,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           if (bestMatch) setTrackerClassGroup(bestMatch);
                         }}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                        aria-label="Department"
                       >
                         {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
@@ -8410,6 +8461,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           if (bestMatch) setTrackerClassGroup(bestMatch);
                         }}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                        aria-label="Semester"
                       >
                         {finalSemOptions.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
@@ -8422,6 +8474,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         value={activeSubj}
                         onChange={(e) => setTrackerSubject(e.target.value)}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                        aria-label="Subject"
                       >
                         {subjectOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                       </select>
@@ -8434,6 +8487,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         value={trackerWeek}
                         onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
                         className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                        aria-label="Week"
                       >
                         {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
                           <option key={wk} value={wk}>Week {wk} {wk % 2 === 0 ? "(Assessment)" : ""}</option>
@@ -8757,7 +8811,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               className="pl-4 pr-4 py-2.5 text-xs border border-slate-205 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] w-64 bg-white font-medium text-slate-800"
                             />
                           </div>
-                          <select
+                          <select aria-label="Status filter"
                             value={trackerStatusFilter}
                             onChange={(e) => setTrackerStatusFilter(e.target.value)}
                             className="px-3.5 py-2.5 text-xs border border-slate-205 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white font-bold text-slate-700 cursor-pointer"
@@ -8986,6 +9040,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       }}
                                       placeholder="—"
                                       className="w-full text-center text-xs font-black px-2 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-400 bg-slate-50 text-slate-800"
+                                      aria-label="Marks (0-10)"
                                     />
                                   </td>
                                 </tr>
@@ -9006,6 +9061,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               setTrackerPage(1);
                             }}
                             className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:border-[#D528A2] cursor-pointer shadow-xs"
+                            aria-label="Rows per page"
                           >
                             <option value={10}>10 per page</option>
                             <option value={25}>25 per page</option>
@@ -9048,8 +9104,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                       {/* Assign / Edit Task Modal */}
                       {editingTask && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                          <div className="bg-white rounded-xl border border-gray-150 shadow-xl max-w-2xl w-full overflow-hidden animate-slideUp flex flex-col">
+                        <Dialog
+                          open={editingTask}
+                          onOpenChange={(next) => { if (!next) setEditingTask(false); }}
+                          ariaLabel={currentTask ? "Edit assignment details" : "Assign new task"}
+                          overlayClassName="bg-slate-900/60 backdrop-blur-sm p-4"
+                          panelClassName="bg-white rounded-xl border-gray-150 shadow-xl max-w-2xl overflow-hidden flex flex-col max-h-[90vh] p-0 space-y-0"
+                        >
                             <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
                               <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
                                 <BookOpen className="h-5 w-5 text-indigo-650" />
@@ -9057,6 +9118,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               </h3>
                               <button
                                 onClick={() => setEditingTask(false)}
+                                aria-label="Close task form"
                                 className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
                               >
                                 <X className="h-4 w-4" />
@@ -9100,6 +9162,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         setTrackerSubject("");
                                       }}
                                       className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white text-slate-800 cursor-pointer truncate"
+                                      aria-label="Department &amp; Semester"
                                     >
                                       {deptOptions.map(d => <option key={d} value={d}>{d} — {activeSem}</option>)}
                                     </select>
@@ -9110,6 +9173,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       value={activeSubj}
                                       onChange={(e) => setTrackerSubject(e.target.value)}
                                       className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white text-slate-800 cursor-pointer truncate"
+                                      aria-label="Subject"
                                     >
                                       {subjectOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                                     </select>
@@ -9120,6 +9184,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                       value={trackerWeek}
                                       onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
                                       className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white text-slate-800 cursor-pointer"
+                                      aria-label="Week"
                                     >
                                       {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
                                         <option key={wk} value={wk}>Week {wk} {wk % 2 === 0 ? "(Assessment)" : ""}</option>
@@ -9139,6 +9204,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     onChange={(e) => setTrackerTaskName(e.target.value)}
                                     placeholder="e.g. Experiment 1: SQL Join Operations"
                                     className="w-full text-xs font-semibold px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-slate-50 text-slate-800"
+                                    aria-label="Task Name / Description"
                                   />
                                 </div>
 
@@ -9171,6 +9237,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         onChange={(e) => setTrackerTaskPdf(e.target.value)}
                                         placeholder="e.g. https://drive.google.com/..."
                                         className="w-full text-xs font-semibold px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:border-[#D528A2] focus:ring-2 focus:ring-[#D528A2]/10 bg-slate-50 text-slate-800"
+                                        aria-label="Reference PDF URL / Drive Link"
                                       />
                                     </div>
                                   ) : (
@@ -9187,7 +9254,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         <input type="file" className="hidden" accept=".pdf,.docx,.doc,.pptx" onChange={(e) => {
                                           if (e.target.files && e.target.files[0]) {
                                             toast("File selected: " + e.target.files[0].name, "success");
-                                            setTrackerTaskPdf("https://example.com/simulated-upload/" + encodeURIComponent(e.target.files[0].name));
+                                            setTrackerTaskPdf(e.target.files[0].name);
                                           }
                                         }} />
                                       </label>
@@ -9220,8 +9287,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 </button>
                               </div>
                             </form>
-                          </div>
-                        </div>
+                        </Dialog>
                       )}
                     </div>
                   );
@@ -9755,7 +9821,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </div>
 
                       {/* Unit Filter */}
-                      <select
+                      <select aria-label="Unit filter"
                         value={acadTrackerUnitFilter}
                         onChange={e => setAcadTrackerUnitFilter(e.target.value)}
                         className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -9777,6 +9843,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           value={acadTrackerStartDate}
                           onChange={e => setAcadTrackerStartDate(e.target.value)}
                           className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                          aria-label="From Date"
                         />
                         <span>To:</span>
                         <input
@@ -9784,6 +9851,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           value={acadTrackerEndDate}
                           onChange={e => setAcadTrackerEndDate(e.target.value)}
                           className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
+                          aria-label="To Date"
                         />
                       </div>
                     </div>
@@ -9935,7 +10003,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                 const activeWeeklyDept = acadWeeklyDept || deptOptions[0] || currentMentor?.mentor_group || "";
 
-                const standardSemesters = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+                const weeklyCourse = coursesList.find(c => c.name.trim().toLowerCase() === activeWeeklyDept.trim().toLowerCase());
+                const standardSemesters = weeklyCourse ? getSemestersForCourse(weeklyCourse.years) : ALL_SEMESTERS;
                 const semesterOptions = Array.from(new Set([
                   ...standardSemesters,
                   ...subjectsList
@@ -10300,6 +10369,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 setAcadWeeklySubject("");
                               }}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                              aria-label="Department"
                             >
                               {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                             </select>
@@ -10315,6 +10385,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 setAcadWeeklySubject("");
                               }}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                              aria-label="Semester"
                             >
                               {finalSemOptions.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
@@ -10327,6 +10398,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               value={activeWeeklySubj}
                               onChange={(e) => setAcadWeeklySubject(e.target.value)}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                              aria-label="Academic Course"
                             >
                               {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
@@ -10339,6 +10411,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               value={acadWeeklyWeek}
                               onChange={(e) => setAcadWeeklyWeek(parseInt(e.target.value, 10))}
                               className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer font-bold text-indigo-700"
+                              aria-label="Target Week"
                             >
                               {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
                                 <option key={wk} value={wk}>Week {wk} (Quiz, Assessment, Assignment)</option>
@@ -10673,7 +10746,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               className="pl-4 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 w-64 bg-white font-medium text-slate-800"
                             />
                           </div>
-                          <select
+                          <select aria-label="Status filter"
                             value={acadWeeklyStatusFilter}
                             onChange={(e) => setAcadWeeklyStatusFilter(e.target.value)}
                             className="px-3.5 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white font-bold text-slate-700 cursor-pointer"
@@ -10833,6 +10906,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         }}
                                         placeholder="—"
                                         className="w-full text-center text-xs font-black px-2 py-1.5 rounded-lg border border-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white text-slate-900"
+                                        aria-label="Quiz (0-10)"
                                       />
                                     </td>
                                     {/* Assessment Marks */}
@@ -10878,6 +10952,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         }}
                                         placeholder="—"
                                         className="w-full text-center text-xs font-black px-2 py-1.5 rounded-lg border border-purple-200 focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white text-slate-900"
+                                        aria-label="Assessment (0-10)"
                                       />
                                     </td>
                                     {/* Assignment Marks */}
@@ -10923,6 +10998,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         }}
                                         placeholder="—"
                                         className="w-full text-center text-xs font-black px-2 py-1.5 rounded-lg border border-emerald-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white text-slate-900"
+                                        aria-label="Assignment (0-10)"
                                       />
                                     </td>
                                     {/* Total Marks */}
@@ -10967,6 +11043,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                           }}
                                           placeholder="Enter feedback or notes..."
                                           className="flex-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500 bg-slate-50 text-slate-800"
+                                          aria-label="Remarks / Feedback"
                                         />
                                         {status === "saving" && (
                                           <span className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin shrink-0"></span>
@@ -10998,6 +11075,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               setAcadWeeklyPage(1);
                             }}
                             className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-xs"
+                            aria-label="Rows per page"
                           >
                             <option value={10}>10 per page</option>
                             <option value={25}>25 per page</option>
@@ -11035,8 +11113,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                     {/* Task Assignment Modal */}
                     {isEditingAcadTask && (
-                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
-                        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-2xl max-w-lg w-full space-y-4">
+                      <Dialog
+                        open={isEditingAcadTask}
+                        onOpenChange={(next) => { if (!next) setIsEditingAcadTask(false); }}
+                        ariaLabel={`Assign week ${acadWeeklyWeek} academic tasks for ${activeWeeklySubj}`}
+                        overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4"
+                        panelClassName="max-w-lg rounded-2xl p-6 border-slate-200 space-y-4 max-h-[90vh]"
+                      >
                           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                             <div className="flex items-center gap-2">
                               <Layers className="h-5 w-5 text-indigo-600" />
@@ -11047,6 +11130,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => setIsEditingAcadTask(false)}
+                              aria-label="Close academic task assignment"
                               className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                             >
                               <X className="h-4 w-4" />
@@ -11095,6 +11179,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   onChange={(e) => setAcadTaskName(e.target.value)}
                                   placeholder="e.g. Unit 2: Sorting Algorithms & Hash Maps Evaluation"
                                   className="w-full px-3.5 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white shadow-2xs"
+                                  aria-label="Overall Task Title / Topic / Weekly Overview"
                                 />
                               </div>
 
@@ -11108,6 +11193,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   value={acadTaskDate}
                                   onChange={(e) => setAcadTaskDate(e.target.value)}
                                   className="w-full px-3 py-2.5 text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white shadow-2xs"
+                                  aria-label="Task / Session Date"
                                 />
                               </div>
                             </div>
@@ -11214,8 +11300,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               </button>
                             </div>
                           </form>
-                        </div>
-                      </div>
+                      </Dialog>
                     )}
                   </div>
                 );
@@ -11232,14 +11317,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 const isFormBlocked = isHoliday || !isConfigured || dateSlots.length === 0 || isSelectedPeriodUpcoming;
 
                 return (
-                  <div
-                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 transition-all"
-                    onClick={() => setShowAcadLogModal(false)}
+                  <Dialog
+                    open={showAcadLogModal}
+                    onOpenChange={(next) => { if (!next) setShowAcadLogModal(false); }}
+                    ariaLabel={editingAcadEntry ? "Edit academic period log" : "Log teaching period"}
+                    overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4"
+                    panelClassName="max-w-lg rounded-2xl border-slate-200 p-6 space-y-4 max-h-[90vh] overflow-y-auto"
                   >
-                    <div
-                      className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
-                      onClick={e => e.stopPropagation()}
-                    >
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2.5">
                           <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
@@ -11255,6 +11339,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => setShowAcadLogModal(false)}
+                          aria-label="Close academic log form"
                           className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                         >
                           <X className="w-5 h-5" />
@@ -11325,6 +11410,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               disabled
                               className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold outline-none bg-slate-100 text-slate-600 cursor-not-allowed"
                               required
+                              aria-label="Conduction Date"
                             />
                             <p className="text-[10px] text-slate-400 font-medium">
                               Period logging is restricted to today only. Previous and future dates are locked.
@@ -11343,6 +11429,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               disabled={isHoliday || !isConfigured || dateSlots.length === 0}
                               className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
+                              aria-label="Scheduled Period Slot"
                             >
                               {dateSlots.length > 0 ? (
                                 dateSlots.map(slot => {
@@ -11383,6 +11470,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               disabled={isHoliday || !isConfigured}
                               className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
+                              aria-label="Class Group / Cohort"
                             >
                               {mentorClassesList.map(cg => (
                                 <option key={cg} value={cg}>{cg}</option>
@@ -11399,6 +11487,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               disabled={isHoliday || !isConfigured}
                               className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
+                              aria-label="Academic Subject"
                             >
                               {availableAcadSubjects.map(sub => (
                                 <option key={sub} value={sub}>{sub}</option>
@@ -11417,6 +11506,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               disabled={isHoliday || !isConfigured}
                               className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
+                              aria-label="Syllabus Unit"
                             >
                               <option value="Unit 1">Unit 1</option>
                               <option value="Unit 2">Unit 2</option>
@@ -11436,6 +11526,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               disabled={isHoliday || !isConfigured}
                               className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none bg-white cursor-pointer disabled:bg-slate-100 disabled:cursor-not-allowed"
                               required
+                              aria-label="Conduction Status"
                             >
                               <option value="Delivered">Delivered</option>
                               <option value="Not Delivered">Not Delivered</option>
@@ -11454,6 +11545,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             disabled={isHoliday || !isConfigured}
                             className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none disabled:bg-slate-100 disabled:cursor-not-allowed"
                             required
+                            aria-label="Topic Covered During Class"
                           />
                         </div>
 
@@ -11467,6 +11559,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             onChange={e => setAcadFormComments(e.target.value)}
                             disabled={isHoliday || !isConfigured}
                             className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none resize-none disabled:bg-slate-100 disabled:cursor-not-allowed"
+                            aria-label="Delivery Comments &amp; Homework Remarks"
                           />
                         </div>
 
@@ -11500,15 +11593,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           </button>
                         </div>
                       </form>
-                    </div>
-                  </div>
+                  </Dialog>
                 );
               })()}
 
               {/* Modal: Request Log Correction from Campus Manager (CM) */}
               {showAcadEditRequestModal && targetAcadEditLog && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-                  <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-scaleUp">
+                <Dialog
+                  open={showAcadEditRequestModal && !!targetAcadEditLog}
+                  onOpenChange={(next) => { if (!next) setShowAcadEditRequestModal(false); }}
+                  ariaLabel="Request log correction from Campus Manager"
+                  overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4"
+                  panelClassName="max-w-lg rounded-2xl border-slate-200 p-0 space-y-0 overflow-hidden flex flex-col max-h-[90vh]"
+                >
                     <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent">
                       <div className="flex items-center gap-3">
                         <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
@@ -11522,6 +11619,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowAcadEditRequestModal(false)}
+                        aria-label="Close log correction request"
                         className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
                       >
                         <X className="w-4 h-4" />
@@ -11551,6 +11649,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onChange={e => setAcadEditProposedTopic(e.target.value)}
                           placeholder="e.g. Corrected topic or detailed syllabus section covered"
                           className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none"
+                          aria-label="Proposed Corrected Topic"
                         />
                       </div>
 
@@ -11562,6 +11661,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onChange={e => setAcadEditProposedComments(e.target.value)}
                           placeholder="e.g. Revised delivery remarks or homework clarification"
                           className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:ring-1 focus:ring-amber-500 outline-none resize-none"
+                          aria-label="Proposed Corrected Remarks / Notes"
                         />
                       </div>
 
@@ -11574,6 +11674,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onChange={e => setAcadEditReason(e.target.value)}
                           placeholder="Explain why this past period log needs correction (e.g. Typo in topic name, swapped unit coverage, etc.)"
                           className="w-full p-2.5 border border-amber-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none resize-none bg-amber-50/30"
+                          aria-label="Reason for Correction / Justification for CM"
                         />
                       </div>
 
@@ -11595,8 +11696,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         </button>
                       </div>
                     </form>
-                  </div>
-                </div>
+                </Dialog>
               )}
             </div>
           );
@@ -11927,8 +12027,20 @@ Request Reschedule →
         const swapGridRows = rows; // reuse computed time-column structure from main timetable
 
         return (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all duration-300">
-            <div className={`bg-white rounded-xl shadow-2xl w-full overflow-hidden flex flex-col transition-all duration-300 ${swapSuccess ? "max-w-md" : "max-w-5xl max-h-[90vh]"}`}>
+          <Dialog
+            open={true}
+            onOpenChange={(next) => {
+              if (!next) {
+                setSwapModalOpen(false);
+                setSwapSuccess("");
+                setSwapError("");
+                setSwapGridWeekOffset(0);
+              }
+            }}
+            ariaLabel={swapSuccess ? "Swap offer sent" : `Cover a class for ${target.otherMentorName}`}
+            overlayClassName="bg-black/50 backdrop-blur-sm p-4"
+            panelClassName={`bg-white rounded-xl w-full overflow-hidden flex flex-col transition-all duration-300 p-0 space-y-0 max-h-[90vh] ${swapSuccess ? "max-w-md" : "max-w-5xl"}`}
+          >
               {/* Modal Header */}
               <div style={{ background: "linear-gradient(135deg, #D528A2 0%, #F4A863 100%)" }} className="p-5 text-white flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -11943,6 +12055,7 @@ Request Reschedule →
                   <button
                     type="button"
                     onClick={() => { setSwapModalOpen(false); setSwapSuccess(""); setSwapError(""); setSwapGridWeekOffset(0); }}
+                    aria-label="Close class cover request"
                     className="p-2 rounded-xl hover:bg-white/20 transition-colors"
                   >
                     <X className="h-5 w-5" />
@@ -12134,11 +12247,12 @@ Request Reschedule →
                           onChange={e => setSwapReason(e.target.value)}
                           placeholder={`e.g. Compensating for ${target.subject} handover in ${target.month}`}
                           className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 resize-none text-slate-700" style={{ "--tw-ring-color": "rgba(213,40,162,0.4)" } as React.CSSProperties}
+                          aria-label="Note (optional)"
                         />
                       </div>
 
                       {swapError && (
-                        <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700 font-semibold">
+                        <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700 font-semibold" role="alert">
                           {swapError}
                         </div>
                       )}
@@ -12198,18 +12312,23 @@ Request Reschedule →
                   </>
                 )}
               </div>
-            </div>
-          </div>
+          </Dialog>
         );
       })()}
 
       {/* Mentor Internal Swap Modal */}
       {demoSwapModalSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 w-full max-w-md shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[85vh]">
+        <Dialog
+          open={!!demoSwapModalSession}
+          onOpenChange={(next) => { if (!next) setDemoSwapModalSession(null); }}
+          ariaLabel="Request internal demo swap"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4"
+          panelClassName="max-w-md dark:bg-slate-900 p-6 space-y-4 flex flex-col max-h-[85vh]"
+        >
 
             <button
               onClick={() => setDemoSwapModalSession(null)}
+              aria-label="Close internal swap request"
               className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
             >
               <X className="h-5 w-5" />
@@ -12240,6 +12359,7 @@ Request Reschedule →
                     value={demoSwapReason}
                     onChange={(e) => setDemoSwapReason(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-205 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                    aria-label="Reason for Swap"
                   >
                     <option value="I am unavailable">I am unavailable</option>
                     <option value="Leave Approved">Leave Approved</option>
@@ -12257,6 +12377,7 @@ Request Reschedule →
                     onChange={(e) => setDemoSwapRemarks(e.target.value)}
                     placeholder="Describe details for peer mentor review..."
                     className="w-full px-3 py-2 rounded-xl border border-slate-205 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    aria-label="Remarks (Optional)"
                   />
                 </div>
 
@@ -12336,8 +12457,7 @@ Request Reschedule →
               </div>
             )}
 
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* ─── Mentor Self-Directed Demo Reschedule Modal ─── */}
@@ -12374,13 +12494,18 @@ Request Reschedule →
         );
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-xl shadow-2xl relative animate-in zoom-in-95 duration-200 space-y-4 flex flex-col max-h-[90vh]">
-              
+          <Dialog
+            open={!!rescheduleModalSession}
+            onOpenChange={(next) => { if (!next) setRescheduleModalSession(null); }}
+            ariaLabel="Reschedule demo session"
+            overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4"
+            panelClassName="max-w-xl dark:bg-slate-900 border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4 flex flex-col max-h-[90vh]"
+          >
               {/* Close Button */}
               <button
                 type="button"
                 onClick={() => setRescheduleModalSession(null)}
+                aria-label="Close reschedule request"
                 className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
@@ -12448,26 +12573,27 @@ Request Reschedule →
                       setRescheduleSelectedSlot("");
                     }}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
+                    aria-label="Target Date (Set by You)"
                   />
                 </div>
 
                 {/* Date Conflict Warnings */}
                 {isSunday && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2" role="alert">
                     <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
                     <span>Selected date is Sunday (Campus Closed). Please choose another date.</span>
                   </div>
                 )}
 
                 {holidayConflict && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2" role="alert">
                     <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
                     <span>Selected date is a holiday: {holidayConflict.title || "Holiday"}.</span>
                   </div>
                 )}
 
                 {mentorLeaveOnDate && (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2" role="alert">
                     <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
                     <span>You are on approved {mentorLeaveOnDate.request_type || "leave"} on this date. Please pick a date after your leave ends.</span>
                   </div>
@@ -12606,8 +12732,7 @@ Request Reschedule →
                 </button>
               </div>
 
-            </div>
-          </div>
+          </Dialog>
         );
       })()}
 

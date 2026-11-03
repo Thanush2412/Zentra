@@ -1,18 +1,20 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb, syncMentorSubjectGroups, consolidateSubjectGroups } from "@/lib/db";
+import { getDb, allCapped, syncMentorSubjectGroups, consolidateSubjectGroups, writeInChunks, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     if (searchParams.get("action") === "consolidate") {
       await consolidateSubjectGroups(db);
     }
-    const groups = await db.all("SELECT * FROM subject_groups ORDER BY name ASC");
+    const groups = await allCapped(db, "SELECT * FROM subject_groups ORDER BY name ASC");
     return NextResponse.json({ success: true, groups });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -21,6 +23,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { name, description, lead_sme_id, lead_sme_name, subjectIds, mentorIds } = body;
@@ -30,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     const cleanName = name.trim();
-    const id = "g_" + cleanName.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_") + "_" + Math.random().toString(36).substring(2, 6);
+    const id = generateId("g_" + cleanName.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_"));
 
     let smeId = lead_sme_id || null;
     let smeName = lead_sme_name || null;
@@ -65,20 +69,18 @@ export async function POST(request: Request) {
 
     // Map selected Mentors to this Mentor Group
     if (Array.isArray(mentorIds) && mentorIds.length > 0) {
-      const placeholders = mentorIds.map(() => "?").join(",");
-      await db.run(
-        `UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
-        [cleanName, cleanName, ...mentorIds]
-      );
+      await writeInChunks(db, mentorIds, (chunk, ph) => ({
+        sql: `UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id IN (${ph})`,
+        params: [cleanName, cleanName, ...chunk]
+      }));
     }
 
     // Map selected Subjects to this Group
     if (Array.isArray(subjectIds) && subjectIds.length > 0) {
-      const placeholders = subjectIds.map(() => "?").join(",");
-      await db.run(
-        `UPDATE subjects SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
-        [cleanName, cleanName, ...subjectIds]
-      );
+      await writeInChunks(db, subjectIds, (chunk, ph) => ({
+        sql: `UPDATE subjects SET mentor_group = ?, subject_group = ? WHERE id IN (${ph})`,
+        params: [cleanName, cleanName, ...chunk]
+      }));
     }
 
     await syncMentorSubjectGroups(db);
@@ -94,6 +96,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, description, lead_sme_id, lead_sme_name, subjectIds, mentorIds } = body;
@@ -104,19 +108,31 @@ export async function PUT(request: Request) {
 
     const cleanName = name.trim();
 
-    // Get original name to update references
-    const original = await db.get("SELECT name, lead_sme_id FROM subject_groups WHERE id = ?", id);
+    // The group row and the lead-SME name lookup are independent (one keys off the
+    // edited group, the other off the posted SME id), so they share a round trip. Both
+    // decide what gets written, so a failed slice aborts instead of mis-reporting.
+    let smeId = lead_sme_id || null;
+    const groupFailures: QueryFailure[] = [];
+    const [originalRows, smeRows] = await db.multiQuery(
+      [
+        { sql: "SELECT name, lead_sme_id FROM subject_groups WHERE id = ?", params: [id] },
+        smeId && !lead_sme_name
+          ? { sql: "SELECT name FROM sme_users WHERE id = ?", params: [smeId] }
+          : { sql: "SELECT 1 WHERE 1=0" },
+      ],
+      groupFailures
+    );
+    if (groupFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not load this subject group. Please try again." }, { status: 500 });
+    }
+
+    const original = originalRows[0] || null;
     if (!original) {
       return NextResponse.json({ success: false, message: "Subject group not found." }, { status: 404 });
     }
 
-    let smeId = lead_sme_id || null;
     let smeName = lead_sme_name || null;
-
-    if (smeId && !smeName) {
-      const sme = await db.get("SELECT name FROM sme_users WHERE id = ?", [smeId]);
-      if (sme) smeName = sme.name;
-    }
+    if (smeRows[0]) smeName = smeRows[0].name;
 
     await db.run(
       "UPDATE subject_groups SET name = ?, description = ?, lead_sme_id = ?, lead_sme_name = ? WHERE id = ?",
@@ -149,20 +165,18 @@ export async function PUT(request: Request) {
 
     // Set selected Mentors to cleanName
     if (Array.isArray(mentorIds) && mentorIds.length > 0) {
-      const placeholders = mentorIds.map(() => "?").join(",");
-      await db.run(
-        `UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
-        [cleanName, cleanName, ...mentorIds]
-      );
+      await writeInChunks(db, mentorIds, (chunk, ph) => ({
+        sql: `UPDATE mentors SET mentor_group = ?, subject_group = ? WHERE id IN (${ph})`,
+        params: [cleanName, cleanName, ...chunk]
+      }));
     }
 
     // Set selected Subjects to cleanName
     if (Array.isArray(subjectIds) && subjectIds.length > 0) {
-      const placeholders = subjectIds.map(() => "?").join(",");
-      await db.run(
-        `UPDATE subjects SET mentor_group = ?, subject_group = ? WHERE id IN (${placeholders})`,
-        [cleanName, cleanName, ...subjectIds]
-      );
+      await writeInChunks(db, subjectIds, (chunk, ph) => ({
+        sql: `UPDATE subjects SET mentor_group = ?, subject_group = ? WHERE id IN (${ph})`,
+        params: [cleanName, cleanName, ...chunk]
+      }));
     }
 
     await syncMentorSubjectGroups(db);
@@ -178,6 +192,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

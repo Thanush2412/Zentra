@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { type SessionPayload, validateSession } from "@/lib/session";
-import { getDb } from "@/lib/db";
-import { extractSessionToken, resolveLiveUser, normalizeRole } from "@/lib/authGuard";
+import { type SessionPayload } from "@/lib/session";
+import { extractSessionToken, normalizeRole, loadSession, loadUser } from "@/lib/authGuard";
+import { logger } from "@/lib/logger";
 
 // Re-export normalizeRole for backward compatibility
 export { normalizeRole };
@@ -23,22 +23,37 @@ export class ApiAuthError extends Error {
 export async function getSessionFromRequest(request: Request): Promise<SessionPayload | null> {
   const token = extractSessionToken(request);
   if (!token) return null;
+
+  // A pooler blip is not a logged-out user. Infrastructure failures must not
+  // collapse into 401, because the client interceptor treats 401 as session
+  // expiry and drops the user's session on a backend hiccup.
+  let validated;
   try {
-    const db = await getDb();
-    const validated = await validateSession(db, token);
-    if (!validated.isValid || !validated.userId) return null;
-    const liveUser = await resolveLiveUser(db, validated.userId);
-    if (!liveUser) return null;
-    return {
-      userId: liveUser.reference_id || liveUser.id,
-      role: liveUser.role,
-      email: liveUser.email,
-      collegeId: liveUser.college_id,
-      name: liveUser.name
-    };
-  } catch {
-    return null;
+    validated = await loadSession(token);
+  } catch (err: any) {
+    logger.error("getSessionFromRequest: session lookup failed", { error: err?.message || String(err) });
+    throw new ApiAuthError("Authentication is temporarily unavailable. Please retry.", 503);
   }
+
+  if (!validated.isValid || !validated.userId) return null;
+
+  let liveUser;
+  try {
+    liveUser = await loadUser(validated.userId);
+  } catch (err: any) {
+    logger.error("getSessionFromRequest: user lookup failed", { error: err?.message || String(err) });
+    throw new ApiAuthError("Authentication is temporarily unavailable. Please retry.", 503);
+  }
+
+  if (!liveUser) return null;
+
+  return {
+    userId: liveUser.reference_id || liveUser.id,
+    role: liveUser.role,
+    email: liveUser.email,
+    collegeId: liveUser.college_id,
+    name: liveUser.name
+  };
 }
 
 /** Throws ApiAuthError(401) when there is no valid session cookie. */

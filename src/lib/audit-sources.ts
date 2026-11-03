@@ -1,6 +1,8 @@
 // Server-only configuration for Campus E-Audit external data sources.
 // All credentials live here / in .env — never shipped to the client.
 
+import { fetchWithTimeout } from "@/lib/net";
+
 // ── Mentor Feedback (NPS) — Google Sheets (public gviz CSV, same source as mentor-feedback.html) ──
 
 export interface MentorFeedbackMonth {
@@ -98,7 +100,7 @@ export interface SbRow { [key: string]: any }
 
 export async function sbRest(url: string, key: string, path: string, init?: RequestInit): Promise<any> {
   if (!url || !key) throw new Error("Supabase source not configured (missing env key)");
-  const res = await fetch(`${url}/rest/v1/${path}`, {
+  const res = await fetchWithTimeout(`${url}/rest/v1/${path}`, {
     ...init,
     headers: {
       apikey: key,

@@ -1,41 +1,44 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { verifyPassword, hashPassword } from "@/lib/auth";
 import { revokeAllUserSessions, createUserSession, buildSessionCookie, buildCsrfCookie } from "@/lib/session";
 
 export async function POST(request: Request) {
   try {
+    // Password changes require a live session and a valid CSRF token. Without this,
+    // the endpoint was an unauthenticated, unthrottled password-guessing oracle.
+    const { auth, errorResponse } = await requireAuth(request);
+    if (errorResponse || !auth) {
+      return errorResponse || NextResponse.json(
+        { success: false, message: "Unauthorized." },
+        { status: 401 }
+      );
+    }
+
     const db = await getDb();
     const body = await request.json();
-    const { email, currentPassword, newPassword } = body;
+    const { currentPassword, newPassword } = body;
 
-    if (!email || !currentPassword || !newPassword) {
+    if (!currentPassword || !newPassword) {
       return NextResponse.json(
-        { success: false, message: "Missing required fields (email, current password, or new password)." },
+        { success: false, message: "Missing required fields (current password or new password)." },
         { status: 400 }
       );
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    // The account is taken from the session, never from client input.
+    const user = await db.get("SELECT * FROM users WHERE id = ?", [auth.user.id]);
 
-    // Query centralized users table by email or reference_id/id
-    const user = await db.get(
-      "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(reference_id) = ? OR LOWER(id) = ?",
-      [cleanEmail, cleanEmail, cleanEmail]
-    );
-
-    if (!user) {
+    if (!user || !user.password_hash) {
       return NextResponse.json(
-        { success: false, message: "Account not found." },
-        { status: 404 }
+        { success: false, message: "Current password is incorrect." },
+        { status: 400 }
       );
     }
 
-    // Verify current password securely
     if (!verifyPassword(currentPassword, user.password_hash)) {
       return NextResponse.json(
         { success: false, message: "Current password is incorrect." },
@@ -43,63 +46,48 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate new password rules
-    const trimmedNewPass = newPassword.trim();
-    if (trimmedNewPass.length < 6) {
+    // Validate on the trimmed value, but hash exactly what was submitted: login
+    // verifies the raw input, so trimming here would lock out space-wrapped passwords.
+    if (String(newPassword).trim().length < 6) {
       return NextResponse.json(
         { success: false, message: "New password must be at least 6 characters long." },
         { status: 400 }
       );
     }
 
-    if (currentPassword === trimmedNewPass) {
+    if (currentPassword === newPassword) {
       return NextResponse.json(
         { success: false, message: "New password cannot be the same as your current password." },
         { status: 400 }
       );
     }
 
-    const hashedNewPass = hashPassword(trimmedNewPass);
+    const hashedNewPass = hashPassword(newPassword);
     const nowStr = new Date().toISOString();
 
-    // Update main users table.
-    try {
-      await db.run(
+    // The credential and its roster copy change together. Committed separately, a
+    // failure between the two left an account that signed in against `users` while
+    // every role screen still validated the old hash.
+    await db.transaction(async (tx) => {
+      await tx.run(
         "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
         [hashedNewPass, nowStr, user.id]
       );
-    } catch (error: any) {
-      if (error.message?.includes('no such column')) {
-        try {
-          await db.exec("ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT 0;");
-          await db.exec("ALTER TABLE users ADD COLUMN last_login TEXT DEFAULT NULL;");
-        } catch (_) {}
-        await db.run(
-          "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-          [hashedNewPass, nowStr, user.id]
-        );
-      } else {
-        throw error;
-      }
-    }
 
-    // Sync to role-specific tables
-    if (user.role === "student") {
-      await db.run(
-        "UPDATE students SET password_hash = ?, updated_at = ? WHERE id = ?",
-        [hashedNewPass, nowStr, user.reference_id]
-      );
-    } else if (user.role === "mentor") {
-      await db.run(
-        "UPDATE mentors SET password_hash = ?, updated_at = ? WHERE id = ?",
-        [hashedNewPass, nowStr, user.reference_id]
-      );
-    } else if (user.role === "sme") {
-      await db.run(
-        "UPDATE sme_users SET password = ? WHERE id = ?",
-        [hashedNewPass, user.reference_id]
-      );
-    }
+      if (user.role === "student") {
+        await tx.run(
+          "UPDATE students SET password_hash = ?, updated_at = ? WHERE id = ?",
+          [hashedNewPass, nowStr, user.reference_id]
+        );
+      } else if (user.role === "mentor") {
+        await tx.run(
+          "UPDATE mentors SET password_hash = ?, updated_at = ? WHERE id = ?",
+          [hashedNewPass, nowStr, user.reference_id]
+        );
+      } else if (user.role === "sme") {
+        await tx.run("UPDATE sme_users SET password = ? WHERE id = ?", [hashedNewPass, user.reference_id]);
+      }
+    });
 
     // Security: Global session revocation across all devices upon password reset
     await revokeAllUserSessions(db, user.id, "password_changed");
@@ -120,6 +108,6 @@ export async function POST(request: Request) {
     return response;
   } catch (error: any) {
     console.error("API POST Change Password error:", error);
-    return NextResponse.json({ success: false, message: error.message || "Server error updating password" }, { status: 500 });
+    return NextResponse.json({ success: false, message: "Server error updating password." }, { status: 500 });
   }
 }

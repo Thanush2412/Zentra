@@ -1,6 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { Dialog } from "@/components/ui/dialog";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import {
   X,
   User,
@@ -29,67 +34,40 @@ interface Student360Props {
 }
 
 export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, onClose }) => {
-  const [data, setData] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "subjects" | "timeline" | "attendance" | "achievements" | "coding">("overview");
-  const [achievements, setAchievements] = useState<any[]>([]);
-  const [loadingAchievements, setLoadingAchievements] = useState(false);
-  const [codingStats, setCodingStats] = useState<any | null>(null);
-  const [loadingCodingStats, setLoadingCodingStats] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
-    async function fetchStudent360() {
-      setLoading(true);
-      setError(null);
-      try {
-        const query = collegeId ? `?collegeId=${encodeURIComponent(collegeId)}` : "";
-        const res = await fetch(`/api/kam/students/${encodeURIComponent(studentId)}/progress${query}`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setData(json);
-        } else if (isMounted) {
-          setError(json.message || "Failed to load student progress data");
-        }
-      } catch (err: any) {
-        if (isMounted) setError(err.message);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    async function fetchAchievements() {
-      setLoadingAchievements(true);
-      try {
-        const res = await fetch(`/api/achievements?studentId=${encodeURIComponent(studentId)}`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setAchievements(json.records || []);
-        }
-      } catch (_) {}
-      finally {
-        if (isMounted) setLoadingAchievements(false);
-      }
-    }
-    async function fetchCodingStats() {
-      setLoadingCodingStats(true);
-      try {
-        const query = collegeId ? `&collegeId=${encodeURIComponent(collegeId)}` : "";
-        const res = await fetch(`/api/coding-stats?studentId=${encodeURIComponent(studentId)}${query}`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setCodingStats(json);
-        }
-      } catch (_) {}
-      finally {
-        if (isMounted) setLoadingCodingStats(false);
-      }
-    }
-    fetchStudent360();
-    fetchAchievements();
-    fetchCodingStats();
-    return () => { isMounted = false; };
-  }, [studentId, collegeId]);
+  const progressQuery = useQuery({
+    queryKey: qk.kamStudentProgress(studentId, collegeId || ""),
+    queryFn: async () => {
+      const query = collegeId ? `?collegeId=${encodeURIComponent(collegeId)}` : "";
+      const json = await apiFetch<any>(`/api/kam/students/${encodeURIComponent(studentId)}/progress${query}`);
+      if (!json?.success) throw new Error(json?.message || "Failed to load student progress data");
+      return json;
+    },
+  });
+  const achievementsQuery = useQuery<any[]>({
+    queryKey: qk.studentAchievements(studentId),
+    queryFn: async () => {
+      const json = await apiFetch<any>(`/api/achievements?studentId=${encodeURIComponent(studentId)}`);
+      return json?.success ? (json.records || []) : [];
+    },
+  });
+  const codingStatsQuery = useQuery<any>({
+    queryKey: qk.studentCodingStats(studentId, collegeId || ""),
+    queryFn: async () => {
+      const query = collegeId ? `&collegeId=${encodeURIComponent(collegeId)}` : "";
+      const json = await apiFetch<any>(`/api/coding-stats?studentId=${encodeURIComponent(studentId)}${query}`);
+      return json?.success ? json : null;
+    },
+  });
+
+  const data = progressQuery.data ?? null;
+  const loading = progressQuery.isPending;
+  const error = progressQuery.error ? (progressQuery.error as Error).message : null;
+  const achievements = achievementsQuery.data || [];
+  const loadingAchievements = achievementsQuery.isPending;
+  const codingStats = codingStatsQuery.data ?? null;
+  const loadingCodingStats = codingStatsQuery.isPending;
 
   // Close on Escape Key
   useEffect(() => {
@@ -225,19 +203,23 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
 
   if (error || !data) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-        <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl text-center space-y-3 border border-slate-100">
-          <AlertTriangle className="h-8 w-8 text-rose-500 mx-auto" />
-          <h3 className="text-sm font-black text-slate-900">Error Loading Student Profile</h3>
-          <p className="text-xs font-medium text-slate-500">{error || "Student not found"}</p>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-          >
-            Close
-          </button>
-        </div>
-      </div>
+      <Dialog
+        open={true}
+        onOpenChange={(next) => { if (!next) onClose(); }}
+        ariaLabel="Error loading student profile"
+        overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+        panelClassName="max-w-sm max-h-[90vh] rounded-2xl p-5 space-y-3 text-center border-slate-100"
+      >
+        <AlertTriangle className="h-8 w-8 text-rose-500 mx-auto" />
+        <h3 className="text-sm font-black text-slate-900">Error Loading Student Profile</h3>
+        <p role="alert" className="text-xs font-medium text-slate-500">{error || "Student not found"}</p>
+        <button
+          onClick={onClose}
+          className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+        >
+          Close
+        </button>
+      </Dialog>
     );
   }
 
@@ -255,14 +237,13 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
   const cleanSubtitle = subtitleParts.join(" • ");
 
   return (
-    <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 animate-in fade-in duration-150 overflow-y-auto"
+    <Dialog
+      open={true}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      ariaLabel="Student 360 profile"
+      overlayClassName="bg-slate-900/60 backdrop-blur-xs p-3 overflow-y-auto"
+      panelClassName="max-w-3xl my-auto max-h-[92vh] flex flex-col overflow-hidden rounded-2xl border-slate-200 animate-in zoom-in-95 duration-150 p-0 space-y-0"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-150"
-      >
         {/* Compact Header Card with FacePrep Brand Gradient */}
         <div className="bg-gradient-to-r from-[#D528A2] via-pink-600 to-indigo-700 p-4 text-white relative shrink-0">
           <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
@@ -277,6 +258,7 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
             </button>
             <button
               onClick={onClose}
+              aria-label="Close student profile"
               className="h-7 w-7 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer shadow-2xs"
             >
               <X className="h-3.5 w-3.5" />
@@ -456,30 +438,30 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
           {activeTab === "subjects" && (
             <div className="space-y-3">
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-black uppercase text-[9px] tracking-wider">
-                      <th className="py-2 px-3">Subject</th>
-                      <th className="py-2 px-2 text-center">Total</th>
-                      <th className="py-2 px-2 text-center text-emerald-700">Present</th>
-                      <th className="py-2 px-2 text-center text-rose-700">Absent</th>
-                      <th className="py-2 px-2 text-center text-purple-700">OD</th>
-                      <th className="py-2 px-3 text-right text-[#D528A2]">%</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700 bg-white text-[11px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-black uppercase text-[9px] tracking-wider">
+                      <TableHead className="py-2 px-3">Subject</TableHead>
+                      <TableHead className="py-2 px-2 text-center">Total</TableHead>
+                      <TableHead className="py-2 px-2 text-center text-emerald-700">Present</TableHead>
+                      <TableHead className="py-2 px-2 text-center text-rose-700">Absent</TableHead>
+                      <TableHead className="py-2 px-2 text-center text-purple-700">OD</TableHead>
+                      <TableHead className="py-2 px-3 text-right text-[#D528A2]">%</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700 bg-white text-[11px]">
                     {subjectAnalytics.map((s: any) => (
-                      <tr key={s.subject} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-2 px-3 font-bold text-slate-900">{s.subject}</td>
-                        <td className="py-2 px-2 text-center font-bold">{s.totalPeriods}</td>
-                        <td className="py-2 px-2 text-center text-emerald-600 font-black">{s.presentPeriods}</td>
-                        <td className="py-2 px-2 text-center text-rose-500 font-bold">{s.absentPeriods}</td>
-                        <td className="py-2 px-2 text-center text-purple-600 font-bold">{s.odPeriods}</td>
-                        <td className="py-2 px-3 text-right font-black text-[#D528A2]">{s.attendancePct}%</td>
-                      </tr>
+                      <TableRow key={s.subject} className="hover:bg-slate-50/80 transition-colors">
+                        <TableCell className="py-2 px-3 font-bold text-slate-900">{s.subject}</TableCell>
+                        <TableCell className="py-2 px-2 text-center font-bold">{s.totalPeriods}</TableCell>
+                        <TableCell className="py-2 px-2 text-center text-emerald-600 font-black">{s.presentPeriods}</TableCell>
+                        <TableCell className="py-2 px-2 text-center text-rose-500 font-bold">{s.absentPeriods}</TableCell>
+                        <TableCell className="py-2 px-2 text-center text-purple-600 font-bold">{s.odPeriods}</TableCell>
+                        <TableCell className="py-2 px-3 text-right font-black text-[#D528A2]">{s.attendancePct}%</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}
@@ -848,7 +830,6 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
             Close
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };

@@ -1,6 +1,10 @@
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
 
 async function ensureTable(db: any) {
   // Schema + seed handled by the centralized migration runner (once per process)
@@ -10,6 +14,8 @@ async function ensureTable(db: any) {
 
 export async function GET(req: NextRequest) {
   try {
+    const { errorResponse } = await requireAuth(req);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     await ensureTable(db);
     const { searchParams } = new URL(req.url);
@@ -45,6 +51,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const { errorResponse } = await requireAuth(req, { allowedRoles: ["sme", "cm", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     await ensureTable(db);
     const body = await req.json();
@@ -60,7 +68,7 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(windows)) {
         for (const w of windows) {
           if (w.startTime && w.endTime) {
-            const id = w.id || `sme_avail_${smeId}_${day.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+            const id = w.id || generateId(`sme_avail_${smeId}_${day.toLowerCase()}`);
             const sType = w.slotType || w.slot_type || "demo";
             await db.run(
               "INSERT INTO sme_availability (id, sme_id, day_of_week, start_time, end_time, slot_type, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
@@ -74,7 +82,7 @@ export async function POST(req: NextRequest) {
       await db.run("DELETE FROM sme_availability WHERE sme_id = ?", smeId);
       for (const w of windows) {
         if (w.day && w.startTime && w.endTime) {
-          const id = w.id || `sme_avail_${smeId}_${w.day.toLowerCase()}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const id = w.id || generateId(`sme_avail_${smeId}_${w.day.toLowerCase()}`);
           const sType = w.slotType || w.slot_type || "demo";
           await db.run(
             "INSERT INTO sme_availability (id, sme_id, day_of_week, start_time, end_time, slot_type, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
@@ -94,6 +102,8 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const { errorResponse } = await requireAuth(req, { allowedRoles: ["sme", "cm", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

@@ -1,3 +1,5 @@
+export const maxDuration = 30;
+
 import { NextResponse } from "next/server";
 import { requireSession, apiAuthErrorResponse, normalizeRole } from "@/lib/api-auth";
 import { getDb } from "@/lib/db";

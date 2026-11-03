@@ -1,15 +1,19 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, chunkList } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
+import { sendMailAsync } from "@/lib/mailAsync";
+import { renderEmailShell, BRAND } from "@/lib/mail";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
@@ -57,6 +61,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
     const body = await request.json();
@@ -97,7 +103,7 @@ export async function POST(request: Request) {
     const effectiveCollegeId = collegeId || cm?.college_id || "general";
     const effectiveKamId = kamId || cm?.kam_id || cm?.college_kam_id || "kam_1";
     const effectiveEndDate = endDate || startDate;
-    const reqId = `cm_leave_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const reqId = generateId("cm_leave");
     const nowTimestamp = new Date().toISOString();
 
     const isPg = (db as any).isPostgres;
@@ -118,7 +124,7 @@ export async function POST(request: Request) {
 
     // Dispatch in-app notification to KAM
     try {
-      const notifId = `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const notifId = generateId("notif");
       const cmName = cm?.name || "Campus Manager";
       await db.run(
         `INSERT INTO notifications (id, user_id, title, message, type, is_read, created_at)
@@ -131,6 +137,38 @@ export async function POST(request: Request) {
           nowTimestamp
         ]
       ).catch(() => {});
+    } catch (_) {}
+
+    // Email KAM so they're not relying solely on the in-app bell
+    try {
+      const kamUser = await db.get(
+        `SELECT email, name FROM kam_users WHERE id = ? LIMIT 1`,
+        [effectiveKamId]
+      );
+      if (kamUser?.email) {
+        const cmName = cm?.name || "Campus Manager";
+        const collegeName = cm?.college_name || effectiveCollegeId;
+        sendMailAsync({
+          to: kamUser.email,
+          subject: `${BRAND.emailPrefix} [Action Required] CM Leave Request — ${cmName}`,
+          htmlBody: renderEmailShell({
+            title: "Campus Manager Leave Application",
+            badgeText: requestType === "Emergency" ? "EMERGENCY — REVIEW NOW" : "ACTION REQUIRED",
+            badgeColor: requestType === "Emergency" ? "rose" : "amber",
+            description: `Campus Manager <strong>${cmName}</strong> has submitted a leave application and is awaiting your review.`,
+            details: [
+              { label: "CM Name",      value: cmName,                                                       highlight: true },
+              { label: "College",      value: collegeName },
+              { label: "Leave Type",   value: requestType,                                                  highlight: true },
+              { label: "Date Range",   value: startDate === effectiveEndDate ? startDate : `${startDate} to ${effectiveEndDate}` },
+              { label: "Reason",       value: reason.trim() },
+            ],
+            ctaText: "Review in KAM Dashboard →",
+            ctaUrl: `${BRAND.portalUrl}/kam/faculty-governance`,
+          }),
+          context: "cm-leave-request",
+        });
+      }
     } catch (_) {}
 
     return NextResponse.json({
@@ -146,6 +184,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["kam", "admin"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
     const body = await request.json();
@@ -166,77 +206,65 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: false, message: "Leave request not found" }, { status: 404 });
     }
 
-    const isPg = (db as any).isPostgres;
     const nowTimestamp = new Date().toISOString();
 
-    if (isPg) {
-      await db.run(
-        `UPDATE cm_leave_requests
-         SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = NOW()
-         WHERE id = ?`,
-        [status, approvedBy, rejectionReason || null, requestId]
-      );
-    } else {
-      await db.run(
+    // The decision and every attendance row it creates commit together. Previously
+    // the approval was written first and a failed per-day sync was only logged, so
+    // an approved leave could exist with no attendance rows for its dates.
+    const targetStatus = leaveReq.request_type === "On Duty" ? "On Duty" : "Leave";
+    const leaveDates: string[] = [];
+    if (status === "approved" && leaveReq.start_date) {
+      const [sY, sM, sD] = leaveReq.start_date.split("-").map(Number);
+      const [eY, eM, eD] = (leaveReq.end_date || leaveReq.start_date).split("-").map(Number);
+      const cur = new Date(sY, sM - 1, sD, 12, 0, 0);
+      const end = new Date(eY, eM - 1, eD, 12, 0, 0);
+      while (cur <= end) {
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, "0");
+        const d = String(cur.getDate()).padStart(2, "0");
+        leaveDates.push(`${y}-${m}-${d}`);
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.run(
         `UPDATE cm_leave_requests
          SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = ?
          WHERE id = ?`,
         [status, approvedBy, rejectionReason || null, nowTimestamp, requestId]
       );
-    }
 
-    // If approved, auto-sync attendance records for each date in the range
-    if (status === "approved" && leaveReq.start_date) {
-      try {
-        const [sY, sM, sD] = leaveReq.start_date.split("-").map(Number);
-        const [eY, eM, eD] = (leaveReq.end_date || leaveReq.start_date).split("-").map(Number);
-        const cur = new Date(sY, sM - 1, sD, 12, 0, 0);
-        const end = new Date(eY, eM - 1, eD, 12, 0, 0);
-
-        const targetStatus = leaveReq.request_type === "On Duty" ? "On Duty" : "Leave";
-
-        while (cur <= end) {
-          const y = cur.getFullYear();
-          const m = String(cur.getMonth() + 1).padStart(2, "0");
-          const d = String(cur.getDate()).padStart(2, "0");
-          const dateStr = `${y}-${m}-${d}`;
-          const recId = `cm_att_${leaveReq.cam_id}_${dateStr}`;
-
-          if (isPg) {
-            await db.run(
-              `INSERT INTO cm_attendance (id, cam_id, college_id, date_str, status, reason, approved_by, approval_status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', NOW(), NOW())
-               ON CONFLICT (cam_id, date_str) DO UPDATE SET
-                 status = EXCLUDED.status,
-                 reason = EXCLUDED.reason,
-                 approved_by = EXCLUDED.approved_by,
-                 approval_status = 'approved',
-                 updated_at = NOW()`,
-              [recId, leaveReq.cam_id, leaveReq.college_id, dateStr, targetStatus, `Approved Leave: ${leaveReq.reason}`, approvedBy]
-            );
-          } else {
-            await db.run(
-              `INSERT INTO cm_attendance (id, cam_id, college_id, date_str, status, reason, approved_by, approval_status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
-               ON CONFLICT (cam_id, date_str) DO UPDATE SET
-                 status = excluded.status,
-                 reason = excluded.reason,
-                 approved_by = excluded.approved_by,
-                 approval_status = 'approved',
-                 updated_at = ?`,
-              [recId, leaveReq.cam_id, leaveReq.college_id, dateStr, targetStatus, `Approved Leave: ${leaveReq.reason}`, approvedBy, nowTimestamp, nowTimestamp, nowTimestamp]
-            );
-          }
-          cur.setDate(cur.getDate() + 1);
-        }
-      } catch (syncErr) {
-        console.error("Error auto-syncing cm_attendance on leave approval:", syncErr);
+      for (const chunk of chunkList(leaveDates, 100)) {
+        const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)").join(", ");
+        const args = chunk.flatMap((dateStr) => [
+          `cm_att_${leaveReq.cam_id}_${dateStr}`,
+          leaveReq.cam_id,
+          leaveReq.college_id,
+          dateStr,
+          targetStatus,
+          `Approved Leave: ${leaveReq.reason}`,
+          approvedBy,
+          nowTimestamp,
+          nowTimestamp
+        ]);
+        await tx.run(
+          `INSERT INTO cm_attendance (id, cam_id, college_id, date_str, status, reason, approved_by, approval_status, created_at, updated_at)
+           VALUES ${values}
+           ON CONFLICT (cam_id, date_str) DO UPDATE SET
+             status = excluded.status,
+             reason = excluded.reason,
+             approved_by = excluded.approved_by,
+             approval_status = 'approved',
+             updated_at = excluded.updated_at`,
+          ...args
+        );
       }
-    }
+    });
 
-    // Notify CM of the decision
+    // Notify CM of the decision via in-app bell
     try {
-      const notifId = `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      const notifId = generateId("notif");
       await db.run(
         `INSERT INTO notifications (id, user_id, title, message, type, is_read, created_at)
          VALUES (?, ?, ?, ?, 'cm_leave_decision', 0, ?)`,
@@ -248,6 +276,39 @@ export async function PATCH(request: Request) {
           nowTimestamp
         ]
       ).catch(() => {});
+    } catch (_) {}
+
+    // Email the CM directly — they shouldn't have to check the portal to find out
+    try {
+      const camRow = await db.get(
+        `SELECT email, name FROM campus_managers WHERE id = ? LIMIT 1`,
+        [leaveReq.cam_id]
+      );
+      if (camRow?.email) {
+        const dateRange = leaveReq.end_date && leaveReq.end_date !== leaveReq.start_date
+          ? `${leaveReq.start_date} to ${leaveReq.end_date}`
+          : leaveReq.start_date;
+        sendMailAsync({
+          to: camRow.email,
+          subject: `${BRAND.emailPrefix} Your ${leaveReq.request_type} Request Has Been ${status === "approved" ? "Approved" : "Rejected"}`,
+          htmlBody: renderEmailShell({
+            title: `Leave Request ${status === "approved" ? "Approved" : "Rejected"}`,
+            badgeText: status === "approved" ? "APPROVED" : "REJECTED",
+            badgeColor: status === "approved" ? "emerald" : "rose",
+            description: `Dear <strong>${camRow.name || "Campus Manager"}</strong>, your leave application has been reviewed by your KAM.`,
+            details: [
+              { label: "Leave Type",  value: leaveReq.request_type, highlight: true },
+              { label: "Date Range",  value: dateRange },
+              { label: "Status",      value: status.toUpperCase(),  highlight: true },
+              { label: "Reviewed By", value: approvedBy },
+              ...(rejectionReason ? [{ label: "Remarks", value: rejectionReason }] : []),
+            ],
+            ctaText: "View Leave Status →",
+            ctaUrl: `${BRAND.portalUrl}/cm/leaves`,
+          }),
+          context: "cm-leave-decision",
+        });
+      }
     } catch (_) {}
 
     return NextResponse.json({

@@ -1,14 +1,15 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
-import { sendMail, renderHandoverRequestEmail } from "@/lib/mail";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { renderHandoverRequestEmail, BRAND } from "@/lib/mail";
+import { sendMailAsync } from "@/lib/mailAsync";
 import { checkMentorAvailability } from "@/lib/availability";
 import { requireAuth } from "@/lib/authGuard";
+import { applyHandoverDateCorrection, correctStaleHandoverDate } from "@/lib/handoverDates";
+import { generateId } from "@/lib/id";
 
 const noCacheHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -18,10 +19,21 @@ const noCacheHeaders = {
 
 export async function GET(request: Request) {
   try {
+    // Every handover/leave request in the system is readable here, so a session
+    // is mandatory and the list is scoped to the caller: mentors and SMEs see the
+    // requests they raised or received, CMs see their campus, staff see all.
+    const { auth, errorResponse } = await requireAuth(request, {
+      allowedRoles: ["mentor", "cm", "kam", "admin", "sme", "L and D"],
+      checkCsrf: false
+    });
+    if (errorResponse) return errorResponse;
+    const actor = auth!.user;
+
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const targetStaffId = searchParams.get("targetStaffId");
     const requestorId = searchParams.get("requestorId");
+    const slotId = searchParams.get("slotId");
     const status = searchParams.get("status");
 
     let query = "SELECT * FROM handover_requests WHERE 1=1";
@@ -34,43 +46,58 @@ export async function GET(request: Request) {
       query += " AND requestorId = ?";
       params.push(requestorId);
     }
+    if (slotId) {
+      query += " AND slotId = ?";
+      params.push(slotId);
+    }
     if (status) {
       query += " AND status = ?";
       params.push(status);
     }
+
+    if (actor.role === "mentor" || actor.role === "sme") {
+      query += " AND (requestorId = ? OR targetStaffId = ?)";
+      params.push(actor.reference_id, actor.reference_id);
+    } else if (actor.role === "cm") {
+      const ownCollege = actor.college_id;
+      if (!ownCollege) {
+        return NextResponse.json(
+          { success: false, message: "No campus is linked to this account." },
+          { status: 403, headers: noCacheHeaders }
+        );
+      }
+      query +=
+        " AND (requestorId IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?))" +
+        " OR targetStaffId IN (SELECT id FROM mentors WHERE LOWER(college_id) = LOWER(?)))";
+      params.push(ownCollege, ownCollege);
+    }
+
     query += " ORDER BY timestamp DESC";
 
     const records = await db.all(query, params);
 
-    // Auto-heal any timezone-shifted leave_cover handover dates
-    for (const rec of records) {
-      if (rec.compensates_handover_id && rec.request_type === "leave_cover") {
-        try {
-          const leave = await db.get("SELECT start_date, end_date FROM faculty_leave_requests WHERE id = ?", [rec.compensates_handover_id]);
-          if (leave && leave.start_date) {
-            const recDateStr = rec.dateStr || rec.datestr;
-            if (recDateStr && recDateStr < leave.start_date) {
-              const [rY, rM, rD] = leave.start_date.split("-").map(Number);
-              const dtObj = new Date(rY, rM - 1, rD, 12, 0, 0);
-              const corFormatted = dtObj.toLocaleDateString("en-IN", {
-                weekday: "long", day: "2-digit", month: "short", year: "numeric"
-              });
-              await db.run(
-                "UPDATE handover_requests SET datestr = ?, dateformatted = ? WHERE id = ?",
-                [leave.start_date, corFormatted, rec.id]
-              );
-              await db.run(
-                "UPDATE approved_handovers SET datestr = ? WHERE requestid = ?",
-                [leave.start_date, rec.id]
-              );
-              rec.datestr = leave.start_date;
-              rec.dateStr = leave.start_date;
-              rec.dateformatted = corFormatted;
-              rec.dateFormatted = corFormatted;
-            }
-          }
-        } catch (_) {}
-      }
+    // Show timezone-shifted leave_cover dates without persisting: a GET must not
+    // write. scripts/backfill-handover-dates.sql repairs the stored rows.
+    const leaveIds = Array.from(new Set(
+      records.filter((r: any) => r.compensates_handover_id && r.request_type === "leave_cover")
+        .map((r: any) => r.compensates_handover_id)
+    ));
+    if (leaveIds.length > 0) {
+      try {
+        const placeholders = leaveIds.map(() => "?").join(",");
+        const leaves = await db.all(
+          `SELECT id, start_date FROM faculty_leave_requests WHERE id IN (${placeholders})`,
+          leaveIds
+        );
+        const startById = new Map(leaves.map((l: any) => [l.id, l.start_date]));
+        for (const rec of records) {
+          const correction = correctStaleHandoverDate(
+            rec.dateStr || rec.datestr,
+            startById.get(rec.compensates_handover_id)
+          );
+          if (correction) applyHandoverDateCorrection(rec, correction);
+        }
+      } catch (_) {}
     }
 
     return NextResponse.json({ success: true, requests: records }, { headers: noCacheHeaders });
@@ -82,10 +109,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { auth, errorResponse } = await requireAuth(request, {
-      allowedRoles: ["mentor", "cm", "kam", "admin", "student", "sme"],
+      allowedRoles: ["mentor", "cm", "kam", "admin"],
       checkCsrf: true
     });
     if (errorResponse) return errorResponse;
+    const actor = auth!.user;
 
     const db = await getDb();
     const body = await request.json();
@@ -93,6 +121,15 @@ export async function POST(request: Request) {
 
     if (!mentorId || !slotId || !dateStr || !dateFormatted || !targetStaffId || !reason) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
+    }
+
+    // The requestor used to be whatever mentorId the body claimed, so any signed-in
+    // mentor could raise requests in a colleague's name.
+    if (actor.role === "mentor" && String(mentorId) !== String(actor.reference_id)) {
+      return NextResponse.json(
+        { success: false, message: "Mentors can only raise requests in their own name." },
+        { status: 403 }
+      );
     }
 
     // ─── Meta-Request Fast Path ───────────────────────────────────────────────
@@ -113,15 +150,25 @@ export async function POST(request: Request) {
       (typeof reason === "string" && reason.toLowerCase().includes("late attendance"));
 
     if (isMetaRequest) {
-      const requestor = await db.get("SELECT * FROM mentors WHERE id = ?", mentorId);
+      // The requestor and the (optional) real slot both key off the body, so they
+      // leave as one round trip. A failed requestor read must not read as "not found".
+      const metaFailures: QueryFailure[] = [];
+      const [requestorRows, slotRows] = await db.multiQuery([
+        { sql: "SELECT * FROM mentors WHERE id = ?", params: [mentorId] },
+        { sql: "SELECT * FROM slots WHERE id = ?", params: [slotId] },
+      ], metaFailures);
+      if (metaFailures.length > 0) {
+        return NextResponse.json({ success: false, message: "Could not verify this request. Please try again." }, { status: 500 });
+      }
+      const requestor = requestorRows[0];
       if (!requestor) {
         return NextResponse.json({ success: false, message: "Mentor not found." }, { status: 404 });
       }
 
-      // If slotId corresponds to a real slot, fetch its details
-      const slot = await db.get("SELECT * FROM slots WHERE id = ?", slotId);
+      // If slotId corresponds to a real slot, its details fill the blanks below
+      const slot = slotRows[0];
 
-      const newId = "r_" + Date.now();
+      const newId = generateId("r");
       const metaCourse = course || subjectName || slot?.course || slotId;
       const metaClassGroup = classGroup || slot?.classGroup || requestor.department || "Faculty";
       const metaTargetStaffName = targetStaffName || (normalizedTargetStaffId.toLowerCase().includes("cm") ? "CM Approval" : "CM Approval");
@@ -131,86 +178,35 @@ export async function POST(request: Request) {
       // ROLE_UI_AUDIT T2: structured type marker (e.g. "late_punch") — the client
       // matches approvals on this instead of parsing the reason text.
 
-      try {
-        await db.run(
-          `INSERT INTO handover_requests (
-             id, requestorId, requestorName, slotId, course, day, time,
-             dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup, request_type
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cm', ?, ?, ?)`,
-          newId,
-          mentorId,
-          requestor.name,
-          slotId,
-          metaCourse,
-          metaDay,
-          metaTime,
-          dateStr,
-          dateFormatted,
-          storedTargetStaffId,
-          metaTargetStaffName,
-          reason,
-          new Date().toISOString(),
-          metaClassGroup,
-          requestType || ((typeof reason === "string" && reason.toLowerCase().includes("late attendance")) ? "late_attendance" : "late_punch")
-        );
-      } catch (insertErr: any) {
-        if (insertErr?.code === "23503" || insertErr?.message?.includes("foreign key")) {
-          try {
-            await db.run("ALTER TABLE handover_requests DROP CONSTRAINT IF EXISTS handover_requests_targetstaffid_fkey");
-            await db.run(
-              `INSERT INTO handover_requests (
-                 id, requestorId, requestorName, slotId, course, day, time,
-                 dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cm', ?, ?)`,
-              newId,
-              mentorId,
-              requestor.name,
-              slotId,
-              metaCourse,
-              "",
-              "",
-              dateStr,
-              dateFormatted,
-              targetStaffId,
-              metaTargetStaffName,
-              reason,
-              new Date().toISOString(),
-              metaClassGroup,
-              requestType || "late_punch"
-            );
-          } catch (retryErr: any) {
-            // Fallback: use requestor's own mentorId as valid target FK reference while keeping targetStaffName as CM Approval
-            await db.run(
-              `INSERT INTO handover_requests (
-                 id, requestorId, requestorName, slotId, course, day, time,
-                 dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup, request_type
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cm', ?, ?, ?)`,
-              newId,
-              mentorId,
-              requestor.name,
-              slotId,
-              metaCourse,
-              "",
-              "",
-              dateStr,
-              dateFormatted,
-              mentorId,
-              metaTargetStaffName,
-              reason,
-              new Date().toISOString(),
-              metaClassGroup,
-              requestType || "late_punch"
-            );
-          }
-        } else {
-          throw insertErr;
-        }
-      }
+      // targetStaffId is a routing token for CM-approval requests ("cm_approval"),
+      // so the legacy mentors(id) FK on this column is dropped by the startup
+      // migration `handover_requests_target_staff_fk_drop` rather than by DDL here.
+      await db.run(
+        `INSERT INTO handover_requests (
+           id, requestorId, requestorName, slotId, course, day, time,
+           dateStr, dateFormatted, targetStaffId, targetStaffName, reason, status, timestamp, classGroup, request_type
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_cm', ?, ?, ?)`,
+        newId,
+        mentorId,
+        requestor.name,
+        slotId,
+        metaCourse,
+        metaDay,
+        metaTime,
+        dateStr,
+        dateFormatted,
+        storedTargetStaffId,
+        metaTargetStaffName,
+        reason,
+        new Date().toISOString(),
+        metaClassGroup,
+        requestType || ((typeof reason === "string" && reason.toLowerCase().includes("late attendance")) ? "late_attendance" : "late_punch")
+      );
 
       // Audit log
       await db.run(
         "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'meta_request', ?, ?, 'Mentor', ?)",
-        "l_" + Date.now(),
+        generateId("l"),
         `${requestor.name} submitted meta-request: ${reason.slice(0, 100)}`,
         requestor.name,
         new Date().toISOString()
@@ -301,7 +297,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const newId = "r_" + Date.now();
+    const newId = generateId("r");
     await db.run(
       `INSERT INTO handover_requests (
          id, requestorId, requestorName, slotId, course, day, time, 
@@ -325,7 +321,7 @@ export async function POST(request: Request) {
     );
 
     // Audit Log request
-    const logId = "l_" + Date.now();
+    const logId = generateId("l");
     const logDesc = `${requestor.name} requested to hand over class "${subjectName || slot.course}" on ${dateFormatted} to ${coverStaff.name} (Emergency: ${isEmergency})`;
     await db.run(
       "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'handover_request', ?, ?, 'Mentor', ?)",
@@ -335,26 +331,23 @@ export async function POST(request: Request) {
       new Date().toISOString()
     );
 
-    // Asynchronously trigger email notification
-    try {
-      const subject = `[FACE Prep E-Campus] New Class Handover Request - ${subjectName || slot.course}`;
-      const htmlBody = renderHandoverRequestEmail({
-        requestorName: requestor.name,
-        coverStaffName: coverStaff.name,
-        dateStr: dateFormatted,
-        time: `${slot.time} (${slot.day})`,
-        course: subjectName || slot.course,
-        classGroup: slot.classGroup || "General",
-        reason
-      });
-      await sendMail({
-        to: coverStaff.email,
-        subject,
-        htmlBody
-      });
-    } catch (mailErr) {
-      console.error("Failed to send handover request email:", mailErr);
-    }
+    const subject = `${BRAND.emailPrefix} New Class Handover Request - ${subjectName || slot.course}`;
+    const htmlBody = renderHandoverRequestEmail({
+      requestorName: requestor.name,
+      coverStaffName: coverStaff.name,
+      dateStr: dateFormatted,
+      time: `${slot.time} (${slot.day})`,
+      course: subjectName || slot.course,
+      classGroup: slot.classGroup || "General",
+      reason,
+      ctaUrl: `${BRAND.portalUrl}/mentor/handovers`
+    });
+    sendMailAsync({
+      to: coverStaff.email,
+      subject,
+      htmlBody,
+      context: "handover-request"
+    });
 
     return NextResponse.json({
       success: true,

@@ -1,15 +1,21 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
 
-    const colleges = await db.all(`
+    // Three parameterless reads, so multiQuery folds them into a single statement batch
+    // (one round trip instead of three) and any slice failure throws instead of quietly
+    // returning an empty campus list.
+    const [colleges, campusManagers, kamUsers] = await db.multiQuery([
+      {
+        sql: `
       SELECT 
         c.id, c.name, c.address, c.kam_id, c.has_shifts, c.shift_configs, c.rooms,
         c.code, c.academic_year, c.manager, c.working_days,
@@ -21,16 +27,18 @@ export async function GET() {
       FROM colleges c
       LEFT JOIN kam_users k ON c.kam_id = k.id
       ORDER BY c.name
-    `);
-
-    const campusManagers = await db.all(`
+    `
+      },
+      {
+        sql: `
       SELECT cm.*, c.name as college_name
       FROM campus_managers cm
       LEFT JOIN colleges c ON cm.college_id = c.id
       ORDER BY cm.name
-    `);
-
-    const kamUsers = await db.all("SELECT * FROM kam_users ORDER BY name");
+    `
+      },
+      { sql: "SELECT * FROM kam_users ORDER BY name" }
+    ]);
 
     return NextResponse.json({ success: true, colleges, campusManagers, kamUsers });
   } catch (error: any) {
@@ -40,6 +48,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id: providedId, name, address, kam_id, has_shifts, shift_configs, rooms, code, academic_year, manager, working_days } = body;
@@ -53,14 +63,15 @@ export async function POST(request: Request) {
       ? providedId.trim()
       : "college_" + cleanName.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").replace(/(^_|_$)/g, "") + "_" + Date.now().toString(36);
 
-    // Check for duplicate ID
-    const existingId = await db.get("SELECT id FROM colleges WHERE id = ?", generatedId);
-    if (existingId) {
+    // Duplicate ID and duplicate name are independent lookups, so both go out together.
+    const [idMatches, nameMatches] = await db.multiQuery([
+      { sql: "SELECT id FROM colleges WHERE id = ?", params: [generatedId] },
+      { sql: "SELECT id FROM colleges WHERE LOWER(name) = LOWER(?)", params: [cleanName] }
+    ]);
+    if (idMatches.length > 0) {
       return NextResponse.json({ success: false, message: `A campus with ID "${generatedId}" already exists.` }, { status: 400 });
     }
-    // Check for duplicate name (case-insensitive)
-    const existingName = await db.get("SELECT id FROM colleges WHERE LOWER(name) = LOWER(?)", cleanName);
-    if (existingName) {
+    if (nameMatches.length > 0) {
       return NextResponse.json({ success: false, message: `A campus named "${cleanName}" already exists.` }, { status: 400 });
     }
 
@@ -76,6 +87,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, address, kam_id, has_shifts, shift_configs, rooms, code, academic_year, manager, working_days } = body;
@@ -94,6 +107,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -102,63 +117,51 @@ export async function DELETE(request: Request) {
     }
 
     // --- Bug #20+#21 fix: full cascade delete ---
+    //
+    // One transaction, with every sweep keyed by college_id through a subquery.
+    // Autocommitted, a failure part-way through left the college row still present
+    // with its mentors, slots and students already gone (unrecoverable by retrying
+    // the delete), and building an IN (...) list per campus hit the 65,535-bind cap.
+    const deletedCounts = await db.transaction(async (tx) => {
+      const countOf = async (sql: string, ...args: any[]) => Number((await tx.get(sql, ...args))?.n || 0);
 
-    // 1. Get all mentors in this college
-    const collegeMentors = await db.all("SELECT id FROM mentors WHERE college_id = ?", id);
-    const mentorIds = collegeMentors.map((m: any) => m.id);
+      const mentors = await countOf("SELECT COUNT(*)::int AS n FROM mentors WHERE college_id = ?", id);
+      const students = await countOf("SELECT COUNT(*)::int AS n FROM students WHERE college_id = ?", id);
+      const cams = await countOf("SELECT COUNT(*)::int AS n FROM campus_managers WHERE college_id = ?", id);
 
-    if (mentorIds.length > 0) {
-      const mp = mentorIds.map(() => "?").join(",");
-      // Delete all slots for those mentors (cascade to student_attendance, handovers)
-      const mentorSlots = await db.all(`SELECT id FROM slots WHERE mentorId IN (${mp})`, mentorIds);
-      const slotIds = mentorSlots.map((s: any) => s.id);
-      if (slotIds.length > 0) {
-        const sp = slotIds.map(() => "?").join(",");
-        await db.run(`UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${sp})`, slotIds).catch(() => {});
-        await db.run(`DELETE FROM handover_requests WHERE slotId IN (${sp})`, slotIds);
-        await db.run(`DELETE FROM approved_handovers WHERE slotId IN (${sp})`, slotIds);
-        await db.run(`DELETE FROM slots WHERE id IN (${sp})`, slotIds);
-      }
-      // Delete the mentors and their users
-      await db.run(`DELETE FROM users WHERE role = 'mentor' AND reference_id IN (${mp})`, mentorIds);
-      await db.run(`DELETE FROM mentors WHERE id IN (${mp})`, mentorIds);
-    }
+      const collegeMentorSlots =
+        "SELECT s.id FROM slots s JOIN mentors m ON m.id = s.mentorId WHERE m.college_id = ?";
 
-    // 2. Get all students in this college
-    const collegeStudents = await db.all("SELECT id FROM students WHERE college_id = ?", id);
-    const studentIds = collegeStudents.map((s: any) => s.id);
-    if (studentIds.length > 0) {
-      const sp = studentIds.map(() => "?").join(",");
-      await db.run(`DELETE FROM student_attendance WHERE studentId IN (${sp})`, studentIds);
-      await db.run(`DELETE FROM leave_requests WHERE studentId IN (${sp})`, studentIds);
-      await db.run(`DELETE FROM students WHERE id IN (${sp})`, studentIds);
-      await db.run(`DELETE FROM users WHERE role = 'student' AND reference_id IN (${sp})`, studentIds);
-    }
+      // 1. Detach attendance, then remove the mentor slots and everything hanging off them
+      await tx.run(`UPDATE student_attendance SET slotId = NULL WHERE slotId IN (${collegeMentorSlots})`, id);
+      await tx.run(`DELETE FROM handover_requests WHERE slotId IN (${collegeMentorSlots})`, id);
+      await tx.run(`DELETE FROM approved_handovers WHERE slotId IN (${collegeMentorSlots})`, id);
+      await tx.run(`DELETE FROM slots WHERE mentorId IN (SELECT id FROM mentors WHERE college_id = ?)`, id);
 
-    // 3. Delete campus managers and their users
-    const collegeCams = await db.all("SELECT id FROM campus_managers WHERE college_id = ?", id);
-    const camIds = collegeCams.map((c: any) => c.id);
-    if (camIds.length > 0) {
-      const cp = camIds.map(() => "?").join(",");
-      await db.run(`DELETE FROM users WHERE role IN ('cm', 'cam') AND reference_id IN (${cp})`, camIds);
-    }
-    await db.run("DELETE FROM campus_managers WHERE college_id = ?", id);
+      // 2. Mentors and their logins
+      await tx.run(`DELETE FROM users WHERE role = 'mentor' AND reference_id IN (SELECT id FROM mentors WHERE college_id = ?)`, id);
+      await tx.run(`DELETE FROM mentors WHERE college_id = ?`, id);
 
-    // 4. Remove college references from subjects (set to null)
-    await db.run("UPDATE subjects SET college_id = NULL WHERE college_id = ?", id);
+      // 3. Students and their logins
+      await tx.run(`DELETE FROM student_attendance WHERE studentId IN (SELECT id FROM students WHERE college_id = ?)`, id);
+      await tx.run(`DELETE FROM leave_requests WHERE studentId IN (SELECT id FROM students WHERE college_id = ?)`, id);
+      await tx.run(`DELETE FROM users WHERE role = 'student' AND reference_id IN (SELECT id FROM students WHERE college_id = ?)`, id);
+      await tx.run(`DELETE FROM students WHERE college_id = ?`, id);
 
-    // 5. Delete courses and departments for this college
-    await db.run("DELETE FROM courses WHERE college_id = ?", id);
-    await db.run("DELETE FROM departments WHERE college_id = ?", id);
-    
-    // 6. Finally delete the college itself
-    await db.run("DELETE FROM colleges WHERE id = ?", id);
+      // 4. Campus managers and their logins
+      await tx.run(`DELETE FROM users WHERE role IN ('cm', 'cam') AND reference_id IN (SELECT id FROM campus_managers WHERE college_id = ?)`, id);
+      await tx.run(`DELETE FROM campus_managers WHERE college_id = ?`, id);
 
-    const deletedCounts = {
-      mentors: mentorIds.length,
-      students: studentIds.length,
-      cams: camIds.length,
-    };
+      // 5. Subjects keep their rows but lose the campus assignment
+      await tx.run("UPDATE subjects SET college_id = NULL WHERE college_id = ?", id);
+
+      // 6. Courses, departments, then the college itself
+      await tx.run("DELETE FROM courses WHERE college_id = ?", id);
+      await tx.run("DELETE FROM departments WHERE college_id = ?", id);
+      await tx.run("DELETE FROM colleges WHERE id = ?", id);
+
+      return { mentors, students, cams };
+    });
 
     return NextResponse.json({
       success: true,

@@ -1,12 +1,14 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { title, date, type, college_id } = body;
@@ -15,7 +17,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    const newId = `hol_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const newId = generateId("hol");
 
     await db.run(
       `INSERT INTO holidays (id, title, date, type, college_id)
@@ -32,6 +34,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, title, date, type, college_id } = body;
@@ -54,6 +58,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

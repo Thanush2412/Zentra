@@ -73,6 +73,20 @@ function formatCellForPDF(cell: any): string {
   return str;
 }
 
+/**
+ * Stable document number for an exported report. Printing the same data twice must
+ * produce the same reference, otherwise two audit trails can never be reconciled.
+ */
+export function stableDocRef(parts: unknown[]): string {
+  const text = JSON.stringify(parts) ?? "";
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36).toUpperCase().padStart(7, "0");
+}
+
 export function exportToPrintablePDF(
   title: string,
   subtitle: string,
@@ -91,7 +105,7 @@ export function exportToPrintablePDF(
   }
 
   const org = options?.orgName || "FACE Prep E-Campus";
-  const docId = `RPT-${org.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+  const docId = `RPT-${org.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase()}-${new Date().getFullYear()}-${stableDocRef([title, subtitle, headers, rows, options?.kpis || []])}`;
 
   const kpisHtml = (options?.kpis || [])
     .map(k => {

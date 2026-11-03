@@ -1,13 +1,13 @@
-// Pin to Mumbai (bom1) — co-located with Turso/Postgres DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
 import { deriveSubjectType } from "@/lib/skillTracker";
 import { requireAuth } from "@/lib/authGuard";
+import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
 
 const noCacheHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -15,54 +15,15 @@ const noCacheHeaders = {
   "Expires": "0",
 };
 
-async function ensureTable(db: any) {
-  try {
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS mentor_weekly_plans (
-        id VARCHAR(255) PRIMARY KEY,
-        college_id VARCHAR(255) NOT NULL,
-        mentor_id VARCHAR(255) NOT NULL,
-        mentor_name VARCHAR(255),
-        department VARCHAR(255),
-        subject VARCHAR(255) NOT NULL,
-        class_group VARCHAR(255) NOT NULL,
-        week_number INTEGER NOT NULL,
-        start_date VARCHAR(50),
-        end_date VARCHAR(50),
-        unit VARCHAR(255),
-        topics_planned TEXT,
-        session_plan TEXT,
-        learning_objectives TEXT,
-        teaching_mode VARCHAR(50) DEFAULT 'Offline',
-        material_url TEXT,
-        status VARCHAR(50) DEFAULT 'Submitted',
-        cam_feedback TEXT,
-        sme_remarks TEXT,
-        verified_by VARCHAR(255),
-        verified_at VARCHAR(100),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // Safe column migrations for pre-existing tables
-    const migrations = [
-      "ALTER TABLE mentor_weekly_plans ADD COLUMN start_date VARCHAR(50)",
-      "ALTER TABLE mentor_weekly_plans ADD COLUMN end_date VARCHAR(50)",
-      "ALTER TABLE mentor_weekly_plans ADD COLUMN sme_remarks TEXT"
-    ];
-    for (const sql of migrations) {
-      await db.exec(sql).catch(() => {});
-    }
-  } catch (e) {
-    console.warn("Table ensure warning:", e);
-  }
-}
-
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
-    await ensureTable(db);
+    await ensureMigration("mentor_weekly_plans");
+    // The verdict enrichment below reads this table, so it must exist before a failed
+    // read can be treated as a real database problem rather than a missing migration.
+    await ensureMigration("mentor_skill_clearances");
     const { searchParams } = new URL(request.url);
 
     const collegeId = searchParams.get("collegeId");
@@ -98,13 +59,16 @@ export async function GET(request: Request) {
 
     query += " ORDER BY week_number ASC, updated_at DESC";
 
-    const rows: any[] = await db.all(query, ...params).catch(() => []);
+    // ── Every remaining read is independent of the others (all parameters come from the
+    // query string), so the slices are issued as one batched group instead of four more
+    // sequential awaits. Each used to end with `.catch(() => [])`, which made a database
+    // failure look like "no plans yet" - and a failed subjects/clearances slice rendered
+    // every Skill verdict as pending.
+    const withAudit = !!(includeAudit || mentorId || collegeId);
+    const slices: { label: string; sql: string; params: any[] }[] = [{ label: "mentor_weekly_plans", sql: query, params }];
 
-    // Fetch related conducted topics from academic_tracker and demos if requested or relevant
-    let conductedTrackerRows: any[] = [];
-    let demoRows: any[] = [];
-
-    if (includeAudit || mentorId || collegeId) {
+    if (withAudit) {
+      // Fetch related conducted topics from academic_tracker and demos if requested or relevant
       let trackerQuery = "SELECT id, date, period_slot, class_group, subject, unit, topic, comments, status, mentor_id FROM academic_tracker WHERE 1=1";
       const trackerParams: any[] = [];
       if (mentorId && mentorId !== "all") {
@@ -120,7 +84,7 @@ export async function GET(request: Request) {
         trackerParams.push(subject);
       }
       trackerQuery += " ORDER BY date DESC LIMIT 300";
-      conductedTrackerRows = await db.all(trackerQuery, ...trackerParams).catch(() => []);
+      slices.push({ label: "academic_tracker", sql: trackerQuery, params: trackerParams });
 
       let demoQuery = "SELECT id, mentorId, mentorName, smeId, smeName, dateStr, timeSlot, subject, stream, week, status, marks, comments FROM demo_sessions WHERE 1=1";
       const demoParams: any[] = [];
@@ -129,22 +93,44 @@ export async function GET(request: Request) {
         demoParams.push(mentorId);
       }
       demoQuery += " ORDER BY dateStr DESC LIMIT 100";
-      demoRows = await db.all(demoQuery, ...demoParams).catch(() => []);
+      slices.push({ label: "demo_sessions", sql: demoQuery, params: demoParams });
     }
+
+    slices.push(
+      { label: "subjects", sql: "SELECT name, type FROM subjects", params: [] },
+      {
+        label: "mentor_skill_clearances",
+        sql: "SELECT mentor_id, subject, week_number, scope, status, score, remarks, verified_by, verified_at FROM mentor_skill_clearances",
+        params: []
+      }
+    );
+
+    const failedSlices: QueryFailure[] = [];
+    const batch = await db.multiQuery(slices, failedSlices);
+    if (failedSlices.length > 0) {
+      const labels = failedSlices.map(f => slices.find(s => s.sql === f.sql)?.label || "unknown");
+      console.error("GET /api/weekly-plan partial read:", failedSlices.map(f => `${f.sql.slice(0, 80)} → ${f.error}`).join(" | "));
+      return NextResponse.json(
+        { success: false, message: `Weekly plans could not be loaded (${labels.join(", ")}). Please retry.` },
+        { status: 500 }
+      );
+    }
+
+    const sliceRows = new Map<string, any[]>();
+    slices.forEach((s, i) => sliceRows.set(s.label, batch[i] || []));
+    const rows: any[] = sliceRows.get("mentor_weekly_plans") || [];
+    const conductedTrackerRows: any[] = sliceRows.get("academic_tracker") || [];
+    const demoRows: any[] = sliceRows.get("demo_sessions") || [];
 
     // ── Skill tracker enrichment (Mentor Skill Development Tracker) ──
     // Attach subject_type (Skill/Academic) and the latest SME skill verdict
     // per plan so the WeeklyPlanViewer table and mentor plan studio can render
     // them without extra requests.
-    let subjectTypeMap = new Map<string, string>();
-    let clearanceRows: any[] = [];
-    try {
-      const subjectRows: any[] = await db.all("SELECT name, type FROM subjects").catch(() => []);
-      subjectRows.forEach((s: any) => {
-        if (s?.name) subjectTypeMap.set(String(s.name).toLowerCase().trim(), s.type || "");
-      });
-      clearanceRows = await db.all("SELECT mentor_id, subject, week_number, scope, status, score, remarks, verified_by, verified_at FROM mentor_skill_clearances").catch(() => []);
-    } catch (_) { /* enrichment is best-effort */ }
+    const subjectTypeMap = new Map<string, string>();
+    (sliceRows.get("subjects") || []).forEach((s: any) => {
+      if (s?.name) subjectTypeMap.set(String(s.name).toLowerCase().trim(), s.type || "");
+    });
+    const clearanceRows: any[] = sliceRows.get("mentor_skill_clearances") || [];
 
     const verdictForPlan = (plan: any) => {
       const subjKey = String(plan.subject || "").toLowerCase().trim();
@@ -270,7 +256,7 @@ export async function POST(request: Request) {
     if (errorResponse) return errorResponse;
 
     const db = await getDb();
-    await ensureTable(db);
+    await ensureMigration("mentor_weekly_plans");
     const body = await request.json();
 
     const {
@@ -302,34 +288,49 @@ export async function POST(request: Request) {
       );
     }
 
-    const planId = id || `WP_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const planId = id || generateId("WP");
     const nowStr = new Date().toISOString();
     const effectiveRemarks = smeRemarks || camFeedback || "";
 
-    // Check for date range overlap conflict with another week for the same class and subject
-    if (startDate && endDate) {
-      const conflict = await db.get(
-        `SELECT id, week_number, start_date, end_date FROM mentor_weekly_plans
-         WHERE college_id = ? AND mentor_id = ? AND LOWER(TRIM(class_group)) = LOWER(TRIM(?)) AND LOWER(TRIM(subject)) = LOWER(TRIM(?))
-         AND week_number != ? AND id != ?
-         AND start_date <= ? AND end_date >= ?
-         LIMIT 1`,
-        collegeId, mentorId, classGroup, subject, parseInt(String(weekNumber), 10), planId, endDate, startDate
-      ).catch(() => null);
-
-      if (conflict) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Date range (${startDate} to ${endDate}) overlaps with Week ${conflict.week_number} (${conflict.start_date} to ${conflict.end_date}) for ${classGroup}.`
-          },
-          { status: 409 }
-        );
-      }
+    // The overlap preflight and the insert-vs-update existence probe both read this one
+    // table, so they travel as a single round trip. Both feed writes, so a failed slice
+    // aborts: an unreadable conflict check would otherwise let an overlapping plan through.
+    const planFailures: QueryFailure[] = [];
+    const [conflictRows, existingRows] = await db.multiQuery(
+      [
+        startDate && endDate
+          ? {
+              sql: `SELECT id, week_number, start_date, end_date FROM mentor_weekly_plans
+                 WHERE college_id = ? AND mentor_id = ? AND LOWER(TRIM(class_group)) = LOWER(TRIM(?)) AND LOWER(TRIM(subject)) = LOWER(TRIM(?))
+                 AND week_number != ? AND id != ?
+                 AND start_date <= ? AND end_date >= ?
+                 LIMIT 1`,
+              params: [collegeId, mentorId, classGroup, subject, parseInt(String(weekNumber), 10), planId, endDate, startDate],
+            }
+          : { sql: "SELECT 1 WHERE 1=0" },
+        { sql: "SELECT id FROM mentor_weekly_plans WHERE id = ?", params: [planId] },
+      ],
+      planFailures
+    );
+    if (planFailures.length > 0) {
+      return NextResponse.json(
+        { success: false, message: "Could not verify this weekly plan against existing ones. Please try again." },
+        { status: 500 }
+      );
     }
 
-    // Check if plan exists
-    const existing = await db.get("SELECT id FROM mentor_weekly_plans WHERE id = ?", planId).catch(() => null);
+    const conflict = conflictRows[0] || null;
+    if (conflict) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Date range (${startDate} to ${endDate}) overlaps with Week ${conflict.week_number} (${conflict.start_date} to ${conflict.end_date}) for ${classGroup}.`
+        },
+        { status: 409 }
+      );
+    }
+
+    const existing = existingRows[0] || null;
 
     if (existing) {
       await db.run(
@@ -384,7 +385,7 @@ export async function PATCH(request: Request) {
     if (errorResponse) return errorResponse;
 
     const db = await getDb();
-    await ensureTable(db);
+    await ensureMigration("mentor_weekly_plans");
     const body = await request.json();
 
     const { id, status, smeRemarks, camFeedback, verifiedBy } = body;
@@ -398,20 +399,21 @@ export async function PATCH(request: Request) {
 
     const nowStr = new Date().toLocaleString();
     const effectiveRemarks = smeRemarks || camFeedback || "";
+    const effectiveVerifier = verifiedBy?.trim() || "Reviewer";
 
     await db.run(
       `UPDATE mentor_weekly_plans SET
         status = ?, sme_remarks = ?, cam_feedback = ?, verified_by = ?, verified_at = ?, updated_at = ?
        WHERE id = ?`,
-      status, effectiveRemarks, effectiveRemarks, verifiedBy || "Subject Matter Expert", nowStr, new Date().toISOString(), id
+      status, effectiveRemarks, effectiveRemarks, effectiveVerifier, nowStr, new Date().toISOString(), id
     );
 
     const updated = await db.get("SELECT * FROM mentor_weekly_plans WHERE id = ?", id);
 
     if (status === "Verified" && updated && updated.mentor_id) {
-      const notifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6);
+      const notifId = generateId("notif");
       const title = "Weekly Plan Approved";
-      const message = `Your Weekly Plan for ${updated.subject || 'your subject'} (Week ${updated.week_number || ''}) has been approved by ${verifiedBy || "Subject Matter Expert"}.`;
+      const message = `Your Weekly Plan for ${updated.subject || 'your subject'} (Week ${updated.week_number || ''}) has been approved by ${effectiveVerifier}.`;
       await db.run(
         `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
          VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
@@ -448,7 +450,7 @@ export async function DELETE(request: Request) {
     if (errorResponse) return errorResponse;
 
     const db = await getDb();
-    await ensureTable(db);
+    await ensureMigration("mentor_weekly_plans");
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 

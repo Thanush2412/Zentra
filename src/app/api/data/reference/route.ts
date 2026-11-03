@@ -1,22 +1,25 @@
-// Pin to Mumbai (bom1) — co-located with DB
-export const preferredRegion = "bom1";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
+// Cold cache fans out six full-slice reads at once; 60s keeps it under the
+// pool's statement_timeout while leaving the 5-minute cache do the real work.
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 import { getDb } from "@/lib/db";
 
-const REF_TTL_MS = 30_000;
-let refCache: { at: number; payload: any } | null = null;
+const REF_TTL_MS = 5 * 60_000;
+const refCache = new Map<string, { at: number; payload: any; etag: string }>();
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("college_id") || searchParams.get("collegeId");
+    const cacheKey = collegeId || "__all__";
 
-    let payload = refCache?.payload;
-    if (!refCache || Date.now() - refCache.at >= REF_TTL_MS) {
+    let entry = refCache.get(cacheKey);
+    if (!entry || Date.now() - entry.at >= REF_TTL_MS) {
       const db = await getDb();
       const scope = collegeId ? "college_id = ? OR college_id IS NULL" : "1=1";
       const scopedArgs = collegeId ? [collegeId] : [];
@@ -34,6 +37,7 @@ export async function GET(request: NextRequest) {
         attendance_lock_enabled: true
       };
       (settingsRows || []).forEach((row: any) => {
+        if (row.key !== "mailing_enabled" && row.key !== "attendance_lock_enabled") return;
         try {
           systemSettings[row.key] = JSON.parse(row.value);
         } catch {
@@ -41,7 +45,7 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      payload = {
+      const payload = {
         success: true,
         colleges: colleges || [],
         subjects: subjects || [],
@@ -50,18 +54,21 @@ export async function GET(request: NextRequest) {
         academicYears: (academicYears || []).map((ay: any) => typeof ay === "string" ? ay : ay.year || ay.year_name || ay.name || String(ay)),
         systemSettings
       };
-      refCache = { at: Date.now(), payload };
+      const etag = `"${crypto.createHash("sha1").update(JSON.stringify(payload)).digest("hex")}"`;
+      entry = { at: Date.now(), payload, etag };
+      refCache.set(cacheKey, entry);
+      if (refCache.size > 100) refCache.clear();
     }
 
-    return NextResponse.json(payload, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-        "Pragma": "no-cache",
-        "Expires": "0"
-      },
-    });
+    const cacheHeaders = {
+      "ETag": entry.etag,
+      "Cache-Control": "private, max-age=60, stale-while-revalidate=300"
+    };
+    if (request.headers.get("if-none-match") === entry.etag) {
+      return new NextResponse(null, { status: 304, headers: cacheHeaders });
+    }
+
+    return NextResponse.json(entry.payload, { status: 200, headers: cacheHeaders });
   } catch (error: any) {
     console.error("API GET data/reference error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

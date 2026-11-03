@@ -1,15 +1,17 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { getInstitutionDateStr } from "@/lib/localDate";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
@@ -17,7 +19,7 @@ export async function GET(request: Request) {
     const camId = searchParams.get("camId");
     const collegeId = searchParams.get("collegeId");
     const kamId = searchParams.get("kamId");
-    const dateStr = searchParams.get("dateStr") || new Date().toISOString().split("T")[0];
+    const dateStr = searchParams.get("dateStr") || getInstitutionDateStr();
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
@@ -54,27 +56,34 @@ export async function GET(request: Request) {
     }
 
     cmQuery += ` ORDER BY cm.name ASC`;
-    const cmList = await db.all(cmQuery, cmParams);
 
-    // Fetch attendance for the roster
-    if (startDate && endDate) {
-      const records = await db.all(
-        `SELECT ca.*, cm.name as cam_name, cm.email as cam_email, c.name as college_name
-         FROM cm_attendance ca
-         JOIN campus_managers cm ON ca.cam_id = cm.id
-         LEFT JOIN colleges c ON ca.college_id = c.id
-         WHERE ca.date_str >= ? AND ca.date_str <= ?
-         ORDER BY ca.date_str DESC`,
-        [startDate, endDate]
-      );
-      return NextResponse.json({ success: true, records, cms: cmList });
+    // The CM roster and the punches are independent; one round trip serves both, and
+    // a failed slice cannot quietly render everyone as "Not Punched".
+    const attendanceSlice = startDate && endDate
+      ? {
+          sql: `SELECT ca.*, cm.name as cam_name, cm.email as cam_email, c.name as college_name
+               FROM cm_attendance ca
+               JOIN campus_managers cm ON ca.cam_id = cm.id
+               LEFT JOIN colleges c ON ca.college_id = c.id
+               WHERE ca.date_str >= ? AND ca.date_str <= ?
+               ORDER BY ca.date_str DESC`,
+          params: [startDate, endDate],
+        }
+      : { sql: `SELECT * FROM cm_attendance WHERE date_str = ?`, params: [dateStr] };
+
+    const rosterFailures: QueryFailure[] = [];
+    const [cmList, attRecords] = await db.multiQuery(
+      [{ sql: cmQuery, params: cmParams }, attendanceSlice],
+      rosterFailures
+    );
+    if (rosterFailures.length > 0) {
+      return NextResponse.json({ success: false, error: "Could not load CM attendance. Please try again." }, { status: 500 });
     }
 
-    // Fetch attendance for specific single date (defaults to today)
-    const attRecords = await db.all(
-      `SELECT * FROM cm_attendance WHERE date_str = ?`,
-      [dateStr]
-    );
+    if (startDate && endDate) {
+      return NextResponse.json({ success: true, records: attRecords, cms: cmList });
+    }
+
     const attMap = new Map<string, any>();
     attRecords.forEach((r: any) => attMap.set(r.cam_id, r));
 
@@ -108,6 +117,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
     const body = await request.json();
@@ -115,7 +126,7 @@ export async function POST(request: Request) {
     const {
       camId,
       collegeId,
-      dateStr = new Date().toISOString().split("T")[0],
+      dateStr = getInstitutionDateStr(),
       status = "Present",
       punchInTime,
       punchOutTime,
@@ -189,6 +200,8 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["kam", "admin"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
     const body = await request.json();

@@ -1,5 +1,8 @@
-import { getDb } from "@/lib/db";
-import { sendMail, renderEmailShell, BadgeColor } from "@/lib/mail";
+import { after } from "next/server";
+import { getDb, readInChunks, chunkList, type QueryFailure } from "@/lib/db";
+import { renderEmailShell, BadgeColor } from "@/lib/mail";
+import { dispatchMail } from "@/lib/mailAsync";
+import { generateId } from "@/lib/id";
 
 interface ExternalInterviewNotificationOptions {
   interviewId: string;
@@ -13,7 +16,7 @@ interface ExternalInterviewNotificationOptions {
   originCollegeId: string;
   targetCollegeId?: string;
   notes?: string;
-  actionType?: "created" | "accepted" | "declined" | "assigned";
+  actionType?: "created" | "accepted" | "declined" | "assigned" | "pending_confirmation";
   gmeetLink?: string;
   gcalLink?: string;
   actorName?: string;
@@ -44,30 +47,48 @@ export async function dispatchExternalInterviewNotifications(
       targetCollegeId,
       actionType = "created",
       gmeetLink = "",
-      actorName = "Campus Manager"
+      actorName = "Campus Team"
     } = options;
 
     if (!originCollegeId) return;
 
-    // 1. Fetch origin college & its assigned KAM
-    const originCollege = await db.get("SELECT * FROM colleges WHERE id = ?", [originCollegeId]);
+    // 1+3+5. The origin college, the target college and the target CAMs all key off
+    // the options, so they leave as one round trip. Recipient rendering only: a
+    // failed slice degrades to a missing recipient instead of failing the caller.
+    const wantsTarget = Boolean(targetCollegeId && targetCollegeId !== originCollegeId);
+    const recipientFailures: QueryFailure[] = [];
+    const [originCollegeRows, targetCollegeRows, targetCamRows] = await db.multiQuery([
+      { sql: "SELECT * FROM colleges WHERE id = ?", params: [originCollegeId] },
+      wantsTarget
+        ? { sql: "SELECT * FROM colleges WHERE id = ?", params: [targetCollegeId] }
+        : { sql: "SELECT 1 WHERE 1=0" },
+      wantsTarget
+        ? { sql: "SELECT * FROM campus_managers WHERE college_id = ?", params: [targetCollegeId] }
+        : { sql: "SELECT 1 WHERE 1=0" },
+    ], recipientFailures);
+    if (recipientFailures.length > 0) {
+      console.warn("[interview-notifications] origin/target lookup incomplete:", recipientFailures.map(f => f.error).join("; "));
+    }
+    const originCollege = originCollegeRows[0];
     const kamId = originCollege?.kam_id;
 
-    // 2. Fetch all colleges managed by this KAM (Region/Cluster colleges, excluding origin campus)
+    // 2+3. The regional cluster and the KAM user both key off kamId.
     let regionalColleges: any[] = [];
+    let kamUser: any = null;
     if (kamId) {
-      regionalColleges = await db.all("SELECT * FROM colleges WHERE kam_id = ? AND id != ?", [kamId, originCollegeId]);
-    } else {
-      regionalColleges = [];
+      const clusterFailures: QueryFailure[] = [];
+      const [regionalRows, kamRows] = await db.multiQuery([
+        { sql: "SELECT * FROM colleges WHERE kam_id = ? AND id != ?", params: [kamId, originCollegeId] },
+        { sql: "SELECT * FROM kam_users WHERE id = ?", params: [kamId] },
+      ], clusterFailures);
+      if (clusterFailures.length > 0) {
+        console.warn("[interview-notifications] cluster lookup incomplete:", clusterFailures.map(f => f.error).join("; "));
+      }
+      regionalColleges = regionalRows;
+      kamUser = kamRows[0] || null;
     }
 
     const regionalCollegeIds = regionalColleges.map((c: any) => c.id).filter(Boolean);
-
-    // 3. Fetch KAM user details
-    let kamUser: any = null;
-    if (kamId) {
-      kamUser = await db.get("SELECT * FROM kam_users WHERE id = ?", [kamId]);
-    }
 
     // 4. Fetch all CAMs across ALL regional colleges under this KAM
     let regionalCAMs: any[] = [];
@@ -79,13 +100,9 @@ export async function dispatchExternalInterviewNotifications(
       );
     }
 
-    // 5. Fetch target college CAMs if specified
-    let targetCAMs: any[] = [];
-    let targetCollege: any = null;
-    if (targetCollegeId && targetCollegeId !== originCollegeId) {
-      targetCollege = await db.get("SELECT * FROM colleges WHERE id = ?", [targetCollegeId]);
-      targetCAMs = await db.all("SELECT * FROM campus_managers WHERE college_id = ?", [targetCollegeId]);
-    }
+    // 5. Target college CAMs (read above with the origin/target batch)
+    const targetCAMs: any[] = targetCamRows;
+    const targetCollege: any = targetCollegeRows[0];
 
     // 6. Gather target User IDs for In-App Notifications
     const notificationUserIds = new Set<string>();
@@ -109,14 +126,12 @@ export async function dispatchExternalInterviewNotifications(
     });
 
     // Also match centralized `users` table records for these reference IDs / emails
-    const userQueries: any[] = [];
     if (notificationUserIds.size > 0) {
       const idsArr = Array.from(notificationUserIds);
-      const placeholders = idsArr.map(() => "?").join(",");
-      const matchedUsers = await db.all(
-        `SELECT id FROM users WHERE reference_id IN (${placeholders}) OR email IN (${placeholders})`,
-        [...idsArr, ...idsArr]
-      );
+      const matchedUsers = await readInChunks(db, idsArr, (chunk, ph) => ({
+        sql: `SELECT id FROM users WHERE reference_id IN (${ph}) OR email IN (${ph})`,
+        params: [...chunk, ...chunk]
+      }));
       matchedUsers.forEach((u: any) => notificationUserIds.add(u.id));
     }
 
@@ -141,23 +156,48 @@ export async function dispatchExternalInterviewNotifications(
       notifTitle = `[External Interview Assigned] ${subject}`;
       notifMsg = `Mentors assigned for external interview ${subject} on ${targetDate}.`;
       badgeColor = "indigo";
+    } else if (actionType === "pending_confirmation") {
+      notifTitle = `[External Interview Awaiting Confirmation] ${subject}`;
+      notifMsg = `The priority allocation for ${subject} on ${targetDate} is ready. Please confirm your campus allocation.`;
+      badgeColor = "indigo";
     }
 
     // 8. Insert In-App Notifications for all affected Users
+    // One role lookup and one multi-row INSERT. The previous loop cost two round-trips
+    // per recipient, which for a regional broadcast meant hundreds of sequential queries.
     const now = new Date().toISOString();
-    for (const userId of Array.from(notificationUserIds)) {
-      const notifId = `notif_ext_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const candidates = Array.from(notificationUserIds);
+    if (candidates.length > 0) {
       try {
-        const u = await db.get("SELECT role FROM users WHERE id = ?", userId);
-        const role = u?.role || "cm";
-        const link = role === "student" ? "/student/interviews" : role === "mentor" ? "/mentor/interviews" : role === "kam" ? "/kam/analytics" : "/cm/interviews";
-        await db.run(
-          `INSERT INTO notifications (id, user_id, title, message, is_read, link, created_at)
-           VALUES (?, ?, ?, ?, 0, ?, ?)`,
-          [notifId, userId, notifTitle, notifMsg, link, now]
-        );
+        const roleRows: any[] = await readInChunks(db, candidates, (chunk, ph) => ({
+          sql: `SELECT id, reference_id, email, role FROM users
+                WHERE id IN (${ph}) OR reference_id IN (${ph}) OR email IN (${ph})`,
+          params: [...chunk, ...chunk, ...chunk]
+        }));
+        const candidateSet = new Set(candidates);
+        const roleByCandidate = new Map<string, string>();
+        for (const row of roleRows || []) {
+          for (const key of [row.id, row.reference_id, row.email]) {
+            if (key && candidateSet.has(key)) roleByCandidate.set(key, row.role || "cm");
+          }
+        }
+
+        const notifRows: any[][] = [];
+        for (const userId of candidates) {
+          const role = roleByCandidate.get(userId) || "cm";
+          const link = role === "student" ? "/student/interviews" : role === "mentor" ? "/mentor/interviews" : role === "kam" ? "/kam/analytics" : "/cm/interviews";
+          notifRows.push([generateId("notif_ext"), userId, notifTitle, notifMsg, link, now]);
+        }
+
+        for (const part of chunkList(notifRows, 500)) {
+          await db.run(
+            `INSERT INTO notifications (id, user_id, title, message, is_read, link, created_at)
+             VALUES ${part.map(() => "(?, ?, ?, ?, 0, ?, ?)").join(", ")}`,
+            part.flat()
+          );
+        }
       } catch (errNotif) {
-        console.warn("Error inserting in-app notification:", errNotif);
+        console.warn("Error inserting in-app notifications:", errNotif);
       }
     }
 
@@ -172,13 +212,13 @@ export async function dispatchExternalInterviewNotifications(
       if (cam.email) emailRecipients.add(cam.email);
     });
 
-    const toEmailList = Array.from(emailRecipients).join(", ");
+    const recipientEmails = Array.from(emailRecipients);
 
-    if (toEmailList) {
+    if (recipientEmails.length > 0) {
       const regionalCollegeNames = regionalColleges.map((c: any) => c.name).join(", ");
       
-      await sendMail({
-        to: toEmailList,
+      await dispatchMail({
+        bcc: recipientEmails,
         subject: `${notifTitle} — Regional Notification (${regionalColleges.length} Colleges)`,
         htmlBody: renderEmailShell({
           title: notifTitle,
@@ -197,14 +237,26 @@ export async function dispatchExternalInterviewNotifications(
             { label: "Topics", value: topics },
             { label: "KAM in Charge", value: kamUser?.name || "Regional KAM" }
           ],
-          ctaText: gmeetLink ? "Join Google Meet Room →" : "Open Zentra Dashboard →",
+          ctaText: gmeetLink ? "Join Google Meet Room →" : "Open E-Campus Dashboard →",
           ctaUrl: gmeetLink || undefined
-        })
+        }),
+        context: "regional-interview-broadcast"
       });
     }
 
-    console.log(`[External Notification] Successfully notified ${notificationUserIds.size} users and sent emails to: ${toEmailList}`);
+    console.log(`[External Notification] Successfully notified ${notificationUserIds.size} users; regional mail queued for ${recipientEmails.length} staff addresses`);
   } catch (error) {
     console.error("Failed to dispatch external interview notifications:", error);
   }
+}
+
+/**
+ * Schedule the broadcast for after the response and return immediately.
+ * A regional notification costs eight lookups, a chunked notification insert and
+ * a relay leg that can burn 12s — none of which is what the caller clicked for.
+ * Every interview route uses this; `dispatchExternalInterviewNotifications` stays
+ * exported for callers that genuinely need to wait for the work.
+ */
+export function notifyExternalInterviewsAfterResponse(options: ExternalInterviewNotificationOptions): void {
+  after(() => { void dispatchExternalInterviewNotifications(options); });
 }

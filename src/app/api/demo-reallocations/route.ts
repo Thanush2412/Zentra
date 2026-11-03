@@ -1,12 +1,13 @@
-// Pin to Mumbai (bom1) — co-located with Turso/Postgres DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
 import { ensureMigration } from "@/lib/migrations";
-import { checkMentorAvailability, checkSmeAvailability } from "@/lib/availability";
+import { checkMentorAvailability, checkSmeAvailability, loadAvailabilityContext } from "@/lib/availability";
+import type { AvailabilityContext } from "@/lib/availability";
 import { requireRole, requireSession, apiAuthErrorResponse } from "@/lib/api-auth";
+import { generateId } from "@/lib/id";
+import { getInstitutionDateStr, parseLocalDate } from "@/lib/localDate";
 
 /**
  * Leave-driven Demo Reallocation flow:
@@ -55,6 +56,7 @@ async function ensureTable(db: any) {
 
 export async function GET(request: Request) {
   try {
+    await requireSession(request);
     const db = await getDb();
     await ensureMigration("demo_reallocation_requests");
     await ensureTable(db);
@@ -72,17 +74,33 @@ export async function GET(request: Request) {
       }
 
       const collegeId = (demo as any).college_id || null;
-      const college = collegeId
-        ? await db.get("SELECT * FROM colleges WHERE id = ?", [collegeId]).catch(() => null)
-        : null;
+
+      // College, timetable periods, holidays and outstanding reservations are four
+      // independent reads, so one round trip serves all of them. A missed reservation
+      // or holiday slice would offer a clashing alternative as free, so discovery is
+      // refused instead of guessed at.
+      const discoveryFailures: QueryFailure[] = [];
+      const [collegeRows, slotRows, holidayRows, reservationRows] = await db.multiQuery(
+        [
+          { sql: "SELECT * FROM colleges WHERE id = ?", params: [collegeId] },
+          { sql: "SELECT * FROM slots WHERE college_id = ?", params: [collegeId] },
+          { sql: "SELECT date, title FROM holidays" },
+          { sql: "SELECT demo_session_id, proposed_date_str, proposed_time_slot, mentor_id, sme_id FROM demo_reallocation_requests WHERE status IN ('pending', 'approved')" },
+        ],
+        discoveryFailures
+      );
+      if (discoveryFailures.length > 0) {
+        return NextResponse.json({ success: false, message: "Could not check availability. Please try again." }, { status: 500 });
+      }
+
+      const college = collegeRows[0] || null;
 
       // Period slots: college timetable periods (demo timeSlots use the same strings)
       let periodSlots: string[] = [];
       try {
         const { getCollegePeriodTimeSlots } = await import("@/lib/utils");
-        const slots = await db.all("SELECT * FROM slots WHERE college_id = ?", [collegeId]).catch(() => []);
         const colleges = college ? [college] : [];
-        periodSlots = getCollegePeriodTimeSlots(collegeId, colleges as any, slots as any) || [];
+        periodSlots = getCollegePeriodTimeSlots(collegeId, colleges as any, slotRows as any) || [];
       } catch (_) {}
       if (!periodSlots || periodSlots.length === 0) {
         periodSlots = [
@@ -96,10 +114,10 @@ export async function GET(request: Request) {
       }
 
       // Candidate dates: next 21 days, skipping Sundays & configured holidays
-      const holidays: any[] = await db.all("SELECT date, title FROM holidays").catch(() => []);
+      const holidays: any[] = holidayRows;
       const holidaySet = new Set(holidays.map(h => h.date));
       const candidateDates: { dateStr: string; label: string }[] = [];
-      const today = new Date();
+      const today = parseLocalDate(getInstitutionDateStr());
       for (let i = 1; i <= 21 && candidateDates.length < 12; i++) {
         const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i, 12, 0, 0);
         const dow = d.getDay();
@@ -114,11 +132,59 @@ export async function GET(request: Request) {
       }
 
       // Pending/approved reservations to exclude
-      const reservations = await db.all(
-        "SELECT demo_session_id, proposed_date_str, proposed_time_slot, mentor_id, sme_id FROM demo_reallocation_requests WHERE status IN ('pending', 'approved')"
-      ).catch(() => []);
+      const reservations: any[] = reservationRows;
 
       // Compute per-date free-period matrix (mentor × SME)
+      //
+      // The matrix used to fan out to one query set per date × period
+      // (12 dates × 6 periods × ~5 lookups ≈ 400 round trips, 100+ s at measured
+      // cross-region latency — routinely past maxDuration). Both engines and the
+      // demo_sessions clash checks are preloaded once for the whole window instead.
+      const dateList = candidateDates.map(c => c.dateStr);
+      const preloadFailures: any[] = [];
+
+      let ctx: AvailabilityContext | null = null;
+      try {
+        ctx = await loadAvailabilityContext(db, { mentorId: demo.mentorId, smeId: demo.smeId, dates: dateList });
+      } catch (err: any) {
+        console.warn("[/api/demo-reallocations] availability preload failed, using per-period lookups:", err?.message);
+      }
+
+      let mentorSelfDemos: any[] | null = null;
+      let smeOtherDemos: any[] | null = null;
+      if (dateList.length > 0) {
+        const inList = dateList.map(() => "?").join(",");
+        const slices = await db.multiQuery(
+          [
+            {
+              sql: `SELECT id, dateStr, timeSlot FROM demo_sessions
+                    WHERE mentorId = ? AND id != ? AND dateStr IN (${inList})
+                      AND status NOT IN ('completed', 'not_conducted')`,
+              params: [demo.mentorId, demo.id, ...dateList],
+            },
+            {
+              sql: `SELECT id, dateStr, timeSlot FROM demo_sessions
+                    WHERE smeId = ? AND id != ? AND dateStr IN (${inList})
+                      AND status NOT IN ('completed', 'not_conducted')`,
+              params: [demo.smeId, demo.id, ...dateList],
+            },
+          ],
+          preloadFailures
+        ).catch(() => null);
+        if (slices && preloadFailures.length === 0) {
+          mentorSelfDemos = slices[0];
+          smeOtherDemos = slices[1];
+        }
+      }
+
+      const hasSelfDemoAt = (rows: any[] | null, dateStr: string, period: string) =>
+        !!rows && rows.some(r => {
+          if (String(r.dateStr ?? "") !== dateStr) return false;
+          const ts = String(r.timeSlot ?? "").trim();
+          if (!ts) return false;
+          return ts === period || period.includes(ts) || ts.includes(period);
+        });
+
       const alternatives: any[] = [];
       for (const cd of candidateDates) {
         const weekday = new Date(cd.dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
@@ -126,12 +192,14 @@ export async function GET(request: Request) {
         for (const period of periodSlots) {
           // Mentor side: pass our demo's own slot via demo_sessions is checked by
           // availability engine through demo_swap_requests; direct demo_sessions check here:
-          const mentorSelfDemoClash = await db.get(
-            `SELECT id FROM demo_sessions
-             WHERE mentorId = ? AND dateStr = ? AND id != ? AND status NOT IN ('completed', 'not_conducted')
-               AND (timeSlot = ? OR ? LIKE ('%' || timeSlot || '%') OR timeSlot LIKE ('%' || ? || '%'))`,
-            [demo.mentorId, cd.dateStr, demo.id, period, period, period]
-          ).catch(() => null);
+          const mentorSelfDemoClash = mentorSelfDemos
+            ? hasSelfDemoAt(mentorSelfDemos, cd.dateStr, period)
+            : await db.get(
+                `SELECT id FROM demo_sessions
+                 WHERE mentorId = ? AND dateStr = ? AND id != ? AND status NOT IN ('completed', 'not_conducted')
+                   AND (timeSlot = ? OR ? LIKE ('%' || timeSlot || '%') OR timeSlot LIKE ('%' || ? || '%'))`,
+                [demo.mentorId, cd.dateStr, demo.id, period, period, period]
+              ).catch(() => null);
 
           const mentorReservationClash = reservations.find(r =>
             r.mentor_id === demo.mentorId &&
@@ -146,7 +214,8 @@ export async function GET(request: Request) {
               mentorId: demo.mentorId,
               dateStr: cd.dateStr,
               dayOfWeek: weekday,
-              timeSlot: period
+              timeSlot: period,
+              ctx: ctx ?? undefined
             });
 
           const smeReservationClash = reservations.find(r =>
@@ -161,16 +230,19 @@ export async function GET(request: Request) {
             : await checkSmeAvailability(db, {
               smeId: demo.smeId,
               dateStr: cd.dateStr,
-              timeSlot: period
+              timeSlot: period,
+              ctx: ctx ?? undefined
             });
 
           // SME also blocked by other demo_sessions at same date+slot
-          const smeOtherDemo = await db.get(
-            `SELECT id FROM demo_sessions
-             WHERE smeId = ? AND dateStr = ? AND id != ? AND status NOT IN ('completed', 'not_conducted')
-               AND (timeSlot = ? OR ? LIKE ('%' || timeSlot || '%') OR timeSlot LIKE ('%' || ? || '%'))`,
-            [demo.smeId, cd.dateStr, demo.id, period, period, period]
-          ).catch(() => null);
+          const smeOtherDemo = smeOtherDemos
+            ? hasSelfDemoAt(smeOtherDemos, cd.dateStr, period)
+            : await db.get(
+                `SELECT id FROM demo_sessions
+                 WHERE smeId = ? AND dateStr = ? AND id != ? AND status NOT IN ('completed', 'not_conducted')
+                   AND (timeSlot = ? OR ? LIKE ('%' || timeSlot || '%') OR timeSlot LIKE ('%' || ? || '%'))`,
+                [demo.smeId, cd.dateStr, demo.id, period, period, period]
+              ).catch(() => null);
 
           const mentorFree = mentorAvail.available;
           const smeFree = smeAvail.available && !smeOtherDemo;
@@ -211,6 +283,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ success: true, requests });
   } catch (err: any) {
+    const authRes = apiAuthErrorResponse(err);
+    if (authRes) return authRes;
     console.error("GET /api/demo-reallocations error:", err);
     return NextResponse.json({ success: false, message: err?.message || "Failed to fetch reallocation data" }, { status: 500 });
   }
@@ -253,7 +327,7 @@ export async function POST(request: Request) {
         [demoSessionId]
       ).catch(() => {});
 
-      const reqId = "drr_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+      const reqId = generateId("drr");
       await db.run(
         `INSERT INTO demo_reallocation_requests (
           id, demo_session_id, leave_request_id, mentor_id, mentor_name, sme_id, sme_name,
@@ -283,7 +357,7 @@ export async function POST(request: Request) {
       // Notify L&D (in-app: L&D users get a queue view;
       // we notify the SME too since their availability is impacted)
       if (demo.smeId) {
-        const notifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+        const notifId = generateId("notif");
         await db.run(
           `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
            VALUES (?, ?, ?, ?, 0, '/l-and-d', 'demo_reallocation_proposed', ?)`,
@@ -298,7 +372,7 @@ export async function POST(request: Request) {
       }
 
       // Audit log
-      const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+      const auditId = generateId("audit");
       await db.run(
         `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
          VALUES (?, 'demo_reallocation_proposed', ?, ?, 'Mentor', ?)`,
@@ -338,7 +412,7 @@ export async function POST(request: Request) {
           [decidedBy || "L&D", new Date().toISOString(), decisionNotes || null, requestId]
         );
 
-        const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+        const auditId = generateId("audit");
         await db.run(
           `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
            VALUES (?, 'demo_reallocation_resolved', ?, ?, 'L&D', ?)`,
@@ -382,7 +456,7 @@ export async function POST(request: Request) {
       );
 
       // Notifications: mentor + SME
-      const notifId = "notif_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+      const notifId = generateId("notif");
       await db.run(
         `INSERT INTO notifications (id, user_id, title, message, is_read, link, type, created_at)
          VALUES (?, ?, ?, ?, 0, '/mentor/demo_evaluations', 'demo_reallocation_approved', ?)`,
@@ -395,7 +469,7 @@ export async function POST(request: Request) {
         ]
       ).catch(() => {});
 
-      const auditId = "audit_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8);
+      const auditId = generateId("audit");
       await db.run(
         `INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp)
          VALUES (?, 'demo_reallocation_resolved', ?, ?, 'L&D', ?)`,

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, chunkList, writeInChunks, type QueryFailure } from "@/lib/db";
 import { requireAuth } from "@/lib/authGuard";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+// Bulk marks upload writes one statement per 100 student rows inside a single
+// transaction, so the budget covers the whole batch rather than a per-row loop.
+export const maxDuration = 120;
 
 const noCacheHeaders = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -13,6 +16,8 @@ const noCacheHeaders = {
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const { searchParams } = new URL(request.url);
     const examId = searchParams.get("exam_id");
     const studentId = searchParams.get("student_id");
@@ -42,12 +47,35 @@ export async function GET(request: Request) {
       }
 
       stQuery += " ORDER BY name ASC";
-      const students = await db.all(stQuery, stParams);
 
-      // Fetch existing marks
-      const marksRows = await db.all("SELECT * FROM student_exam_marks WHERE exam_id = ?", [examId]);
+      // The roster, the marks already recorded and the exam-day OD list all key off
+      // the exam row and off nothing else, so they travel as one round trip.
+      const sheetFailures: QueryFailure[] = [];
+      const [students, marksRows, odRows] = await db.multiQuery(
+        [
+          { sql: stQuery, params: stParams },
+          { sql: "SELECT * FROM student_exam_marks WHERE exam_id = ?", params: [examId] },
+          {
+            sql: "SELECT studentId FROM student_attendance WHERE slotId = ? AND dateStr = ? AND status = 'od'",
+            params: [examId, exam.exam_date],
+          },
+        ],
+        sheetFailures
+      );
+      if (sheetFailures.length > 0) {
+        // A failed slice reads as an empty list, which would show this sheet as having
+        // no students, no recorded marks, or nobody on OD.
+        return NextResponse.json(
+          { success: false, message: "Could not load the marks sheet. Please try again." },
+          { status: 500, headers: noCacheHeaders }
+        );
+      }
+
       const marksMap = new Map();
       marksRows.forEach((m: any) => marksMap.set(m.student_id, m));
+
+      // OD is stored on exam-day attendance, not on student_exam_marks.
+      const odSet = new Set(odRows.map((r: any) => r.studentId));
 
       const roster = students.map((st: any) => {
         const mark = marksMap.get(st.id);
@@ -60,6 +88,7 @@ export async function GET(request: Request) {
           marks_obtained: mark ? mark.marks_obtained : null,
           max_marks: mark?.max_marks || exam.max_marks || 50,
           is_absent: mark ? Boolean(mark.is_absent) : false,
+          is_od: odSet.has(st.id),
           grade: mark ? mark.grade : null,
           remarks: mark ? mark.remarks : "",
           evaluated_by: mark ? mark.evaluated_by : null,
@@ -143,10 +172,21 @@ export async function POST(request: Request) {
     }
 
     const maxMarks = exam.max_marks || 50;
-    const passingMarks = exam.passing_marks || (maxMarks * 0.4);
 
+    // Duplicate student rows in one payload would trip the conflict target twice in a
+    // single multi-row upsert; the old per-row loop resolved that as last-entry-wins.
+    const byStudent = new Map<string, any>();
     for (const entry of marks) {
-      const student_id = entry.student_id;
+      if (entry?.student_id) byStudent.set(String(entry.student_id), entry);
+    }
+
+    const evaluatedByName = evaluated_by || "Campus Manager";
+    const attendedByName = evaluated_by || "Faculty Mentor";
+    const attTimestamp = new Date().toISOString();
+    const markRows: any[][] = [];
+    const attRows: any[][] = [];
+
+    for (const [student_id, entry] of byStudent.entries()) {
       const is_absent = entry.is_absent ? 1 : 0;
       const entryMaxMarks = entry.max_marks ? parseFloat(entry.max_marks) : maxMarks;
       const passingMarks = exam.passing_marks || (entryMaxMarks * 0.4);
@@ -168,54 +208,72 @@ export async function POST(request: Request) {
         grade = "AB";
       }
 
-      const id = `mark_${exam_id}_${student_id}`;
+      markRows.push([
+        `mark_${exam_id}_${student_id}`,
+        exam_id,
+        student_id,
+        exam.college_id,
+        marks_obtained,
+        entryMaxMarks,
+        is_absent,
+        grade,
+        remarks,
+        evaluatedByName
+      ]);
 
-      await db.run(
-        `INSERT INTO student_exam_marks (
-          id, exam_id, student_id, college_id, marks_obtained, max_marks, is_absent, grade, remarks, evaluated_by, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(exam_id, student_id) DO UPDATE SET
-          marks_obtained = excluded.marks_obtained,
-          max_marks = excluded.max_marks,
-          is_absent = excluded.is_absent,
-          grade = excluded.grade,
-          remarks = excluded.remarks,
-          evaluated_by = excluded.evaluated_by,
-          updated_at = CURRENT_TIMESTAMP`,
-        [id, exam_id, student_id, exam.college_id, marks_obtained, entryMaxMarks, is_absent, grade, remarks, evaluated_by || "Campus Manager"]
-      );
-
-      // Also record attendance in student_attendance so it is immediately reflected in daily evaluations
-      try {
-        const attStatus = is_absent ? "absent" : (entry.status === "od" ? "od" : "present");
-        const attId = `att_exam_${exam_id}_${student_id}`;
-        const timestamp = new Date().toISOString();
-
-        // Delete any existing attendance for this exam slot & date
-        await db.run("DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ? AND studentId = ?", [exam_id, exam.exam_date, student_id]);
-
-        await db.run(
-          `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            attId,
-            student_id,
-            exam_id,
-            exam.exam_date,
-            attStatus,
-            evaluated_by || "Faculty Mentor",
-            timestamp,
-            "Exam",
-            "Offline",
-            `Exam Attendance: ${exam.exam_type} - ${exam.subject_name}`
-          ]
-        );
-      } catch (attErr) {
-        console.warn("Could not sync student_attendance for exam mark:", attErr);
-      }
+      // Attendance rows mirror the marks in the same transaction, so a saved mark can
+      // never exist without its attendance row (the old write swallowed that failure).
+      attRows.push([
+        `att_exam_${exam_id}_${student_id}`,
+        student_id,
+        exam_id,
+        exam.exam_date,
+        is_absent ? "absent" : (entry.status === "od" ? "od" : "present"),
+        attendedByName,
+        attTimestamp,
+        "Exam",
+        "Offline",
+        `Exam Attendance: ${exam.exam_type} - ${exam.subject_name}`
+      ]);
     }
 
-    return NextResponse.json({ success: true, message: `Successfully recorded marks and attendance for ${marks.length} students` });
+    await db.transaction(async (tx) => {
+      for (const chunk of chunkList(markRows, 100)) {
+        const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)").join(", ");
+        await tx.run(
+          `INSERT INTO student_exam_marks (
+            id, exam_id, student_id, college_id, marks_obtained, max_marks, is_absent, grade, remarks, evaluated_by, updated_at
+          ) VALUES ${values}
+          ON CONFLICT(exam_id, student_id) DO UPDATE SET
+            marks_obtained = excluded.marks_obtained,
+            max_marks = excluded.max_marks,
+            is_absent = excluded.is_absent,
+            grade = excluded.grade,
+            remarks = excluded.remarks,
+            evaluated_by = excluded.evaluated_by,
+            updated_at = CURRENT_TIMESTAMP`,
+          ...chunk.flat()
+        );
+      }
+
+      // Remove prior exam-slot attendance for these students (legacy rows may lack the
+      // deterministic id), then insert the fresh batch.
+      await writeInChunks(tx, Array.from(byStudent.keys()), (chunk, placeholders) => ({
+        sql: `DELETE FROM student_attendance WHERE slotId = ? AND dateStr = ? AND studentId IN (${placeholders})`,
+        params: [exam_id, exam.exam_date, ...chunk]
+      }), 400);
+
+      for (const chunk of chunkList(attRows, 100)) {
+        const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+        await tx.run(
+          `INSERT INTO student_attendance (id, studentId, slotId, dateStr, status, markedBy, timestamp, type, mode, attendanceTypeSub)
+           VALUES ${values}`,
+          ...chunk.flat()
+        );
+      }
+    });
+
+    return NextResponse.json({ success: true, message: `Successfully recorded marks and attendance for ${byStudent.size} students` });
   } catch (error: any) {
     console.error("Error recording marks:", error);
     return NextResponse.json({ success: false, message: error.message || "Failed to record marks" }, { status: 500 });

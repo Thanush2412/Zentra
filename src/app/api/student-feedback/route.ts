@@ -1,10 +1,9 @@
-// Pin to Mumbai (bom1) — co-located with database
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
 
 export async function POST(request: Request) {
   try {
@@ -46,11 +45,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Register number is required." }, { status: 400 });
     }
 
-    // Deduplication check: Has this student already submitted?
-    const existing = await db.get(
-      "SELECT id, register_number, submitted_at FROM student_mentor_feedback WHERE LOWER(TRIM(register_number)) = LOWER(TRIM(?)) LIMIT 1",
-      [regNo]
+    // The deduplication probe and the E-Campus student lookup both key off the register
+    // number, so they travel as one round trip. Dedup feeds a write, so a failed slice
+    // aborts rather than letting a second submission through.
+    const submitFailures: QueryFailure[] = [];
+    const [existingRows, studentRecordRows] = await db.multiQuery(
+      [
+        {
+          sql: "SELECT id, register_number, submitted_at FROM student_mentor_feedback WHERE LOWER(TRIM(register_number)) = LOWER(TRIM(?)) LIMIT 1",
+          params: [regNo],
+        },
+        {
+          sql: "SELECT id, college_id, classGroup, department FROM students WHERE LOWER(TRIM(id)) = LOWER(TRIM(?)) OR LOWER(TRIM(register_number)) = LOWER(TRIM(?)) OR LOWER(TRIM(roll_number)) = LOWER(TRIM(?)) LIMIT 1",
+          params: [regNo, regNo, regNo],
+        },
+      ],
+      submitFailures
     );
+    if (submitFailures.length > 0) {
+      return NextResponse.json({ success: false, message: "Could not verify this submission. Please try again." }, { status: 500 });
+    }
+
+    const existing = existingRows[0] || null;
     if (existing) {
       return NextResponse.json({
         success: false,
@@ -68,10 +84,7 @@ export async function POST(request: Request) {
     // Look up matching student in E-Campus database to retrieve college_id & classGroup
     let matchedCollegeId: string | null = null;
     let matchedClassGroup: string | null = null;
-    const studentDbRecord = await db.get(
-      "SELECT id, college_id, classGroup, department FROM students WHERE LOWER(TRIM(id)) = LOWER(TRIM(?)) OR LOWER(TRIM(register_number)) = LOWER(TRIM(?)) OR LOWER(TRIM(roll_number)) = LOWER(TRIM(?)) LIMIT 1",
-      [regNo, regNo, regNo]
-    );
+    const studentDbRecord = studentRecordRows[0] || null;
     if (studentDbRecord) {
       matchedCollegeId = studentDbRecord.college_id || null;
       matchedClassGroup = studentDbRecord.classGroup || null;
@@ -99,7 +112,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const feedbackId = "MFB-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+    const feedbackId = generateId("MFB");
     const submittedAt = rawData.timestamp || new Date().toISOString();
     const nowIso = new Date().toISOString();
 
@@ -223,7 +236,6 @@ export async function GET(request: Request) {
     }
 
     feedbackQuery += " ORDER BY submitted_at DESC LIMIT 500";
-    const submissions = await db.all(feedbackQuery, feedbackParams);
 
     // Track against enrolled students in students table to determine filled vs pending
     let studentsQuery = "SELECT id, name, email, register_number, roll_number, college_id, department, classGroup, shift, semester FROM students WHERE 1=1";
@@ -247,7 +259,20 @@ export async function GET(request: Request) {
       studentsParams.push(`%${classGroup}%`);
     }
 
-    const enrolledStudents = await db.all(studentsQuery, studentsParams);
+    // Submissions and the enrolled roster are independent, so they share one round
+    // trip. Either read arriving empty would silently flip the filled/pending split,
+    // so a failed slice fails the request instead of reporting the list.
+    const coverageFailures: QueryFailure[] = [];
+    const [submissions, enrolledStudents] = await db.multiQuery(
+      [
+        { sql: feedbackQuery, params: feedbackParams },
+        { sql: studentsQuery, params: studentsParams },
+      ],
+      coverageFailures
+    );
+    if (coverageFailures.length > 0) {
+      return NextResponse.json({ success: false, error: "Could not load feedback coverage. Please try again." }, { status: 500 });
+    }
 
     const submittedRegMap = new Map<string, any>();
     submissions.forEach((sub: any) => {

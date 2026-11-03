@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
 import {
   CalendarRange,
   Calendar,
@@ -49,6 +51,8 @@ import { useToast } from "@/context/ToastContext";
 import { useApp } from "@/context/AppContext";
 import { getCollegePeriodTimeSlots, isSubjectNameMatch, isCohortMatching, isSkillSubject } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Dialog } from "@/components/ui/dialog";
 
 export interface DailySessionTask {
   day: string;
@@ -324,17 +328,15 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
 }) => {
   const { toast } = useToast();
   const { colleges, slots, timeSlots: ctxTimeSlots, daysOfWeek: ctxDaysOfWeek, subjectsList } = useApp();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const studioTopRef = useRef<HTMLDivElement>(null);
 
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [plans, setPlans] = useState<WeeklyPlanRecord[]>([]);
-  const [auditData, setAuditData] = useState<WeeklyPlanAuditSummary | null>(null);
   const [dailyConfigsMap, setDailyConfigsMap] = useState<Map<string, any>>(new Map());
   const [dailyConfigsLoaded, setDailyConfigsLoaded] = useState(false);
-  const [plansLoaded, setPlansLoaded] = useState(false);
   const isDirtyRef = useRef(false);
+  const lastPlanAutoSelectRef = useRef("");
 
   // Selection state — sequential week purely based on submission history (1, 2, 3...)
   const [selectedWeek, setSelectedWeek] = useState<number>(1);
@@ -385,6 +387,34 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   const [currentFeedback, setCurrentFeedback] = useState<string>("");
   const [verifiedBy, setVerifiedBy] = useState<string>("");
   const [verifiedAt, setVerifiedAt] = useState<string>("");
+
+  // Cached weekly plans for this mentor (shared with the CM/SME viewer below).
+  const plansQuery = useQuery({
+    queryKey: qk.weeklyPlan(collegeId || "all", mentorId),
+    enabled: !!collegeId && !!mentorId,
+    queryFn: async () => {
+      const data = await apiFetch(
+        `/api/weekly-plan?collegeId=${encodeURIComponent(collegeId as string)}&mentorId=${encodeURIComponent(mentorId)}&includeAudit=true`
+      );
+      return data?.success && Array.isArray(data.plans) ? (data.plans as WeeklyPlanRecord[]) : [];
+    },
+  });
+  const plans = plansQuery.data || [];
+  const loading = plansQuery.isFetching;
+  const plansLoaded = plansQuery.isSuccess;
+
+  // Real-time synchronization: invalidate instead of refetching on every focus.
+  useEffect(() => {
+    const handleSync = () => {
+      queryClient.invalidateQueries({ queryKey: ["weekly-plan"] });
+    };
+
+    window.addEventListener("fp_weekly_plan_updated", handleSync);
+
+    return () => {
+      window.removeEventListener("fp_weekly_plan_updated", handleSync);
+    };
+  }, [queryClient]);
 
   // All plans for currently selected cohort + subject
   const matchingPlans = useMemo(() => {
@@ -449,49 +479,8 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
     return { order: "", source: "none" };
   }, [dailyConfigsMap]);
 
-  // Fetch existing plans and audit for this mentor
-  const fetchPlans = useCallback(async (silent: boolean = false) => {
-    if (!collegeId || !mentorId) return;
-    if (!silent) setLoading(true);
-    try {
-      const data = await apiFetch(
-        `/api/weekly-plan?collegeId=${encodeURIComponent(collegeId)}&mentorId=${encodeURIComponent(mentorId)}&includeAudit=true`
-      );
-      if (data.success && Array.isArray(data.plans)) {
-        setPlans(data.plans);
-        if (data.audit) {
-          setAuditData(data.audit);
-        }
-      }
-    } catch (e: any) {
-      console.error("Error fetching weekly plans:", e);
-    } finally {
-      if (!silent) setLoading(false);
-      setPlansLoaded(true);
-    }
-  }, [collegeId, mentorId]);
-
-  useEffect(() => {
-    fetchPlans();
-  }, [fetchPlans]);
-
-  // Real-time synchronization: listen for weekly plan update events and window focus
-  useEffect(() => {
-    const handleSync = () => {
-      fetchPlans(true);
-    };
-
-    window.addEventListener("fp_weekly_plan_updated", handleSync);
-    window.addEventListener("focus", handleSync);
-
-    return () => {
-      window.removeEventListener("fp_weekly_plan_updated", handleSync);
-      window.removeEventListener("focus", handleSync);
-    };
-  }, [fetchPlans]);
-
-  // 1. Helper to generate default tasks for each working day in the week
-  const generateDefaultTasksForWeek = useCallback((customStartDate?: string) => {
+  // 1. Helper to build default tasks for each working day in the week
+  const buildDefaultTasksForWeek = useCallback((customStartDate?: string): DailySessionTask[] => {
     const mondayStr = customStartDate || startDate || getMondayOfCurrentWeek();
     const newTasks: DailySessionTask[] = [];
 
@@ -578,8 +567,12 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       }
     });
 
-    setDailyTasks(newTasks);
+    return newTasks;
   }, [availableDays, resolvedPeriodSlots, resolveDayOrderDetailed, startDate, slots, mentorId, collegeId, selectedSubject, selectedClass, dailyConfigsMap]);
+
+  const generateDefaultTasksForWeek = useCallback((customStartDate?: string) => {
+    setDailyTasks(buildDefaultTasksForWeek(customStartDate));
+  }, [buildDefaultTasksForWeek]);
 
   // 2. Load plan for a specific week number, cohort, and subject
   const loadPlanForWeek = useCallback((
@@ -640,9 +633,11 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       setPlanUpdatedAt("");
       setUnitName(`Unit ${Math.min(5, Math.ceil(targetWeek / 3))}`);
 
-      // Start date is always current week's Monday (not shifted by week number or previous end date)
-      const calculatedStart = getMondayOfCurrentWeek();
-      const calculatedEnd = computeEndDateFromStart(calculatedStart, workingDaysCount);
+      // Derive the window from the selected week; pinning every new plan to the
+      // current Monday overlaps existing ranges and the API rejects the save.
+      const weekWindow = computeWeekWindow(targetWeek, undefined, workingDaysCount);
+      const calculatedStart = weekWindow.start;
+      const calculatedEnd = weekWindow.end;
       setStartDate(calculatedStart);
       setEndDate(calculatedEnd);
       generateDefaultTasksForWeek(calculatedStart);
@@ -658,7 +653,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
 
   // Initial and reactive plan selection when plans load or selections change
   useEffect(() => {
-    if (!plansLoaded) return;
+    if (!plansLoaded || !dailyConfigsLoaded) return;
     if (isDirtyRef.current) return;
 
     // Filter matching plans for current class and subject
@@ -671,6 +666,15 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
         isSubjectNameMatch(p.subject, selectedSubject);
       return classMatch && subjectMatch;
     }).sort((a, b) => a.week_number - b.week_number);
+
+    // Background refreshes rebuild `plans`; only re-select when the relevant content changed.
+    const selectionSignature = [
+      selectedClass,
+      selectedSubject,
+      ...matched.map(p => `${p.id}:${p.week_number}:${p.status}:${p.updated_at || p.created_at || ""}`)
+    ].join("|");
+    if (lastPlanAutoSelectRef.current === selectionSignature) return;
+    lastPlanAutoSelectRef.current = selectionSignature;
 
     if (matched.length === 0) {
       setSelectedWeek(1);
@@ -688,7 +692,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
         loadPlanForWeek(nextWk, selectedClass, selectedSubject, plans);
       }
     }
-  }, [plansLoaded, selectedClass, selectedSubject, plans, loadPlanForWeek]);
+  }, [plansLoaded, dailyConfigsLoaded, selectedClass, selectedSubject, plans, loadPlanForWeek]);
 
   // Keep dropdown options updated when props arrive
   useEffect(() => {
@@ -773,8 +777,8 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       setEndDate(autoEnd);
       isDirtyRef.current = true;
     }
-    setDailyTasks(prev =>
-      prev.map(t => {
+    setDailyTasks(prev => {
+      const updated = prev.map(t => {
         const date = getDateForDay(t.day, newStartDate);
         const resolved = resolveDayOrderDetailed(date, t.day);
         return {
@@ -783,8 +787,20 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           dayOrder: resolved.source === "cam" ? resolved.order : undefined,
           dayOrderSource: resolved.source === "cam" ? ("cam" as const) : undefined
         };
-      })
-    );
+      });
+
+      if (!newStartDate) return updated;
+
+      // Days skipped earlier (no CAM day order) are not in `prev`; add them now that the dates moved.
+      const existingDays = new Set(updated.map(t => t.day));
+      const missingTasks = buildDefaultTasksForWeek(newStartDate).filter(t => !existingDays.has(t.day));
+      if (missingTasks.length === 0) return updated;
+
+      const dayRank = new Map(availableDays.map((day, idx) => [day, idx]));
+      return [...updated, ...missingTasks].sort(
+        (a, b) => (dayRank.get(a.day) ?? Number.MAX_SAFE_INTEGER) - (dayRank.get(b.day) ?? Number.MAX_SAFE_INTEGER)
+      );
+    });
   };
 
   // Check if CAM has assigned any Day Order for this week
@@ -853,7 +869,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           });
 
       const wb = new ExcelJS.Workbook();
-      wb.creator = mentorName || "Zentra";
+      wb.creator = mentorName || "FACE Prep E-Campus";
       wb.created = new Date();
 
       // ── Sheet 1: Weekly Teaching Plan ──
@@ -1118,7 +1134,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
             : "Weekly plan saved as draft.",
           "success"
         );
-        await fetchPlans();
+        await queryClient.invalidateQueries({ queryKey: ["weekly-plan"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_weekly_plan_updated"));
         }
@@ -1447,6 +1463,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
               Class / Cohort
             </label>
             <select
+              aria-label="Class / Cohort"
               value={selectedClass}
               onChange={e => handleClassChange(e.target.value)}
               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1469,6 +1486,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
               Subject
             </label>
             <select
+              aria-label="Subject"
               value={selectedSubject}
               onChange={e => handleSubjectChange(e.target.value)}
               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1511,14 +1529,13 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
 
         {/* ─── Teaching Dates Popup Modal ─── */}
         {showDateModal && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
-            onClick={() => setShowDateModal(false)}
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setShowDateModal(false); }}
+            ariaLabel="Teaching Schedule Dates"
+            overlayClassName="bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+            panelClassName="max-w-md max-h-[90vh] p-5 space-y-4 rounded-2xl animate-in zoom-in-95 duration-150"
           >
-            <div
-              className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-5 space-y-4 animate-in zoom-in-95 duration-150"
-              onClick={e => e.stopPropagation()}
-            >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
@@ -1536,6 +1553,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowDateModal(false)}
+                  aria-label="Close teaching schedule dates"
                   className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                 >
                   <X className="h-4 w-4" />
@@ -1549,6 +1567,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                   </label>
                   <input
                     type="date"
+                    aria-label="Start Date"
                     value={startDate}
                     onChange={e => handleStartDateChange(e.target.value)}
                     className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1563,6 +1582,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                   </div>
                   <input
                     type="date"
+                    aria-label="End Date"
                     value={endDate}
                     onChange={e => setEndDate(e.target.value)}
                     className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -1579,8 +1599,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                   Apply & Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ─── Sequential Week Navigation Bar (Read & Update Tabs) ─── */}
@@ -1726,52 +1745,54 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs min-w-[950px]">
-            <thead>
-              <tr className="bg-slate-100/70 text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
-                <th className="py-2.5 px-3 w-12 text-center">#</th>
-                <th className="py-2.5 px-3 w-20">Week</th>
-                <th className="py-2.5 px-3 w-28">Date</th>
-                <th className="py-2.5 px-3 w-28">Day Order</th>
-                <th className="py-2.5 px-3 w-44">Period Slot</th>
-                <th className="py-2.5 px-3">Topic Planned *</th>
-                <th className="py-2.5 px-3 w-52">Description</th>
-                <th className="py-2.5 px-3 w-28 text-center">SME Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+          <Table className="w-full text-left border-collapse text-xs min-w-[950px]">
+            <TableHeader>
+              <TableRow className="bg-slate-100/70 text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
+                <TableHead className="py-2.5 px-3 w-12 text-center">#</TableHead>
+                <TableHead className="py-2.5 px-3 w-20">Week</TableHead>
+                <TableHead className="py-2.5 px-3 w-28">Date</TableHead>
+                <TableHead className="py-2.5 px-3 w-28">Day Order</TableHead>
+                <TableHead className="py-2.5 px-3 w-44">Period Slot</TableHead>
+                <TableHead className="py-2.5 px-3">Topic Planned *</TableHead>
+                <TableHead className="py-2.5 px-3 w-52">Description</TableHead>
+                <TableHead className="py-2.5 px-3 w-28 text-center">SME Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100">
               {dailyTasks.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400 italic font-medium">
-                    {hasAnyCamDayOrder
-                      ? "No periods found in your timetable for this selection."
-                      : "Day order not set for these dates."}
-                  </td>
-                </tr>
+                <TableRow>
+                  <TableCell colSpan={8} className="py-8 text-center text-slate-400 italic font-medium">
+                    {!dailyConfigsLoaded
+                      ? "Loading day-order configuration…"
+                      : hasAnyCamDayOrder
+                        ? "No periods found in your timetable for this selection."
+                        : "Day order not set for these dates."}
+                  </TableCell>
+                </TableRow>
               ) : (
                 dailyTasks.map((task, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                  <TableRow key={idx} className="hover:bg-slate-50/80 transition-colors">
                     {/* # */}
-                    <td className="py-2 px-3 text-center">
+                    <TableCell className="py-2 px-3 text-center">
                       <span className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-indigo-50 text-indigo-700 font-black text-[11px] border border-indigo-100">
                         P{idx + 1}
                       </span>
-                    </td>
+                    </TableCell>
 
                     {/* Week */}
-                    <td className="py-2.5 px-3">
+                    <TableCell className="py-2.5 px-3">
                       <span className="text-[11px] font-black text-indigo-700 whitespace-nowrap">Week {selectedWeek}</span>
-                    </td>
+                    </TableCell>
 
                     {/* Date */}
-                    <td className="py-2.5 px-3">
+                    <TableCell className="py-2.5 px-3">
                       <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded-md border border-slate-200/70 whitespace-nowrap">
                         {task.date || "—"}
                       </span>
-                    </td>
+                    </TableCell>
 
                     {/* Day Order */}
-                    <td className="py-2.5 px-3">
+                    <TableCell className="py-2.5 px-3">
                       {task.dayOrder ? (
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-lg font-black text-[10.5px] border whitespace-nowrap ${
@@ -1791,10 +1812,10 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                           —
                         </span>
                       )}
-                    </td>
+                    </TableCell>
 
                     {/* Period Slot */}
-                    <td className="py-2.5 px-3">
+                    <TableCell className="py-2.5 px-3">
                       <span
                         className="inline-flex items-center gap-1.5 font-bold text-slate-700 text-xs bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg whitespace-nowrap"
                         title="Assigned timetable period slot"
@@ -1802,10 +1823,10 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                         <Clock className="h-3 w-3 text-slate-400 shrink-0" />
                         <span>{task.periodSlot || resolvedPeriodSlots[idx % resolvedPeriodSlots.length] || `Period ${idx + 1}`}</span>
                       </span>
-                    </td>
+                    </TableCell>
 
                     {/* Topic Planned */}
-                    <td className="py-2 px-3">
+                    <TableCell className="py-2 px-3">
                       {isLocked ? (
                         <div className={`flex items-center gap-2 ${!isVerified ? "group" : ""}`}>
                           <span className={`flex-1 text-xs font-semibold px-2 py-1.5 rounded-lg border ${
@@ -1835,10 +1856,10 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                           className="w-full p-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500"
                         />
                       )}
-                    </td>
+                    </TableCell>
 
                     {/* Description */}
-                    <td className="py-2 px-3">
+                    <TableCell className="py-2 px-3">
                       {isLocked ? (
                         <span className={`block text-[11px] px-2 py-1.5 rounded-lg border ${
                           task.objectives
@@ -1856,10 +1877,10 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                           className="w-full p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-medium text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500"
                         />
                       )}
-                    </td>
+                    </TableCell>
 
                     {/* SME Status */}
-                    <td className="py-2.5 px-3 text-center">
+                    <TableCell className="py-2.5 px-3 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap ${
                         currentStatus === "Verified"       ? "bg-emerald-100 text-emerald-800" :
                         currentStatus === "Needs Revision" ? "bg-rose-100 text-rose-800" :
@@ -1868,12 +1889,12 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                       }`}>
                         {currentStatus}
                       </span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
 
@@ -1932,26 +1953,26 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
 
         {/* Archive Table */}
         <div className="overflow-x-auto mt-3">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                <th className="py-2.5 px-3">Week</th>
-                <th className="py-2.5 px-3">Class / Cohort</th>
-                <th className="py-2.5 px-3">Subject</th>
-                <th className="py-2.5 px-3">Date Range</th>
-                <th className="py-2.5 px-3 text-center">Sessions</th>
-                <th className="py-2.5 px-3 text-center">SME Status</th>
-                <th className="py-2.5 px-3">Remarks / Feedback</th>
-                <th className="py-2.5 px-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
+          <Table className="w-full text-left border-collapse text-xs">
+            <TableHeader>
+              <TableRow className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                <TableHead className="py-2.5 px-3">Week</TableHead>
+                <TableHead className="py-2.5 px-3">Class / Cohort</TableHead>
+                <TableHead className="py-2.5 px-3">Subject</TableHead>
+                <TableHead className="py-2.5 px-3">Date Range</TableHead>
+                <TableHead className="py-2.5 px-3 text-center">Sessions</TableHead>
+                <TableHead className="py-2.5 px-3 text-center">SME Status</TableHead>
+                <TableHead className="py-2.5 px-3">Remarks / Feedback</TableHead>
+                <TableHead className="py-2.5 px-3 text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100">
               {filteredArchivePlans.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400 italic font-medium">
+                <TableRow>
+                  <TableCell colSpan={8} className="py-8 text-center text-slate-400 italic font-medium">
                     No weekly plans found in archive.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 filteredArchivePlans.map(p => {
                   const tasks = parseSessionPlan(p.session_plan);
@@ -1961,30 +1982,30 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                     p.subject.toLowerCase().trim() === selectedSubject.toLowerCase().trim();
 
                   return (
-                    <tr
+                    <TableRow
                       key={p.id}
                       className={`hover:bg-slate-50/80 transition-colors ${
                         isCurrent ? "bg-indigo-50/40 font-semibold" : ""
                       }`}
                     >
-                      <td className="py-2.5 px-3">
+                      <TableCell className="py-2.5 px-3">
                         <span className="font-black text-indigo-700 text-xs">Week {p.week_number}</span>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-800 font-bold">
+                      </TableCell>
+                      <TableCell className="py-2.5 px-3 text-slate-800 font-bold">
                         {p.class_group}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-800 font-medium">
+                      </TableCell>
+                      <TableCell className="py-2.5 px-3 text-slate-800 font-medium">
                         {p.subject}
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
+                      </TableCell>
+                      <TableCell className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
                         {p.start_date && p.end_date ? `${p.start_date} to ${p.end_date}` : "—"}
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
+                      </TableCell>
+                      <TableCell className="py-2.5 px-3 text-center">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
                           {filledCount} / {tasks.length}
                         </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
+                      </TableCell>
+                      <TableCell className="py-2.5 px-3 text-center">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase whitespace-nowrap ${
                           p.status === "Verified" ? "bg-emerald-100 text-emerald-800" :
                           p.status === "Needs Revision" ? "bg-rose-100 text-rose-800" :
@@ -1993,11 +2014,11 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                         }`}>
                           {p.status === "Verified" ? "Approved" : p.status}
                         </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-slate-600 text-xs max-w-xs truncate">
+                      </TableCell>
+                      <TableCell className="py-2.5 px-3 text-slate-600 text-xs max-w-xs truncate">
                         {p.sme_remarks || p.cam_feedback || "—"}
-                      </td>
-                      <td className="py-2.5 px-3 text-right">
+                      </TableCell>
+                      <TableCell className="py-2.5 px-3 text-right">
                         <button
                           type="button"
                           onClick={() => handleOpenFromArchive(p)}
@@ -2009,13 +2030,13 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
                         >
                           {p.status === "Verified" ? "Read Plan" : "Read / Edit"}
                         </button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
     </div>
@@ -2043,10 +2064,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
   allColleges = []
 }) => {
   const { toast } = useToast();
-
-  const [loading, setLoading] = useState(false);
-  const [plans, setPlans] = useState<WeeklyPlanRecord[]>([]);
-  const [auditSummary, setAuditSummary] = useState<WeeklyPlanAuditSummary | null>(null);
+  const queryClient = useQueryClient();
 
   // Filters
   const [selectedCollege, setSelectedCollege] = useState<string>(collegeId || "all");
@@ -2074,45 +2092,32 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
     setCurrentPage(1);
   }, [selectedCollege, selectedWeek, selectedStatus, searchQuery]);
 
-  const fetchPlans = useCallback(async (silent: boolean = false) => {
-    if (!silent) setLoading(true);
-    try {
+  const plansQuery = useQuery({
+    queryKey: qk.weeklyPlan(selectedCollege || "all", "all"),
+    queryFn: async () => {
       const q =
         selectedCollege && selectedCollege !== "all"
           ? `?collegeId=${encodeURIComponent(selectedCollege)}&includeAudit=true`
           : `?includeAudit=true`;
       const data = await apiFetch(`/api/weekly-plan${q}`);
-      if (data.success && Array.isArray(data.plans)) {
-        setPlans(data.plans);
-        if (data.audit) {
-          setAuditSummary(data.audit);
-        }
-      }
-    } catch (e: any) {
-      console.error("Error fetching weekly plans:", e);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [selectedCollege]);
+      return data?.success && Array.isArray(data.plans)
+        ? (data.plans as WeeklyPlanRecord[])
+        : [];
+    },
+  });
 
-  useEffect(() => {
-    fetchPlans();
-  }, [fetchPlans]);
+  const plans = plansQuery.data || [];
+  const loading = plansQuery.isFetching;
 
-  // Real-time synchronization: listen for weekly plan update events and window focus
   useEffect(() => {
     const handleSync = () => {
-      fetchPlans(true);
+      queryClient.invalidateQueries({ queryKey: ["weekly-plan"] });
     };
-
     window.addEventListener("fp_weekly_plan_updated", handleSync);
-    window.addEventListener("focus", handleSync);
-
     return () => {
       window.removeEventListener("fp_weekly_plan_updated", handleSync);
-      window.removeEventListener("focus", handleSync);
     };
-  }, [fetchPlans]);
+  }, [queryClient]);
 
   // Filtered plans
   const filteredPlans = useMemo(() => {
@@ -2193,13 +2198,13 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
           weeklyPlanId: plan.id,
           status: verdict,
           remarks: feedbackInput || (plan.skill_verdict.remarks ?? ""),
-          verifiedBy: reviewerName || "Subject Matter Expert"
+          verifiedBy: reviewerName || "Reviewer"
         }
       });
       if (data.success) {
         toast(`Skill verdict recorded: ${verdict === "cleared" ? "Cleared" : "Not Cleared"}.`, "success");
         setSelectedPlanForReview(null);
-        await fetchPlans();
+        await queryClient.invalidateQueries({ queryKey: ["weekly-plan"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_weekly_plan_updated"));
         }
@@ -2232,7 +2237,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
         toast(`Weekly plan marked as ${status}.`, "success");
         setSelectedPlanForReview(null);
         setFeedbackInput("");
-        await fetchPlans();
+        await queryClient.invalidateQueries({ queryKey: ["weekly-plan"] });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("fp_weekly_plan_updated"));
         }
@@ -2373,7 +2378,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => fetchPlans()}
+              onClick={() => plansQuery.refetch()}
               disabled={loading}
               className="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
@@ -2472,6 +2477,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                 Campus / College
               </label>
               <select
+                aria-label="Campus / College"
                 value={selectedCollege}
                 onChange={e => setSelectedCollege(e.target.value)}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -2491,6 +2497,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
               Academic Week
             </label>
             <select
+              aria-label="Academic Week"
               value={selectedWeek}
               onChange={e => setSelectedWeek(e.target.value)}
               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -2509,6 +2516,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
               SME Status
             </label>
             <select
+              aria-label="SME Status"
               value={selectedStatus}
               onChange={e => setSelectedStatus(e.target.value)}
               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
@@ -2529,6 +2537,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
               <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
+                aria-label="Search"
                 placeholder="Search mentor, subject, cohort..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
@@ -2542,28 +2551,28 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
       {/* ─── Plans Table ─── */}
       <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs min-w-[850px]">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-600">
-                <th className="p-3.5">Week</th>
-                <th className="p-3.5">Dates</th>
-                <th className="p-3.5">Faculty / Mentor</th>
-                <th className="p-3.5">Class / Cohort</th>
-                <th className="p-3.5">Subject</th>
-                <th className="p-3.5 text-center">Type</th>
-                <th className="p-3.5 text-center">Periods Planned</th>
-                <th className="p-3.5 text-center">Conducted</th>
-                <th className="p-3.5 text-center">SME Status</th>
-                <th className="p-3.5 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
+          <Table className="w-full text-left border-collapse text-xs min-w-[850px]">
+            <TableHeader>
+              <TableRow className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-600">
+                <TableHead className="p-3.5">Week</TableHead>
+                <TableHead className="p-3.5">Dates</TableHead>
+                <TableHead className="p-3.5">Faculty / Mentor</TableHead>
+                <TableHead className="p-3.5">Class / Cohort</TableHead>
+                <TableHead className="p-3.5">Subject</TableHead>
+                <TableHead className="p-3.5 text-center">Type</TableHead>
+                <TableHead className="p-3.5 text-center">Periods Planned</TableHead>
+                <TableHead className="p-3.5 text-center">Conducted</TableHead>
+                <TableHead className="p-3.5 text-center">SME Status</TableHead>
+                <TableHead className="p-3.5 text-center">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-slate-100 font-medium">
               {filteredPlans.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-400 italic">
+                <TableRow>
+                  <TableCell colSpan={10} className="p-8 text-center text-slate-400 italic">
                     No weekly plans found matching your filters.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 paginatedPlans.map(plan => {
                   const tasks = parseSessionPlan(plan.session_plan);
@@ -2573,13 +2582,13 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                   ).length;
 
                   return (
-                    <tr
+                    <TableRow
                       key={plan.id}
                       onClick={() => setInspectingPlan(plan)}
                       className="hover:bg-indigo-50/40 cursor-pointer transition-colors group"
                     >
-                      <td className="p-3.5 font-black text-indigo-700">Week {plan.week_number}</td>
-                      <td className="p-3.5 text-slate-500 text-[11px]">
+                      <TableCell className="p-3.5 font-black text-indigo-700">Week {plan.week_number}</TableCell>
+                      <TableCell className="p-3.5 text-slate-500 text-[11px]">
                         {plan.start_date || plan.end_date ? (
                           <span>
                             {plan.start_date || "—"} to {plan.end_date || "—"}
@@ -2587,18 +2596,18 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                         ) : (
                           <span className="text-slate-400 italic">Unscheduled</span>
                         )}
-                      </td>
-                      <td className="p-3.5">
+                      </TableCell>
+                      <TableCell className="p-3.5">
                         <div className="font-extrabold text-slate-900">{plan.mentor_name || "Unassigned"}</div>
                         <div className="text-[10px] text-slate-400">{plan.mentor_id}</div>
-                      </td>
-                      <td className="p-3.5">
+                      </TableCell>
+                      <TableCell className="p-3.5">
                         <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800 font-bold text-[11px]">
                           {plan.class_group}
                         </span>
-                      </td>
-                      <td className="p-3.5 font-bold text-slate-800">{plan.subject}</td>
-                      <td className="p-3.5 text-center">
+                      </TableCell>
+                      <TableCell className="p-3.5 font-bold text-slate-800">{plan.subject}</TableCell>
+                      <TableCell className="p-3.5 text-center">
                         <span
                           className={`px-2 py-0.5 rounded-lg text-[10px] font-black border ${
                             (plan.subject_type || "Academic") === "Skill"
@@ -2608,13 +2617,13 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                         >
                           {plan.subject_type || "Academic"}
                         </span>
-                      </td>
-                      <td className="p-3.5 text-center">
+                      </TableCell>
+                      <TableCell className="p-3.5 text-center">
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-700`}>
-                          {filledPeriodsCount} / {tasks.length || 6} Periods
+                          {tasks.length > 0 ? `${filledPeriodsCount} / ${tasks.length} Periods` : `${filledPeriodsCount} Period${filledPeriodsCount === 1 ? "" : "s"}`}
                         </span>
-                      </td>
-                      <td className="p-3.5 text-center">
+                      </TableCell>
+                      <TableCell className="p-3.5 text-center">
                         <span
                           className={`px-2.5 py-1 rounded-full text-[10px] font-black ${
                             conductedCount === filledPeriodsCount && filledPeriodsCount > 0
@@ -2626,8 +2635,8 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                         >
                           {conductedCount} / {filledPeriodsCount} Conducted
                         </span>
-                      </td>
-                      <td className="p-3.5 text-center">
+                      </TableCell>
+                      <TableCell className="p-3.5 text-center">
                         <span
                           className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
                             plan.status === "Verified"
@@ -2641,8 +2650,8 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                         >
                           {plan.status}
                         </span>
-                      </td>
-                      <td className="p-3.5 text-center" onClick={e => e.stopPropagation()}>
+                      </TableCell>
+                      <TableCell className="p-3.5 text-center" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
@@ -2679,13 +2688,13 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                             </button>
                           )}
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {/* Pagination Controls */}
@@ -2706,14 +2715,13 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
 
       {/* ─── Detailed Plan Inspection Modal with Clean Period Schedule Table ─── */}
       {inspectingPlan && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200"
-          onClick={() => setInspectingPlan(null)}
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setInspectingPlan(null); }}
+          ariaLabel="Weekly Plan Details"
+          overlayClassName="bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+          panelClassName="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl p-0 space-y-0 animate-in zoom-in-95 duration-200"
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-            onClick={e => e.stopPropagation()}
-          >
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-3">
@@ -2759,6 +2767,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
               <button
                 type="button"
                 onClick={() => setInspectingPlan(null)}
+                aria-label="Close plan details"
                 className="h-8 w-8 rounded-full bg-slate-200/70 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
@@ -2784,29 +2793,29 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                 </div>
 
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-100/70 text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
-                        <th className="py-2.5 px-3 w-12 text-center">#</th>
-                        <th className="py-2.5 px-3 w-28">Day</th>
-                        <th className="py-2.5 px-3 w-28">Date</th>
-                        <th className="py-2.5 px-3 w-24">Day Order</th>
-                        <th className="py-2.5 px-3 w-40">Period Slot</th>
-                        <th className="py-2.5 px-3 w-32">Mode</th>
-                        <th className="py-2.5 px-3">Topic Planned</th>
-                        <th className="py-2.5 px-3 w-44">Tracker Conduction Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
+                  <Table className="w-full text-left border-collapse text-xs">
+                    <TableHeader>
+                      <TableRow className="bg-slate-100/70 text-[10px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200">
+                        <TableHead className="py-2.5 px-3 w-12 text-center">#</TableHead>
+                        <TableHead className="py-2.5 px-3 w-28">Day</TableHead>
+                        <TableHead className="py-2.5 px-3 w-28">Date</TableHead>
+                        <TableHead className="py-2.5 px-3 w-24">Day Order</TableHead>
+                        <TableHead className="py-2.5 px-3 w-40">Period Slot</TableHead>
+                        <TableHead className="py-2.5 px-3 w-32">Mode</TableHead>
+                        <TableHead className="py-2.5 px-3">Topic Planned</TableHead>
+                        <TableHead className="py-2.5 px-3 w-44">Tracker Conduction Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-slate-100">
                       {parseSessionPlan(inspectingPlan.session_plan).map((task, idx) => {
                         const isConducted = task.conductedStatus === "Completed" || task.status === "Completed";
 
                         return (
-                          <tr key={idx} className={isConducted ? "bg-emerald-50/20" : ""}>
-                            <td className="py-2.5 px-3 text-center font-bold text-slate-500">P{idx + 1}</td>
-                            <td className="py-2.5 px-3 font-extrabold text-slate-800">{task.day}</td>
-                            <td className="py-2.5 px-3 text-slate-600">{task.date || "—"}</td>
-                            <td className="py-2.5 px-3">
+                          <TableRow key={idx} className={isConducted ? "bg-emerald-50/20" : ""}>
+                            <TableCell className="py-2.5 px-3 text-center font-bold text-slate-500">P{idx + 1}</TableCell>
+                            <TableCell className="py-2.5 px-3 font-extrabold text-slate-800">{task.day}</TableCell>
+                            <TableCell className="py-2.5 px-3 text-slate-600">{task.date || "—"}</TableCell>
+                            <TableCell className="py-2.5 px-3">
                               {task.dayOrder && task.dayOrder !== "None" ? (
                                 <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-200">
                                   {task.dayOrder}
@@ -2814,22 +2823,22 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                               ) : (
                                 <span className="text-slate-400 italic text-[11px]">—</span>
                               )}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-700 font-medium">{task.periodSlot || "—"}</td>
-                            <td className="py-2.5 px-3">
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3 text-slate-700 font-medium">{task.periodSlot || "—"}</TableCell>
+                            <TableCell className="py-2.5 px-3">
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700">
                                 {task.teachingMode}
                               </span>
-                            </td>
-                            <td className="py-2.5 px-3">
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3">
                               <div className="font-bold text-slate-900">
                                 {task.topic || <span className="text-slate-400 italic">No topic specified</span>}
                               </div>
                               {task.objectives && (
                                 <div className="text-[10.5px] text-slate-500 mt-0.5">{task.objectives}</div>
                               )}
-                            </td>
-                            <td className="py-2.5 px-3">
+                            </TableCell>
+                            <TableCell className="py-2.5 px-3">
                               {isConducted ? (
                                 <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 inline-flex items-center gap-1">
                                   <CheckCircle className="h-3 w-3" />
@@ -2843,12 +2852,12 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                               ) : (
                                 <span className="text-slate-400 italic text-[11px]">—</span>
                               )}
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
 
@@ -2915,20 +2924,18 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* ─── SME Review & Verification Decision Modal ─── */}
       {selectedPlanForReview && isSME && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200"
-          onClick={() => setSelectedPlanForReview(null)}
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setSelectedPlanForReview(null); }}
+          ariaLabel="SME Weekly Plan Verification"
+          overlayClassName="bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+          panelClassName="max-w-lg max-h-[90vh] rounded-2xl p-0 space-y-0 animate-in zoom-in-95 duration-200"
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-200"
-            onClick={e => e.stopPropagation()}
-          >
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
@@ -2947,6 +2954,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                 <button
                   type="button"
                   onClick={() => setSelectedPlanForReview(null)}
+                  aria-label="Close SME verification"
                   className="h-7 w-7 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200"
                 >
                   <X className="h-4 w-4" />
@@ -2973,6 +2981,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                   SME Remarks &amp; Decision
                 </label>
                 <textarea
+                  aria-label="SME Remarks & Decision"
                   rows={4}
                   placeholder="Write your remarks, feedback, or approval note..."
                   value={feedbackInput}
@@ -3031,8 +3040,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

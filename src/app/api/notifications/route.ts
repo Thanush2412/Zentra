@@ -1,10 +1,10 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getDb } from "@/lib/db";
-import { sendMail, renderEmailShell } from "@/lib/mail";
+import { requireAuth } from "@/lib/authGuard";
+import { renderEmailShell } from "@/lib/mail";
+import { dispatchMail } from "@/lib/mailAsync";
 import crypto from "crypto";
 
 function genId(prefix = "notif") {
@@ -13,6 +13,8 @@ function genId(prefix = "notif") {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["mentor", "cm", "kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const {
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
 
       const created_at = new Date().toISOString();
       let notifCount = 0;
-      let emailCount = 0;
+      const reminderMails: { to: string; subject: string; htmlBody: string }[] = [];
 
       for (const cam of cams) {
         const notifId = genId();
@@ -71,41 +73,45 @@ export async function POST(request: Request) {
         );
         notifCount++;
 
-        try {
-          if (cam.email) {
-            const emailHtml = renderEmailShell({
-              title: `Reminder: Day Order Not Configured for ${dateFormatted}`,
-              badgeText: "Action Required",
-              badgeColor: "amber",
-              description: `Hi ${cam.name}, you have a new pending action for your campus.`,
-              details: [
-                { label: "Requesting Mentor", value: remind_by_name || "Faculty Member" },
-                { label: "Mentor Email", value: remind_by_email || "—" },
-                { label: "Date", value: dateFormatted },
-                { label: "Action Required", value: "Configure Day Order / Day Type in the Daily Schedule." },
-              ],
-              ctaText: "Open Daily Schedule",
-              ctaUrl:
-                (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000") +
-                `/cm/daily-configs?date=${dateStr}`,
-            });
-            await sendMail({
-              to: cam.email,
-              subject: `[Reminder] Day Order Not Configured — ${dateFormatted}`,
-              htmlBody: emailHtml,
-            });
-            emailCount++;
-          }
-        } catch (emailErr: any) {
-          console.warn("Failed to send reminder email to CM", cam.email, emailErr?.message);
+        if (cam.email) {
+          const emailHtml = renderEmailShell({
+            title: `Reminder: Day Order Not Configured for ${dateFormatted}`,
+            badgeText: "Action Required",
+            badgeColor: "amber",
+            description: `Hi ${cam.name}, you have a new pending action for your campus.`,
+            details: [
+              { label: "Requesting Mentor", value: remind_by_name || "Faculty Member" },
+              { label: "Mentor Email", value: remind_by_email || "—" },
+              { label: "Date", value: dateFormatted },
+              { label: "Action Required", value: "Configure Day Order / Day Type in the Daily Schedule." },
+            ],
+            ctaText: "Open Daily Schedule",
+            ctaUrl:
+              (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000") +
+              `/cm/daily-configs?date=${dateStr}`,
+          });
+          reminderMails.push({
+            to: cam.email,
+            subject: `[Reminder] Day Order Not Configured — ${dateFormatted}`,
+            htmlBody: emailHtml,
+          });
         }
       }
 
+      const emailCount = reminderMails.length;
+      // Every CM used to cost one awaited relay leg, so a campus with several of them
+      // kept the mentor waiting up to 12s each. The reminder rows are already stored.
+      after(async () => {
+        await Promise.allSettled(
+          reminderMails.map((job) => dispatchMail({ ...job, context: "day-order-reminder" }))
+        );
+      });
+
       return NextResponse.json({
         success: true,
-        message: `Reminder sent to ${notifCount} CM(s) (${emailCount} email${
+        message: `Reminder saved for ${notifCount} CM(s) (${emailCount} email${
           emailCount === 1 ? "" : "s"
-        }).`,
+        } being sent).`,
         notifications_created: notifCount,
         emails_sent: emailCount,
       });
@@ -137,12 +143,24 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId") || searchParams.get("user_id");
+    const actor = auth!.user;
 
     if (!userId) {
       return NextResponse.json({ success: false, message: "userId or user_id is required" }, { status: 400 });
+    }
+
+    // The feed used to be addressable for any id, so any signed-in account could
+    // read another user's notifications by asking for their userId.
+    const ownerKeys = new Set(
+      [actor.reference_id, actor.id, actor.email].filter(Boolean).map(v => String(v).toLowerCase().trim())
+    );
+    if (actor.role !== "admin" && !ownerKeys.has(userId.toLowerCase().trim())) {
+      return NextResponse.json({ success: false, message: "Forbidden: you can only read your own notifications." }, { status: 403 });
     }
 
     const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
@@ -161,19 +179,36 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    const { auth, errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const id = body.id || body.notification_id;
     const userId = body.userId || body.user_id;
     const markAllRead = body.markAllRead || body.action === "mark_all_read";
     const singleMark = !markAllRead && id && (body.action === "mark_read" || !body.action);
+    const actor = auth!.user;
+    const isAdmin = actor.role === "admin";
+    const ownerKeys = new Set(
+      [actor.reference_id, actor.id, actor.email].filter(Boolean).map(v => String(v).toLowerCase().trim())
+    );
 
     if (markAllRead && userId) {
+      if (!isAdmin && !ownerKeys.has(String(userId).toLowerCase().trim())) {
+        return NextResponse.json({ success: false, message: "Forbidden: you can only update your own notifications." }, { status: 403 });
+      }
       await db.run("UPDATE notifications SET is_read = 1 WHERE user_id = ?", [userId]);
       return NextResponse.json({ success: true, message: "All notifications marked as read" });
     }
 
     if (singleMark) {
+      const row = await db.get("SELECT user_id FROM notifications WHERE id = ?", [id]);
+      if (!row) {
+        return NextResponse.json({ success: false, message: "Notification not found" }, { status: 404 });
+      }
+      if (!isAdmin && !ownerKeys.has(String(row.user_id || "").toLowerCase().trim())) {
+        return NextResponse.json({ success: false, message: "Forbidden: this notification belongs to another user." }, { status: 403 });
+      }
       await db.run("UPDATE notifications SET is_read = 1 WHERE id = ?", [id]);
       return NextResponse.json({ success: true, message: "Notification marked as read" });
     }

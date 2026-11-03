@@ -1,12 +1,13 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "kam", "cm"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type") || "attendance";
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
     const collegeId = searchParams.get("collegeId");
 
     let reportData: any[] = [];
-    let filename = `zentra_report_${type}_${Date.now()}`;
+    let filename = `ecampus_report_${type}_${Date.now()}`;
 
     if (type === "attendance") {
       let query = `

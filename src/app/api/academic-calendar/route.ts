@@ -1,12 +1,12 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, type QueryFailure } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
 
 const DAY_ORDER_CYCLE = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
 
@@ -37,14 +37,48 @@ async function syncEventDayOrder(
   endDate: string | null | undefined,
   eventName: string
 ) {
+  const dates = eventDatesInRange(startDate, endDate);
+  if (dates.length === 0) return { synced: [], protectedDates: [] };
+
+  // One read for the whole range plus the last day order before it, instead of two
+  // reads per day (a 60-day event used to cost 120 round trips). The per-date
+  // "previous day order" lookup can be reproduced by walking the range in order.
+  const readFailures: QueryFailure[] = [];
+  const [configRows, priorRows] = await db.multiQuery([
+    {
+      sql: `SELECT dateStr, day_type, day_order, session_mode FROM campus_daily_configs
+            WHERE college_id = ? AND dateStr >= ? AND dateStr <= ?`,
+      params: [collegeId, dates[0], dates[dates.length - 1]],
+    },
+    {
+      sql: `SELECT day_order FROM campus_daily_configs
+            WHERE college_id = ? AND dateStr < ? AND day_order IS NOT NULL AND day_order != 'None'
+            ORDER BY dateStr DESC LIMIT 1`,
+      params: [collegeId, dates[0]],
+    },
+  ], readFailures);
+  if (readFailures.length > 0) {
+    throw new Error(`calendar sync inputs unreadable: ${readFailures.map(f => f.error).join("; ")}`);
+  }
+
+  const byDate = new Map<string, any>();
+  for (const row of configRows) byDate.set(String(row.dateStr), row);
+  const sortedRows = [...configRows].sort((a, b) => String(a.dateStr).localeCompare(String(b.dateStr)));
+
   const synced: { dateStr: string; day_order: string }[] = [];
   const protectedDates: string[] = [];
+  const rowsToWrite: any[][] = [];
+  let lastDayOrder: string | null = priorRows[0]?.day_order || null;
+  let cursor = 0;
 
-  for (const dStr of eventDatesInRange(startDate, endDate)) {
-    const existing: any = await db.get(
-      `SELECT day_type, day_order, session_mode FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?`,
-      [collegeId, dStr]
-    );
+  for (const dStr of dates) {
+    // Consult every existing row earlier than this date for the fallback day order.
+    while (cursor < sortedRows.length && String(sortedRows[cursor].dateStr) < dStr) {
+      const row = sortedRows[cursor++];
+      if (row.day_order && row.day_order !== "None") lastDayOrder = row.day_order;
+    }
+
+    const existing = byDate.get(dStr);
 
     // A CM-declared holiday or an exam schedule owns this date; an event must not erase it.
     if (existing && (existing.day_type === "holiday" || existing.day_type === "exam_day")) {
@@ -54,34 +88,35 @@ async function syncEventDayOrder(
 
     let dayOrder = existing?.day_order && existing.day_order !== "None" ? existing.day_order : "";
     if (!dayOrder) {
-      const prev: any = await db.get(
-        `SELECT day_order FROM campus_daily_configs
-         WHERE college_id = ? AND dateStr < ? AND day_order IS NOT NULL AND day_order != 'None'
-         ORDER BY dateStr DESC LIMIT 1`,
-        [collegeId, dStr]
-      );
-      const match = String(prev?.day_order || "").match(/Day\s+(\d+)/i);
+      const match = String(lastDayOrder || "").match(/Day\s+(\d+)/i);
       dayOrder = match ? DAY_ORDER_CYCLE[parseInt(match[1], 10) % DAY_ORDER_CYCLE.length] : "Day 1";
     }
+    lastDayOrder = dayOrder;
 
+    rowsToWrite.push([
+      `${collegeId}_${dStr}`,
+      collegeId,
+      dStr,
+      dayOrder,
+      existing?.session_mode || "Offline",
+      `Event: ${eventName}`,
+    ]);
+    synced.push({ dateStr: dStr, day_order: dayOrder });
+  }
+
+  if (rowsToWrite.length > 0) {
+    // One multi-row upsert instead of one write per day.
+    const values = rowsToWrite.map(() => "(?, ?, ?, 'event', ?, ?, ?, CURRENT_TIMESTAMP)").join(", ");
     await db.run(
       `INSERT INTO campus_daily_configs (id, college_id, dateStr, day_type, day_order, session_mode, notes, updated_at)
-       VALUES (?, ?, ?, 'event', ?, ?, ?, CURRENT_TIMESTAMP)
+       VALUES ${values}
        ON CONFLICT (id) DO UPDATE SET
          day_type = 'event',
          day_order = EXCLUDED.day_order,
          notes = EXCLUDED.notes,
          updated_at = CURRENT_TIMESTAMP`,
-      [
-        `${collegeId}_${dStr}`,
-        collegeId,
-        dStr,
-        dayOrder,
-        existing?.session_mode || "Offline",
-        `Event: ${eventName}`
-      ]
+      ...rowsToWrite.flat()
     );
-    synced.push({ dateStr: dStr, day_order: dayOrder });
   }
 
   return { synced, protectedDates };
@@ -89,24 +124,49 @@ async function syncEventDayOrder(
 
 // Reverts dates this sync stamped as 'event' once no event covers them any more.
 async function clearEventDayOrder(db: any, collegeId: string, dates: string[]) {
-  for (const dStr of dates) {
-    const cfg: any = await db.get(
-      `SELECT day_type FROM campus_daily_configs WHERE college_id = ? AND dateStr = ?`,
-      [collegeId, dStr]
-    );
+  const uniqueDates = Array.from(new Set(dates));
+  if (uniqueDates.length === 0) return;
+
+  // One read for the configs and one for every event that can still cover the
+  // window, instead of two reads per date, then a single IN-list update.
+  const sorted = [...uniqueDates].sort();
+  const placeholders = uniqueDates.map(() => "?").join(",");
+  const readFailures: QueryFailure[] = [];
+  const [cfgRows, coveringEvents] = await db.multiQuery([
+    {
+      sql: `SELECT dateStr, day_type FROM campus_daily_configs WHERE college_id = ? AND dateStr IN (${placeholders})`,
+      params: [collegeId, ...uniqueDates],
+    },
+    {
+      sql: `SELECT date, COALESCE(end_date, date) as end_date FROM academic_events
+            WHERE college_id = ? AND date <= ? AND COALESCE(end_date, date) >= ?`,
+      params: [collegeId, sorted[sorted.length - 1], sorted[0]],
+    },
+  ], readFailures);
+  if (readFailures.length > 0) {
+    throw new Error(`calendar cleanup inputs unreadable: ${readFailures.map(f => f.error).join("; ")}`);
+  }
+
+  const cfgByDate = new Map<string, any>();
+  for (const row of cfgRows) cfgByDate.set(String(row.dateStr), row);
+
+  const toClear: string[] = [];
+  for (const dStr of uniqueDates) {
+    const cfg = cfgByDate.get(dStr);
     if (!cfg || cfg.day_type !== "event") continue;
-
-    const covering: any = await db.get(
-      `SELECT id FROM academic_events
-       WHERE college_id = ? AND date <= ? AND COALESCE(end_date, date) >= ?`,
-      [collegeId, dStr, dStr]
+    const covered = coveringEvents.some(
+      (ev: any) => String(ev.date) <= dStr && String(ev.end_date) >= dStr
     );
-    if (covering) continue;
+    if (covered) continue;
+    toClear.push(dStr);
+  }
 
+  if (toClear.length > 0) {
+    const clearPlaceholders = toClear.map(() => "?").join(",");
     await db.run(
       `UPDATE campus_daily_configs SET day_type = 'working', notes = '', updated_at = CURRENT_TIMESTAMP
-       WHERE college_id = ? AND dateStr = ?`,
-      [collegeId, dStr]
+       WHERE college_id = ? AND dateStr IN (${clearPlaceholders})`,
+      collegeId, ...toClear
     );
   }
 }
@@ -118,30 +178,41 @@ function isConcreteCollege(collegeId: any): collegeId is string {
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     await ensureMigration("academic_calendar_tables");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const collegeId = searchParams.get("college_id");
     
-    // Fetch all academic years
-    let yearsRows = await db.all("SELECT year_name FROM academic_years");
-    
+    // Years and events are independent, so they travel as one round trip.
+    const eventsSlice = collegeId && collegeId !== "all"
+      ? { sql: "SELECT * FROM academic_events WHERE college_id = ? OR college_id IS NULL ORDER BY date ASC", params: [collegeId] }
+      : { sql: "SELECT * FROM academic_events ORDER BY date ASC" };
+    const calendarFailures: QueryFailure[] = [];
+    let [yearsRows, academicEvents] = await db.multiQuery(
+      [{ sql: "SELECT year_name FROM academic_years" }, eventsSlice],
+      calendarFailures
+    );
+    if (calendarFailures.length > 0) {
+      // A failed slice reads as an empty list: the calendar would show no holidays
+      // and no years, and nothing on screen would say the read was incomplete.
+      return NextResponse.json({ success: false, error: "Could not load the academic calendar. Please try again." }, { status: 500 });
+    }
+
     if (yearsRows.length === 0) {
-      // Auto-seed default years
-      await db.run("INSERT INTO academic_years (year_name) VALUES ('2025-2026')").catch(() => {});
-      await db.run("INSERT INTO academic_years (year_name) VALUES ('2026-2027')").catch(() => {});
-      await db.run("INSERT INTO academic_years (year_name) VALUES ('2027-2028')").catch(() => {});
+      // Auto-seed default years in one conflict-safe statement. Three separate
+      // inserts each swallowed their own error, so a concurrent first GET (two
+      // tabs, two warm instances) double-seeded and the duplicates vanished
+      // without a trace.
+      await db.run(
+        `INSERT INTO academic_years (year_name)
+         SELECT y.value FROM unnest(ARRAY['2025-2026', '2026-2027', '2027-2028']) AS y(value)
+         WHERE NOT EXISTS (SELECT 1 FROM academic_years a WHERE a.year_name = y.value)`
+      );
       yearsRows = await db.all("SELECT year_name FROM academic_years");
     }
     const academicYears = yearsRows.map((r: any) => r.year_name);
-
-    // Fetch campus-scoped academic events
-    let academicEvents = [];
-    if (collegeId && collegeId !== "all") {
-      academicEvents = await db.all("SELECT * FROM academic_events WHERE college_id = ? OR college_id IS NULL ORDER BY date ASC", [collegeId]);
-    } else {
-      academicEvents = await db.all("SELECT * FROM academic_events ORDER BY date ASC");
-    }
 
     return NextResponse.json({ success: true, academicYears, academicEvents });
   } catch (error: any) {
@@ -152,6 +223,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm", "kam"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("academic_calendar_tables");
     const db = await getDb();
     const body = await request.json();
@@ -179,7 +252,7 @@ export async function POST(request: Request) {
       if (!name || !date) {
         return NextResponse.json({ success: false, message: "Missing name or date" }, { status: 400 });
       }
-      const eventId = id || "e_" + Date.now();
+      const eventId = id || generateId("e");
       const photosStr = typeof photos === "string" ? photos : (Array.isArray(photos) ? JSON.stringify(photos) : null);
       const previousEvent: any = id
         ? await db.get(`SELECT date, end_date, college_id FROM academic_events WHERE id = ?`, [id]).catch(() => null)
@@ -294,7 +367,7 @@ export async function POST(request: Request) {
       let count = 0;
       for (const ev of events) {
         if (!ev.name || !ev.date) continue;
-        const eventId = ev.id || "e_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+        const eventId = ev.id || generateId("e");
         const photosStr = typeof ev.photos === "string" ? ev.photos : (Array.isArray(ev.photos) ? JSON.stringify(ev.photos) : null);
 
         if (isPg) {
@@ -397,6 +470,8 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm", "kam"] });
+    if (errorResponse) return errorResponse;
     await ensureMigration("academic_calendar_tables");
     const db = await getDb();
     const { searchParams } = new URL(request.url);

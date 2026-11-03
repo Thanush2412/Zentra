@@ -1,15 +1,20 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireKamScope, resolveScopeParams } from "@/lib/kamScope";
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("collegeId");
-    const kamId = searchParams.get("kamId");
+    const scoped = resolveScopeParams(scope!, searchParams.get("kamId"), searchParams.get("collegeId"));
+    if (scoped.errorResponse) return scoped.errorResponse;
+    const collegeId = scoped.collegeId;
+    const kamId = scoped.kamId;
     const department = searchParams.get("department");
     const classGroup = searchParams.get("classGroup");
     const riskLevel = searchParams.get("riskLevel"); // 'all' | 'high' | 'medium' | 'low'
@@ -58,7 +63,8 @@ export async function GET(request: Request) {
     const studentIds = students.map((s: any) => s.id);
     const idPlaceholders = studentIds.map(() => "?").join(",");
 
-    // 2. Fetch parallel academic records
+    // 2. Fetch parallel academic records (fail-loud: a broken slice must not
+    // silently zero a student's composite risk score)
     const [attRows, examRows, taskRows, interviewRows] = await Promise.all([
       // Attendance stats
       db.all(`
@@ -68,7 +74,7 @@ export async function GET(request: Request) {
         FROM student_attendance
         WHERE studentId IN (${idPlaceholders})
         GROUP BY studentId
-      `, ...studentIds).catch(() => []),
+      `, ...studentIds),
 
       // CIA & Model Exam marks
       db.all(`
@@ -78,7 +84,7 @@ export async function GET(request: Request) {
         FROM student_exam_marks
         WHERE student_id IN (${idPlaceholders}) AND is_absent = 0
         GROUP BY student_id
-      `, ...studentIds).catch(() => []),
+      `, ...studentIds),
 
       // Practical Lab Tasks
       db.all(`
@@ -89,7 +95,7 @@ export async function GET(request: Request) {
         FROM student_tracker
         WHERE student_id IN (${idPlaceholders})
         GROUP BY student_id
-      `, ...studentIds).catch(() => []),
+      `, ...studentIds),
 
       // Mock Interview Scores
       db.all(`
@@ -98,7 +104,7 @@ export async function GET(request: Request) {
         FROM interview_evaluations
         WHERE student_id IN (${idPlaceholders})
         GROUP BY student_id
-      `, ...studentIds).catch(() => [])
+      `, ...studentIds)
     ]);
 
     // Build lookup maps

@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { BookOpen, TrendingUp, AlertTriangle, CheckCircle2, Clock, Building2, Search, Filter, Download, ArrowUpRight } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { BookOpen, AlertTriangle, CheckCircle2, Clock, Search, ArrowUpDown } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
+import { Pagination } from "@/components/ui/Pagination";
+import { Badge } from "@/components/ui/badge";
 
 interface SubjectDelivery {
   id: string;
@@ -34,35 +41,29 @@ interface CampusDelivery {
 }
 
 export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?: string }> = ({ selectedCollegeId = "all", kamId }) => {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams();
-        if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
-        if (kamId) params.set("kamId", kamId);
-        const query = params.toString() ? `?${params.toString()}` : "";
-        const res = await fetch(`/api/kam/academic-delivery${query}`);
-        const json = await res.json();
-        if (json.success && isMounted) {
-          setData(json);
-        }
-      } catch (err) {
-        console.error("Failed to load academic delivery:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    loadData();
-    return () => { isMounted = false; };
-  }, [selectedCollegeId, kamId]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  const params = new URLSearchParams();
+  if (selectedCollegeId !== "all") params.set("collegeId", selectedCollegeId);
+  if (kamId) params.set("kamId", kamId);
+  const queryString = params.toString();
+
+  const deliveryQuery = useQuery({
+    queryKey: qk.kamPanel("academic-delivery", selectedCollegeId, queryString),
+    queryFn: async () => {
+      const json = await apiFetch<any>(`/api/kam/academic-delivery${queryString ? `?${queryString}` : ""}`);
+      return json?.success ? json : null;
+    },
+  });
+  const data = deliveryQuery.data ?? null;
+  const loading = deliveryQuery.isPending;
 
   const summary = data?.summary || {
     totalSubjects: 0,
@@ -76,66 +77,109 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
   const campuses: CampusDelivery[] = data?.campusDelivery || [];
   const subjects: SubjectDelivery[] = data?.subjectDelivery || [];
 
-  const filteredSubjects = subjects.filter(s => {
-    const matchesSearch = !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.mentors || []).some(m => m.toLowerCase().includes(search.toLowerCase()));
-    const matchesDept = deptFilter === "all" || s.department === deptFilter;
-    const matchesStatus = statusFilter === "all" || s.status.toLowerCase() === statusFilter.toLowerCase();
-    return matchesSearch && matchesDept && matchesStatus;
-  });
+  const filteredSubjects = useMemo(() => {
+    return subjects.filter(s => {
+      const matchesSearch = !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.mentors || []).some(m => m.toLowerCase().includes(search.toLowerCase()));
+      const matchesDept = deptFilter === "all" || s.department === deptFilter;
+      const matchesStatus = statusFilter === "all" || s.status.toLowerCase() === statusFilter.toLowerCase();
+      return matchesSearch && matchesDept && matchesStatus;
+    });
+  }, [subjects, search, deptFilter, statusFilter]);
 
-  const distinctDepts = Array.from(new Set(subjects.map(s => s.department).filter(Boolean))).sort();
+  const distinctDepts = useMemo(() => {
+    return Array.from(new Set(subjects.map(s => s.department).filter(Boolean))).sort();
+  }, [subjects]);
+
+  const sortedSubjects = useMemo(() => {
+    if (!sortKey) return filteredSubjects;
+    return [...filteredSubjects].sort((a, b) => {
+      const valA = a[sortKey as keyof SubjectDelivery];
+      const valB = b[sortKey as keyof SubjectDelivery];
+      if (valA === valB) return 0;
+      if (valA === null || valA === undefined) return 1;
+      if (valB === null || valB === undefined) return -1;
+      if (typeof valA === "number" && typeof valB === "number") {
+        return sortDirection === "asc" ? valA - valB : valB - valA;
+      }
+      const strA = String(valA).toLowerCase();
+      const strB = String(valB).toLowerCase();
+      return sortDirection === "asc" ? strA.localeCompare(strB) : strB.localeCompare(strA);
+    });
+  }, [filteredSubjects, sortKey, sortDirection]);
+
+  const paginatedSubjects = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedSubjects.slice(start, start + pageSize);
+  }, [sortedSubjects, currentPage, pageSize]);
+
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      {/* ── 1. Top Summary Banner ── */}
+      {/* ── 1. Top Summary Banner with Shadcn Card ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Portfolio Syllabus Pacing</span>
-            <BookOpen className="h-4 w-4 text-indigo-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{summary.avgCompletionPct}%</span>
-            <span className="text-xs font-bold text-slate-400">/ 65% Target</span>
-          </div>
-          <p className="text-[10px] font-bold text-emerald-600 mt-1">Across {summary.totalSubjects} curriculum subjects</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Portfolio Syllabus Pacing</span>
+              <BookOpen className="h-4 w-4 text-indigo-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-slate-900">{summary.avgCompletionPct}%</span>
+              <span className="text-xs font-bold text-slate-400">/ 65% Target</span>
+            </div>
+            <p className="text-[10px] font-bold text-emerald-600 mt-1">Across {summary.totalSubjects} curriculum subjects</p>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Delivery Status</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-emerald-700">{summary.onTrackCount}</span>
-            <span className="text-xs font-bold text-emerald-600">On Track</span>
-          </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-1">Pacing within calendar schedule</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Delivery Status</span>
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-emerald-700">{summary.onTrackCount}</span>
+              <span className="text-xs font-bold text-emerald-600">On Track</span>
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 mt-1">Pacing within calendar schedule</p>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Lagging Subjects</span>
-            <AlertTriangle className="h-4 w-4 text-rose-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-rose-700">{summary.laggingCount}</span>
-            <span className="text-xs font-bold text-rose-500">Need Attention</span>
-          </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-1">&gt;10% behind expected syllabus</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Lagging Subjects</span>
+              <AlertTriangle className="h-4 w-4 text-rose-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-rose-700">{summary.laggingCount}</span>
+              <span className="text-xs font-bold text-rose-500">Need Attention</span>
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 mt-1">&gt;10% behind expected syllabus</p>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400">Total Teaching Hours</span>
-            <Clock className="h-4 w-4 text-indigo-600" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-900">{summary.totalTeachingHours}h</span>
-            <span className="text-xs font-bold text-indigo-600">Logged</span>
-          </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-1">Conducted lecture & lab hours</p>
-        </div>
+        <Card className="rounded-2xl border-slate-200 shadow-xs">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase text-slate-400">Total Teaching Hours</span>
+              <Clock className="h-4 w-4 text-indigo-600" />
+            </div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-2xl font-black text-slate-900">{summary.totalTeachingHours}h</span>
+              <span className="text-xs font-bold text-indigo-600">Logged</span>
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 mt-1">Conducted lecture & lab hours</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* ── 2. Campus Benchmark Breakdown ── */}
@@ -150,32 +194,32 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {campuses.map(c => (
-              <div key={c.id} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-slate-800">{c.name}</span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${c.avgCompletionPct >= 65 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                    }`}>
-                    {c.avgCompletionPct}%
-                  </span>
-                </div>
-                <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${c.avgCompletionPct >= 65 ? "bg-emerald-500" : "bg-amber-500"
-                      }`}
-                    style={{ width: `${c.avgCompletionPct}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 pt-1 border-t border-slate-200/60">
-                  <span>{c.totalSubjects} Subjects</span>
-                  <span>{c.laggingSubjectsCount > 0 ? `⚠️ ${c.laggingSubjectsCount} Lagging` : "🟢 All On Track"}</span>
-                </div>
-              </div>
+              <Card key={c.id} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 shadow-none">
+                <CardContent className="p-0 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800">{c.name}</span>
+                    <Badge variant={c.avgCompletionPct >= 65 ? "success" : "warning"} className="text-[10px] font-black">
+                      {c.avgCompletionPct}%
+                    </Badge>
+                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${c.avgCompletionPct >= 65 ? "bg-emerald-500" : "bg-amber-500"}`}
+                      style={{ width: `${c.avgCompletionPct}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 pt-1 border-t border-slate-200/60">
+                    <span>{c.totalSubjects} Subjects</span>
+                    <span>{c.laggingSubjectsCount > 0 ? `⚠️ ${c.laggingSubjectsCount} Lagging` : "🟢 All On Track"}</span>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── 3. Subject-wise Syllabus Delivery Table ── */}
+      {/* ── 3. Subject-wise Syllabus Delivery Table with Shadcn Table & Pagination ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
@@ -189,13 +233,19 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
                 type="text"
                 placeholder="Search subject or faculty..."
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => {
+                  setSearch(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none w-48"
               />
             </div>
             <select
               value={deptFilter}
-              onChange={e => setDeptFilter(e.target.value)}
+              onChange={e => {
+                setDeptFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
             >
               <option value="all">All Departments</option>
@@ -203,7 +253,10 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
             </select>
             <select
               value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
+              onChange={e => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none"
             >
               <option value="all">All Statuses</option>
@@ -218,65 +271,88 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
         ) : filteredSubjects.length === 0 ? (
           <div className="py-12 text-center text-xs font-bold text-slate-400">No subjects matching filter criteria.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-50/80 text-[10px] font-black uppercase text-slate-400 border-b border-slate-200">
-                  <th className="py-3 px-3">Subject / Course</th>
-                  <th className="py-3 px-3">Department</th>
-                  <th className="py-3 px-3">Assigned Faculty</th>
-                  <th className="py-3 px-3 text-center">Topics Delivered</th>
-                  <th className="py-3 px-3">Completion %</th>
-                  <th className="py-3 px-3 text-center">Delivery Gap</th>
-                  <th className="py-3 px-3 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                {filteredSubjects.map(s => (
-                  <tr key={s.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-3 px-3">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50 hover:bg-slate-50 text-[10px] font-black uppercase text-slate-500 border-b border-slate-200">
+                  <TableHead onClick={() => handleSort("name")} className="cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center gap-1">Subject / Course <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Assigned Faculty</TableHead>
+                  <TableHead onClick={() => handleSort("completedTopics")} className="text-center cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center justify-center gap-1">Topics Delivered <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort("completionPct")} className="cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center gap-1">Completion % <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead onClick={() => handleSort("gapPct")} className="text-center cursor-pointer hover:text-slate-800">
+                    <div className="flex items-center justify-center gap-1">Delivery Gap <ArrowUpDown className="h-3 w-3" /></div>
+                  </TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                {paginatedSubjects.map(s => (
+                  <TableRow key={s.id} className="hover:bg-slate-50/60 transition-colors">
+                    <TableCell>
                       <p className="font-black text-slate-900">{s.name}</p>
                       <p className="text-[10px] text-slate-400 font-medium">{s.collegeName} • {s.weeklyHours}h/week</p>
-                    </td>
-                    <td className="py-3 px-3 font-bold text-slate-700">{s.department}</td>
-                    <td className="py-3 px-3 text-xs text-slate-600 font-bold">
+                    </TableCell>
+                    <TableCell className="font-bold text-slate-700">{s.department}</TableCell>
+                    <TableCell className="text-xs text-slate-600 font-bold">
                       {s.mentors.length > 0 ? s.mentors.join(", ") : "Faculty Lead"}
-                    </td>
-                    <td className="py-3 px-3 text-center font-bold">
+                    </TableCell>
+                    <TableCell className="text-center font-bold">
                       <span className="text-indigo-600 font-black">{s.completedTopics}</span> / {s.targetTopics}
-                    </td>
-                    <td className="py-3 px-3 w-40">
+                    </TableCell>
+                    <TableCell className="w-40">
                       <div className="flex items-center justify-between text-[10px] font-black mb-1">
                         <span>{s.completionPct}%</span>
                         <span className="text-slate-400">Target: {s.expectedPct}%</span>
                       </div>
                       <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all ${s.completionPct >= 65 ? "bg-emerald-500" : s.completionPct >= 50 ? "bg-amber-500" : "bg-rose-500"
-                            }`}
+                          className={`h-full rounded-full transition-all ${
+                            s.completionPct >= 65 ? "bg-emerald-500" : s.completionPct >= 50 ? "bg-amber-500" : "bg-rose-500"
+                          }`}
                           style={{ width: `${s.completionPct}%` }}
                         />
                       </div>
-                    </td>
-                    <td className="py-3 px-3 text-center font-black">
+                    </TableCell>
+                    <TableCell className="text-center font-black">
                       <span className={s.gapPct >= 0 ? "text-emerald-600" : "text-rose-600"}>
                         {s.gapPct >= 0 ? `+${s.gapPct}%` : `${s.gapPct}%`}
                       </span>
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${s.status === "On Track"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : s.status === "Moderate"
-                            ? "bg-amber-50 text-amber-700 border border-amber-200"
-                            : "bg-rose-50 text-rose-700 border border-rose-200"
-                        }`}>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant={s.status === "On Track" ? "success" : s.status === "Moderate" ? "warning" : "destructive"}
+                        className="text-[10px] font-black"
+                      >
                         {s.status}
-                      </span>
-                    </td>
-                  </tr>
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* Standardized Pagination Bar */}
+        {sortedSubjects.length > 0 && (
+          <div className="pt-2">
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedSubjects.length}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+            />
           </div>
         )}
       </div>

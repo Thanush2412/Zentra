@@ -1,13 +1,16 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
-import { getDb, syncMentorSubjectGroups } from "@/lib/db";
+import { getDb, allCapped, syncMentorSubjectGroups } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
 import { hashPassword } from "@/lib/auth";
+import { DEFAULT_PASSWORD } from "@/lib/authConfig";
+import { sendAccountWelcomeEmail } from "@/lib/mail";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const group = searchParams.get("group");
@@ -20,8 +23,9 @@ export async function GET(request: Request) {
          WHERE LOWER(COALESCE(mentor_group, subject_group, department, '')) LIKE ?`,
         [`%${cleanGroup}%`]
       );
-      const mentorsInGroup = await db.all(
-        `SELECT * FROM mentors 
+      const mentorsInGroup = await allCapped(
+        db,
+        `SELECT * FROM mentors
          WHERE LOWER(COALESCE(mentor_group, subject_group, department, '')) LIKE ?`,
         [`%${cleanGroup}%`]
       );
@@ -29,8 +33,7 @@ export async function GET(request: Request) {
     }
 
     const mentorSql = collegeId ? "SELECT * FROM mentors WHERE college_id = ?" : "SELECT * FROM mentors";
-    const mentorParams = collegeId ? [collegeId] : [];
-    const mentors = await db.all(mentorSql, ...mentorParams);
+    const mentors = await allCapped(db, mentorSql, collegeId ? [collegeId] : []);
 
     return NextResponse.json({ success: true, mentors });
   } catch (error: any) {
@@ -40,6 +43,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group } = body;
@@ -51,24 +56,31 @@ export async function POST(request: Request) {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    await db.run(
-      `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, name, cleanEmail, unifiedGroup, avatar, subjects || "", classes || "", college_id || null, unifiedGroup, unifiedGroup
-    );
+    // Profile row, stale-credential sweep and the login must commit together.
+    // Autocommitted, a failure between them leaves a mentor listed in the UI with
+    // no users row, i.e. an account that can never sign in.
+    await db.transaction(async (tx) => {
+      await tx.run(
+        `INSERT INTO mentors (id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, name, cleanEmail, unifiedGroup, avatar, subjects || "", classes || "", college_id || null, unifiedGroup, unifiedGroup
+      );
 
-    // Clean old credentials associated with this email
-    await db.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
+      // Clean old credentials associated with this email
+      await tx.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
 
-    // Create corresponding entry in centralized users table with hashed default password
-    const now = new Date().toISOString();
-    const defaultHashed = hashPassword("password123");
-    await db.run(
-      `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, cleanEmail, defaultHashed, "mentor", id, "Active", now, now]
-    );
+      // Create corresponding entry in centralized users table with hashed default password
+      const now = new Date().toISOString();
+      const defaultHashed = hashPassword(DEFAULT_PASSWORD);
+      await tx.run(
+        `INSERT INTO users (id, email, password_hash, role, reference_id, status, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, cleanEmail, defaultHashed, "mentor", id, "Active", 1, now, now]
+      );
+    });
 
     await syncMentorSubjectGroups(db);
+
+    await sendAccountWelcomeEmail({ to: cleanEmail, recipientName: name, roleLabel: "Faculty Mentor" });
 
     return NextResponse.json({ success: true, message: "Mentor created successfully." });
   } catch (error: any) {
@@ -79,6 +91,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, department, avatar, subjects, classes, college_id, subject_group, mentor_group } = body;
@@ -90,32 +104,36 @@ export async function PUT(request: Request) {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    await db.run(
-      `UPDATE mentors SET name = ?, email = ?, department = ?, avatar = ?, subjects = ?, classes = ?, college_id = ?, subject_group = ?, mentor_group = ? WHERE id = ?`,
-      name, cleanEmail, unifiedGroup, avatar, subjects || "", classes || "", college_id || null, unifiedGroup, unifiedGroup, id
-    );
+    await db.transaction(async (tx) => {
+      await tx.run(
+        `UPDATE mentors SET name = ?, email = ?, department = ?, avatar = ?, subjects = ?, classes = ?, college_id = ?, subject_group = ?, mentor_group = ? WHERE id = ?`,
+        name, cleanEmail, unifiedGroup, avatar, subjects || "", classes || "", college_id || null, unifiedGroup, unifiedGroup, id
+      );
 
-    // Clean old credentials associated with this email (excluding current Mentor ID)
-    await db.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
+      // Clean old credentials associated with this email (excluding current Mentor ID)
+      await tx.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
 
-    // Check existing user to preserve password_hash
-    const existingUser = await db.get("SELECT password_hash FROM users WHERE role = 'mentor' AND reference_id = ?", id);
-    const passHashToKeep = existingUser?.password_hash || hashPassword("password123");
+      // Check existing user to preserve password_hash
+      const existingUser = await tx.get("SELECT password_hash FROM users WHERE role = 'mentor' AND reference_id = ?", id);
+      const passHashToKeep = existingUser?.password_hash || hashPassword(DEFAULT_PASSWORD);
+      const mustChange = existingUser?.password_hash ? 0 : 1;
 
-    // Create or update centralized users table entry
-    const now = new Date().toISOString();
-    await db.run(
-      `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET
-         email = EXCLUDED.email,
-         password_hash = EXCLUDED.password_hash,
-         role = EXCLUDED.role,
-         reference_id = EXCLUDED.reference_id,
-         status = EXCLUDED.status,
-         updated_at = EXCLUDED.updated_at`,
-      [id, cleanEmail, passHashToKeep, "mentor", id, "Active", now, now]
-    );
+      // Create or update centralized users table entry
+      const now = new Date().toISOString();
+      await tx.run(
+        `INSERT INTO users (id, email, password_hash, role, reference_id, status, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           email = EXCLUDED.email,
+           password_hash = EXCLUDED.password_hash,
+           role = EXCLUDED.role,
+           reference_id = EXCLUDED.reference_id,
+           status = EXCLUDED.status,
+           must_change_password = EXCLUDED.must_change_password,
+           updated_at = EXCLUDED.updated_at`,
+        [id, cleanEmail, passHashToKeep, "mentor", id, "Active", mustChange, now, now]
+      );
+    });
 
     await syncMentorSubjectGroups(db);
 
@@ -128,6 +146,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -136,9 +156,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "Missing id" }, { status: 400 });
     }
 
-    // Delete from both users and mentors
-    await db.run(`DELETE FROM users WHERE role = 'mentor' AND reference_id = ?`, id);
-    await db.run(`DELETE FROM mentors WHERE id = ?`, id);
+    // Delete from both users and mentors — as one unit, so a half-delete cannot
+    // leave a login that authenticates to a profile that no longer exists.
+    await db.transaction(async (tx) => {
+      await tx.run(`DELETE FROM users WHERE role = 'mentor' AND reference_id = ?`, id);
+      await tx.run(`DELETE FROM mentors WHERE id = ?`, id);
+    });
 
     return NextResponse.json({ success: true, message: "Mentor deleted successfully." });
   } catch (error: any) {

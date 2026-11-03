@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { X, Layers, AlertCircle, Loader2, ShieldAlert } from "lucide-react";
 import { useApp, Department } from "@/context/AppContext";
+import { Dialog } from "@/components/ui/dialog";
 
 export interface CourseModalProps {
   isOpen: boolean;
@@ -306,8 +307,15 @@ export const CourseModal: React.FC<CourseModalProps> = ({
   const isFormInvalid = !form.name.trim() || !!duplicateNameMatch || !!duplicateCodeMatch || isSubmitting;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fadeIn">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full flex flex-col max-h-[85vh] overflow-hidden">
+    <Dialog
+      open={isOpen}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      ariaLabel={editingCourse ? "Edit course and batch details" : "Add course or department"}
+      overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto animate-fadeIn"
+      panelClassName="max-w-2xl max-h-[85vh] p-0 space-y-0 overflow-hidden flex flex-col rounded-2xl"
+    >
         
         {/* Header */}
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-150 bg-slate-50/80 shrink-0">
@@ -327,6 +335,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close course dialog"
             className="p-1.5 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer text-slate-500 hover:text-slate-800"
           >
             <X className="h-4 w-4" />
@@ -336,7 +345,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold">
           {modalError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-bold flex items-center gap-2 animate-fadeIn">
+            <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-bold flex items-center gap-2 animate-fadeIn">
               <ShieldAlert className="h-4 w-4 shrink-0 text-rose-600" />
               <span>{modalError}</span>
             </div>
@@ -352,6 +361,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
                 </label>
                 <select
                   required
+                  aria-label="Assigned Campus"
                   value={form.college_id}
                   onChange={(e) => setForm(prev => ({ ...prev, college_id: e.target.value }))}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 cursor-pointer"
@@ -372,6 +382,8 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               <input
                 type="text"
                 required
+                aria-label="Course Name"
+                aria-invalid={Boolean(duplicateNameMatch)}
                 placeholder="e.g. B.Sc Mathematics, B.COM, BCA, BBA"
                 value={form.name}
                 onChange={(e) => handleNameChange(e.target.value)}
@@ -384,7 +396,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               
               {/* Duplicate Name Inline Error */}
               {duplicateNameMatch && (
-                <div className="flex items-center gap-1.5 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold rounded-xl mt-1.5 animate-fadeIn">
+                <div role="alert" className="flex items-center gap-1.5 p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold rounded-xl mt-1.5 animate-fadeIn">
                   <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
                   <span>
                     A course named <strong>"{duplicateNameMatch.name}"</strong> already exists in this campus. Duplicate courses are not allowed.
@@ -400,6 +412,8 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               </label>
               <input
                 type="text"
+                aria-label="Course Code (Letters & Numbers e.g. BSCM, CS101, BCOM1)"
+                aria-invalid={Boolean(duplicateCodeMatch)}
                 placeholder="e.g. BSCM, CS101, BCOM1, BCA"
                 value={form.code}
                 onChange={(e) => {
@@ -413,7 +427,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
                 }`}
               />
               {duplicateCodeMatch && (
-                <p className="text-[10px] text-rose-600 font-bold mt-1">
+                <p role="alert" className="text-[10px] text-rose-600 font-bold mt-1">
                   Code "{form.code}" is already used by "{duplicateCodeMatch.name}".
                 </p>
               )}
@@ -425,6 +439,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
                 Course Duration
               </label>
               <select
+                aria-label="Course Duration"
                 value={form.years}
                 onChange={(e) => handleYearsChange(Number(e.target.value))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
@@ -443,6 +458,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
                 Status
               </label>
               <select
+                aria-label="Status"
                 value={form.status}
                 onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value as any }))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
@@ -458,6 +474,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
                 Shift Offering
               </label>
               <select
+                aria-label="Shift Offering"
                 value={form.default_shift}
                 onChange={(e) => setForm(prev => ({ ...prev, default_shift: e.target.value }))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
@@ -477,6 +494,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               </label>
               <input
                 type="date"
+                aria-label="Batch Start Date"
                 value={form.start_date}
                 onChange={(e) => handleStartDateChange(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 text-xs"
@@ -489,6 +507,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               </label>
               <input
                 type="date"
+                aria-label="Batch End Date"
                 value={form.end_date}
                 onChange={(e) => setForm(prev => ({ ...prev, end_date: e.target.value }))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 text-xs"
@@ -502,6 +521,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               </label>
               <input
                 type="text"
+                aria-label="Batch Start Year"
                 placeholder="e.g. 2026"
                 value={form.start_year}
                 onChange={(e) => setForm(prev => ({ ...prev, start_year: e.target.value }))}
@@ -515,6 +535,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               </label>
               <input
                 type="text"
+                aria-label="Batch End Year"
                 placeholder="e.g. 2029"
                 value={form.end_year}
                 onChange={(e) => setForm(prev => ({ ...prev, end_year: e.target.value }))}
@@ -573,6 +594,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
                 Description <span className="text-slate-400 font-normal">(Optional notes)</span>
               </label>
               <textarea
+                aria-label="Description (Optional notes)"
                 placeholder="Enter course summary or notes..."
                 value={form.description}
                 onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
@@ -612,7 +634,6 @@ export const CourseModal: React.FC<CourseModalProps> = ({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Dialog>
   );
 };

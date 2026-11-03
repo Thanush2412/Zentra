@@ -1,5 +1,23 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
+
+/* Tailwind v4: `font-sans` must resolve to the brand face or every
+   `font-sans` wrapper silently renders in the system stack. */
+@theme {
+  --font-sans: var(--font-outfit), var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+
+  /* Mint ramp for L&D free-slot cells (cooler green than emerald) */
+  --color-mint-50: #effdf6;
+  --color-mint-100: #d9fbea;
+  --color-mint-200: #b5f6d7;
+  --color-mint-300: #83edbd;
+  --color-mint-400: #4bdc9d;
+  --color-mint-500: #25c284;
+  --color-mint-600: #159e6b;
+  --color-mint-700: #127e58;
+  --color-mint-800: #126448;
+  --color-mint-900: #10523c;
+  --color-mint-950: #032e1e;
+}
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -36,7 +54,7 @@ body {
   background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 55%, #fff8f2 100%) fixed;
   background-attachment: fixed;
   color: var(--foreground);
-  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* Brand Button & Text Gradient Utilities */
@@ -137,6 +155,77 @@ body {
   animation: pulse-gentle 6s ease-in-out infinite;
 }
 
+/* Entrance animations used by auth banners and modals */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.18s ease-out both;
+}
+
+.animate-scaleUp {
+  animation: scaleUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slideDown {
+  animation: slideDown 0.2s ease-out both;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .animate-fadeIn,
+  .animate-scaleUp,
+  .animate-slideDown,
+  .animate-slide-in-left {
+    animation: none;
+  }
+}
+
 /* Warm Canvas Theme with Modern Architectural Micro-Grid (Brighter & Crisp) */
 .bg-warm-canvas {
   background-color: #fbfcfe !important;
@@ -199,16 +288,6 @@ body {
     transparent 1.2px,
     transparent 14px
   ) !important;
-}
-
-.sidebar-active-item {
-  background-color: #eef2ff !important;
-  background-image: none !important;
-  color: #4f46e5 !important;
-  border: none !important;
-  box-shadow: none !important;
-  transform: none !important;
-  transition: all 0.2s ease-in-out;
 }
 
 /* Floating Sidebar & Header Styles with Glassmorphism & Soft Neomorphism */
@@ -306,16 +385,16 @@ body {
   background-size: 200% auto !important;
   background-position: 0% 50% !important;
   color: #ffffff !important;
+  border: none !important;
   box-shadow: 0 4px 12px rgba(213, 40, 162, 0.22) !important;
+  transform: none !important;
+  transition: all 0.2s ease-in-out;
 }
 .sidebar-active-item * {
   color: #ffffff !important;
 }
 
 /* ── Layout containers use CSS Variables ────────── */
-.floating-sidebar { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
-.floating-header  { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
-
 .floating-sidebar { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
 .floating-header  { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
 
@@ -372,6 +451,12 @@ body {
   scrollbar-width: thin;
 }
 
+/* Same thin scrollbar treatment for panels that opt in explicitly */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+}
+
 /* ─── Touch scroll momentum ─────────────────────────── */
 .scroll-touch {
   -webkit-overflow-scrolling: touch;
@@ -395,7 +480,8 @@ button, a, [role="button"] {
 }
 
 /* ─── Safe-area inset for phones with notches / home bar ─────── */
-.mobile-bottom-nav {
+.mobile-bottom-nav,
+.safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -412,12 +498,6 @@ button, a, [role="button"] {
   .floating-main-panel {
     padding: 0.75rem !important;
     padding-bottom: 5rem !important;
-  }
-  /* Admin page header: switch stacked on xs */
-  .admin-page-header {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 0.5rem !important;
   }
   /* KPI stat card: reduce huge font on xs */
   .admin-kpi-value {
@@ -493,6 +573,52 @@ a:hover .hover-tilt-icon {
   animation: spinSmooth 0.75s linear infinite;
   display: inline-block;
   transform-origin: center;
+}
+
+/* ─── Semantic design tokens ─────────────────────────────────────────────
+   Shared surface/ink/line/status/z-index values for the primitive layer.
+   Tailwind utilities remain the default; these tokens are for primitives
+   and inline styles that cannot express a theme-aware value in a class. */
+:root {
+  --surface-0: #fbfcfe;
+  --surface-1: #ffffff;
+  --surface-2: #f5f7fb;
+  --ink-900: #0f172a;
+  --ink-700: #334155;
+  --ink-500: #64748b;
+  --ink-400: #94a3b8;
+  --line-soft: rgba(226, 232, 240, 0.85);
+  --line-strong: #cbd5e1;
+  --focus-ring: rgba(213, 40, 162, 0.38);
+  --status-success: #059669;
+  --status-warning: #b45309;
+  --status-danger: #dc2626;
+  --status-info: #4f46e5;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --z-toast: 9999;
+  --z-modal: 10000;
+  --z-loading: 10001;
+}
+
+.dark {
+  --surface-0: #0b0f19;
+  --surface-1: #131317;
+  --surface-2: #1e293b;
+  --ink-900: #f8fafc;
+  --ink-700: #cbd5e1;
+  --ink-500: #94a3b8;
+  --ink-400: #64748b;
+  --line-soft: rgba(51, 65, 85, 0.85);
+  --line-strong: #334155;
+  --focus-ring: rgba(244, 168, 99, 0.42);
+  --status-success: #34d399;
+  --status-warning: #fbbf24;
+  --status-danger: #f87171;
+  --status-info: #818cf8;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 
 

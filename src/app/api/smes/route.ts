@@ -1,12 +1,15 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { hashPassword } from "@/lib/auth";
+import { DEFAULT_PASSWORD } from "@/lib/authConfig";
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const group = searchParams.get("group");
@@ -43,6 +46,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, subject } = body;
@@ -59,21 +64,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "An SME with this ID or Email already exists." }, { status: 400 });
     }
 
-    await db.run(
-      "INSERT INTO sme_users (id, name, email, subject) VALUES (?, ?, ?, ?)",
-      [id, name, cleanEmail, subject || null]
-    );
+    // SME row + login must commit together (see POST /api/cm for the failure mode).
+    await db.transaction(async (tx) => {
+      await tx.run(
+        "INSERT INTO sme_users (id, name, email, subject) VALUES (?, ?, ?, ?)",
+        [id, name, cleanEmail, subject || null]
+      );
 
-    // Clean old credentials associated with this email
-    await db.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
+      // Clean old credentials associated with this email
+      await tx.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
 
-    // Create corresponding entry in centralized users table
-    const now = new Date().toISOString();
-    await db.run(
-      `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, cleanEmail, "password123", "sme", id, "Active", now, now]
-    );
+      // Create corresponding entry in centralized users table
+      const now = new Date().toISOString();
+      await tx.run(
+        `INSERT INTO users (id, email, password_hash, role, reference_id, status, must_change_password, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, cleanEmail, hashPassword(DEFAULT_PASSWORD), "sme", id, "Active", 1, now, now]
+      );
+    });
 
     return NextResponse.json({ success: true, message: "SME created successfully." });
   } catch (error: any) {
@@ -84,6 +92,8 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
     const { id, name, email, subject } = body;
@@ -95,32 +105,36 @@ export async function PUT(request: Request) {
     const cleanEmail = email ? email.toLowerCase().trim() : null;
 
     if (name && cleanEmail) {
-      // Full update
-      await db.run(
-        "UPDATE sme_users SET name = ?, email = ?, subject = ? WHERE id = ?",
-        [name, cleanEmail, subject || null, id]
-      );
+      // Full update — profile, stale credentials and login move as one unit.
+      await db.transaction(async (tx) => {
+        await tx.run(
+          "UPDATE sme_users SET name = ?, email = ?, subject = ? WHERE id = ?",
+          [name, cleanEmail, subject || null, id]
+        );
 
-      // Clean old credentials associated with this email (excluding current SME ID)
-      await db.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
+        // Clean old credentials associated with this email (excluding current SME ID)
+        await tx.run("DELETE FROM users WHERE LOWER(email) = ? AND reference_id != ?", [cleanEmail, id]);
 
-      const existingUser = await db.get("SELECT password_hash FROM users WHERE role = 'sme' AND reference_id = ?", id);
-      const passHashToKeep = existingUser?.password_hash || "password123";
+        const existingUser = await tx.get("SELECT password_hash FROM users WHERE role = 'sme' AND reference_id = ?", id);
+        const passHashToKeep = existingUser?.password_hash || hashPassword(DEFAULT_PASSWORD);
+        const mustChange = existingUser?.password_hash ? 0 : 1;
 
-      // Create or update centralized users table entry
-      const now = new Date().toISOString();
-      await db.run(
-        `INSERT INTO users (id, email, password_hash, role, reference_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET
-           email = EXCLUDED.email,
-           password_hash = EXCLUDED.password_hash,
-           role = EXCLUDED.role,
-           reference_id = EXCLUDED.reference_id,
-           status = EXCLUDED.status,
-           updated_at = EXCLUDED.updated_at`,
-        [id, cleanEmail, passHashToKeep, "sme", id, "Active", now, now]
-      );
+        // Create or update centralized users table entry
+        const now = new Date().toISOString();
+        await tx.run(
+          `INSERT INTO users (id, email, password_hash, role, reference_id, status, must_change_password, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+             email = EXCLUDED.email,
+             password_hash = EXCLUDED.password_hash,
+             role = EXCLUDED.role,
+             reference_id = EXCLUDED.reference_id,
+             status = EXCLUDED.status,
+             must_change_password = EXCLUDED.must_change_password,
+             updated_at = EXCLUDED.updated_at`,
+          [id, cleanEmail, passHashToKeep, "sme", id, "Active", mustChange, now, now]
+        );
+      });
     } else {
       // Partial update (just group name mapping)
       await db.run(
@@ -138,6 +152,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
@@ -146,9 +162,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required field: id" }, { status: 400 });
     }
 
-    // Delete from both users and sme_users
-    await db.run("DELETE FROM users WHERE role = 'sme' AND reference_id = ?", id);
-    await db.run("DELETE FROM sme_users WHERE id = ?", id);
+    // Delete from both users and sme_users — as one unit, so a half-delete cannot
+    // leave a login that authenticates to a profile that no longer exists.
+    await db.transaction(async (tx) => {
+      await tx.run("DELETE FROM users WHERE role = 'sme' AND reference_id = ?", id);
+      await tx.run("DELETE FROM sme_users WHERE id = ?", id);
+    });
 
     return NextResponse.json({ success: true, message: "SME deleted successfully." });
   } catch (error: any) {

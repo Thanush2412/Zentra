@@ -1,9 +1,8 @@
-// Pin to Mumbai (bom1) — co-located with DB
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { requireRole, apiAuthErrorResponse } from "@/lib/api-auth";
+import { requireAuth } from "@/lib/authGuard";
 import fs from "fs";
 import path from "path";
 
@@ -25,6 +24,8 @@ function safeCollegeId(id: string): string | null {
 
 export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["admin", "cm", "kam", "mentor"] });
+    if (errorResponse) return errorResponse;
     const { searchParams } = new URL(request.url);
     const collegeId = safeCollegeId(searchParams.get("collegeId") || "");
     if (!collegeId) {

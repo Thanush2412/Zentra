@@ -1,15 +1,15 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { getDb, PostgresDbAdapter } from "@/lib/db";
-import { verifyPassword, hashPassword, needsRehash } from "@/lib/auth";
+import { getDb, PostgresDbAdapter, type QueryFailure } from "@/lib/db";
+import { verifyPassword, hashPassword, needsRehash, looksLikeStoredCredential } from "@/lib/auth";
 import { SUPER_ADMIN_ROLE, roleGrantsSuperAdmin } from "@/lib/superadmin";
-import { createUserSession, revokeSession, buildSessionCookie, buildCsrfCookie, buildClearSessionCookies } from "@/lib/session";
-import { extractSessionToken, normalizeRole } from "@/lib/authGuard";
+import { createUserSession, revokeSession, validateSession, buildSessionCookie, buildCsrfCookie, buildClearSessionCookies } from "@/lib/session";
+import { extractSessionToken, normalizeRole, isAccountDisabled } from "@/lib/authGuard";
+import { after } from "next/server";
 import { ensureMigration } from "@/lib/migrations";
+import { generateId } from "@/lib/id";
 
 /** Profile tables that hold a display name for each role (whitelisted — never user input). */
 const ROLE_PROFILE_TABLES: Record<string, string> = {
@@ -34,6 +34,14 @@ function safeEqual(a: string, b: string): boolean {
   }
 }
 
+/** Escapes LIKE metacharacters so identifier input matches literally. */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+/** One copy for every rejected credential so responses cannot reveal which emails exist. */
+const INVALID_CREDENTIALS_MESSAGE = "Incorrect email or password.";
+
 /**
  * Opt-in break-glass owner account.
  * Only active when SUPER_ADMIN_EMAIL + SUPER_ADMIN_PASSWORD are configured in the
@@ -52,14 +60,25 @@ async function provisionSuperAdmin(db: PostgresDbAdapter, email: string, passwor
   const hashed = hashPassword(password);
   const name = (process.env.SUPER_ADMIN_NAME || "Super Admin").trim();
 
-  const existingProfile = await db.get("SELECT id, name FROM admin_users WHERE LOWER(email) = ?", [email]);
+  // Both probes key off the email, so they leave as one round trip. This only runs
+  // on the cold super-admin provisioning path, but a failed read here decides
+  // whether an existing account gets overwritten, so it must refuse.
+  const provisionFailures: QueryFailure[] = [];
+  const [profileRows, userRows] = await db.multiQuery([
+    { sql: "SELECT id, name FROM admin_users WHERE LOWER(email) = ?", params: [email] },
+    { sql: "SELECT id FROM users WHERE LOWER(email) = ?", params: [email] },
+  ], provisionFailures);
+  if (provisionFailures.length > 0) {
+    throw new Error(`super admin provisioning inputs unreadable: ${provisionFailures[0].error}`);
+  }
+  const existingProfile = profileRows[0];
   const profileId = existingProfile?.id || `admin_${crypto.randomUUID().slice(0, 8)}`;
 
   if (!existingProfile) {
     await db.run("INSERT INTO admin_users (id, name, email) VALUES (?, ?, ?)", [profileId, name, email]);
   }
 
-  const existingUser = await db.get("SELECT id FROM users WHERE LOWER(email) = ?", [email]);
+  const existingUser = userRows[0];
   if (existingUser) {
     await db.run(
       "UPDATE users SET password_hash = ?, role = ?, reference_id = ?, updated_at = ? WHERE id = ?",
@@ -76,7 +95,7 @@ async function provisionSuperAdmin(db: PostgresDbAdapter, email: string, passwor
   return { id: userId, email, password_hash: hashed, role: SUPER_ADMIN_ROLE, reference_id: profileId };
 }
 
-/** Best-effort display name for the header/profile chip. */
+/** The columns of a `users` row the profile lookup below needs. */
 interface LoginUser {
   id?: string;
   role?: string | null;
@@ -84,41 +103,68 @@ interface LoginUser {
   email?: string | null;
 }
 
-async function resolveDisplayName(db: PostgresDbAdapter, user: LoginUser): Promise<string | null> {
+/** Roles whose dashboards are scoped by a college stored on their profile row. */
+const COLLEGE_SCOPED_ROLES = new Set(["cm", "cam", "student", "mentor"]);
+
+/**
+ * Best-effort profile row for the signed-in user: the header display name and, for the
+ * roles that carry one, the college scope. Both used to be their own round trip on the
+ * sign-in path, right after the password was verified.
+ */
+async function resolveProfile(db: PostgresDbAdapter, user: LoginUser): Promise<{ name: string | null; collegeId: string | null }> {
+  const roleKey = String(user.role || "").toLowerCase();
+  const table = ROLE_PROFILE_TABLES[roleKey];
+  if (!table) return { name: null, collegeId: null };
+  const columns = COLLEGE_SCOPED_ROLES.has(roleKey) ? "name, college_id" : "name";
   try {
-    const table = ROLE_PROFILE_TABLES[String(user.role || "").toLowerCase()];
-    if (!table) return null;
     const row = await db.get(
-      `SELECT name FROM ${table} WHERE id = ? OR LOWER(email) = ?`,
+      `SELECT ${columns} FROM ${table} WHERE id = ? OR LOWER(email) = ?`,
       [user.reference_id || user.id, String(user.email || "").toLowerCase()]
     );
-    return row?.name || null;
+    return { name: row?.name || null, collegeId: row?.college_id ?? null };
   } catch {
-    return null;
+    return { name: null, collegeId: null };
+  }
+}
+
+/** Records one sign-in outcome. Awaited on purpose: a fire-and-forget row would be
+ *  frozen with the response and the counter would never fill up. */
+async function noteLoginAttempt(db: PostgresDbAdapter, emailKey: string, ip: string, success: boolean) {
+  try {
+    await ensureMigration("login_attempts");
+    await db.run(
+      "INSERT INTO login_attempts (id, email_key, ip, success, attempted_at) VALUES (?, ?, ?, ?, ?)",
+      [generateId("lattempt"), emailKey, ip, success ? 1 : 0, new Date().toISOString()]
+    );
+  } catch (err) {
+    console.warn("[login] could not record sign-in attempt:", err);
   }
 }
 
 export async function POST(request: Request) {
   try {
     // Normalize legacy DB role tokens before any user lookup.
-    await ensureMigration("cm_role_rename_tokens").catch(() => {});
-    await ensureMigration("lnd_role_rename_tokens").catch(() => {});
+    await ensureMigration("cm_role_rename_tokens").catch(() => { });
+    await ensureMigration("lnd_role_rename_tokens").catch(() => { });
     const db = await getDb();
     const body = await request.json();
 
     if (body.action === "logout") {
-      const { userId } = body;
       const rawToken = extractSessionToken(request);
       if (rawToken) {
-        await revokeSession(db, rawToken, "logout").catch(() => {});
-      }
-      if (userId) {
-        const lastSession = await db.get(
-          "SELECT id FROM login_history WHERE user_id = ? AND logout_time IS NULL ORDER BY login_time DESC LIMIT 1",
-          [userId]
-        );
-        if (lastSession) {
-          await db.run("UPDATE login_history SET logout_time = ? WHERE id = ?", [new Date().toISOString(), lastSession.id]);
+        // Resolve the owner from the session token — never from the request body,
+        // otherwise anyone could forge logout entries in login_history.
+        const sessionRes = await validateSession(db, rawToken).catch(() => null);
+        await revokeSession(db, rawToken, "logout").catch(() => { });
+        const sessionUserId = sessionRes?.isValid ? sessionRes.userId : null;
+        if (sessionUserId) {
+          const lastSession = await db.get(
+            "SELECT id FROM login_history WHERE user_id = ? AND logout_time IS NULL ORDER BY login_time DESC LIMIT 1",
+            [sessionUserId]
+          );
+          if (lastSession) {
+            await db.run("UPDATE login_history SET logout_time = ? WHERE id = ?", [new Date().toISOString(), lastSession.id]);
+          }
         }
       }
       const res = NextResponse.json({ success: true, message: "Logged out successfully." });
@@ -134,11 +180,16 @@ export async function POST(request: Request) {
     }
 
     const lowerEmail = email.toLowerCase().trim();
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "127.0.0.1";
+    const userAgent = request.headers.get("user-agent") || "Web Browser";
+
+    const likeEmailPrefix = `${escapeLike(lowerEmail)}@%`;
+    const likeNameContains = `%${escapeLike(lowerEmail)}%`;
 
     // Query centralized users table by email, reference_id, id, or username prefix
     let user = await db.get(
       "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(reference_id) = ? OR LOWER(id) = ? OR LOWER(email) LIKE ?",
-      [lowerEmail, lowerEmail, lowerEmail, `${lowerEmail}@%`]
+      [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix]
     );
 
     // Opt-in break-glass path — repairs the owner account when env credentials match exactly
@@ -148,20 +199,22 @@ export async function POST(request: Request) {
 
     // Auto-provision user record if present in role tables but missing from centralized users table
     if (!user) {
-      let resolvedEmail = lowerEmail.includes("@") ? lowerEmail : `${lowerEmail}@university.edu`;
+      let resolvedEmail = lowerEmail;
 
       // ── Parallel role lookup — all 5 tables queried in one round-trip ──
+      // mentors/students carry a password_hash; sme_users still has a plaintext
+      // `password`; campus_managers/kam_users keep their credential only in `users`.
       const [cm, mentor, student, kam, sme] = await Promise.all([
         db.get(
           "SELECT id, email FROM campus_managers WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
-          [lowerEmail, lowerEmail, lowerEmail, `${lowerEmail}@%`, `%${lowerEmail}%`]
+          [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix, likeNameContains]
         ),
         db.get(
-          "SELECT id, email FROM mentors WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
-          [lowerEmail, lowerEmail, lowerEmail, `${lowerEmail}@%`, `%${lowerEmail}%`]
+          "SELECT id, email, password_hash FROM mentors WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
+          [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix, likeNameContains]
         ),
         db.get(
-          "SELECT id, email FROM students WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(roll_number) = ? OR LOWER(register_number) = ?",
+          "SELECT id, email, password_hash FROM students WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(roll_number) = ? OR LOWER(register_number) = ?",
           [lowerEmail, lowerEmail, lowerEmail, lowerEmail]
         ),
         db.get(
@@ -169,30 +222,52 @@ export async function POST(request: Request) {
           [lowerEmail, lowerEmail, lowerEmail]
         ),
         db.get(
-          "SELECT id, email FROM sme_users WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ?",
+          "SELECT id, email, password FROM sme_users WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ?",
           [lowerEmail, lowerEmail, lowerEmail]
         )
       ]);
 
       // Priority: CM > Mentor > Student > KAM > SME
-      const resolved = cm       ? { role: "cm",     record: cm }
-                     : mentor  ? { role: "mentor",  record: mentor }
-                     : student ? { role: "student", record: student }
-                     : kam     ? { role: "kam",     record: kam }
-                     : sme     ? { role: "sme",     record: sme }
-                     : null;
+      const resolved = cm ? { role: "cm", record: cm }
+        : mentor ? { role: "mentor", record: mentor }
+          : student ? { role: "student", record: student }
+            : kam ? { role: "kam", record: kam }
+              : sme ? { role: "sme", record: sme }
+                : null;
 
       let foundRole: string | null = null;
       let refId: string | null = null;
+      let storedCredential: string | null = null;
       if (resolved) {
         foundRole = resolved.role;
         refId = resolved.record.id;
         if (resolved.record.email) resolvedEmail = resolved.record.email.toLowerCase();
+        storedCredential = resolved.record.password_hash || resolved.record.password || null;
       }
 
       if (foundRole && refId) {
-        const newHashed = hashPassword(password);
-        const newId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        // The profile row's own hash is the credential. This branch used to hash
+        // whatever password had just been typed and store it as the account's password,
+        // so anyone who knew a roster email signed themselves in on the first try.
+        const stored = String(storedCredential || "");
+        const looksHashed = looksLikeStoredCredential(stored);
+        if (!looksHashed) {
+          await noteLoginAttempt(db, lowerEmail, ip, false);
+          return NextResponse.json(
+            { success: false, message: INVALID_CREDENTIALS_MESSAGE },
+            { status: 401 }
+          );
+        }
+        if (!verifyPassword(password, stored)) {
+          await noteLoginAttempt(db, lowerEmail, ip, false);
+          return NextResponse.json(
+            { success: false, message: INVALID_CREDENTIALS_MESSAGE },
+            { status: 401 }
+          );
+        }
+
+        const newHashed = needsRehash(stored) ? hashPassword(password) : stored;
+        const newId = generateId("user");
         await db.run(
           `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) 
            VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -209,79 +284,89 @@ export async function POST(request: Request) {
     }
 
     if (!user) {
+      await noteLoginAttempt(db, lowerEmail, ip, false);
       return NextResponse.json(
-        { success: false, message: "No account found with this email or ID in the database." },
+        { success: false, message: INVALID_CREDENTIALS_MESSAGE },
         { status: 401 }
       );
     }
 
     // Every account — including the owner account — verifies its stored hash. No bypass.
     if (!user.password_hash) {
+      await noteLoginAttempt(db, lowerEmail, ip, false);
       return NextResponse.json(
-        { success: false, message: "No password is set for this account. Please ask an administrator to reset it." },
+        { success: false, message: INVALID_CREDENTIALS_MESSAGE },
         { status: 401 }
       );
     }
 
     if (!verifyPassword(password, user.password_hash)) {
+      await noteLoginAttempt(db, lowerEmail, ip, false);
       return NextResponse.json(
-        { success: false, message: "Incorrect password. Please check your password and try again." },
+        { success: false, message: INVALID_CREDENTIALS_MESSAGE },
         { status: 401 }
+      );
+    }
+
+    if (isAccountDisabled(user.status)) {
+      return NextResponse.json(
+        { success: false, message: "This account is inactive. Please contact your administrator." },
+        { status: 403 }
       );
     }
 
     // Rehash-on-login: transparently upgrade legacy 1,000-iteration hashes to
     // the current 210,000-iteration format (API_OPTIMIZATION_PLAN item 10).
-    if (needsRehash(String(user.password_hash))) {
-      const newHashed = hashPassword(password);
-      try {
-        await db.run("UPDATE users SET password_hash = ? WHERE id = ?", [newHashed, user.id]);
-      } catch (_) {}
-    }
+    // Deferred with the other post-auth writes below so the ~100ms of PBKDF2 and
+    // the UPDATE never sit on the response path.
+    const needsPwdRehash = needsRehash(String(user.password_hash));
 
     // Super admin is derived purely from the stored role — never from the email address
     const isSuperAdmin = roleGrantsSuperAdmin(user.role);
 
-    // Retrieve college_id if applicable for the role
-    let collegeId = null;
-    try {
-      if (user.role === "cam" || user.role === "cm") {
-        const cm = await db.get("SELECT college_id FROM campus_managers WHERE id = ? OR LOWER(email) = ?", [user.reference_id, user.email?.toLowerCase()]);
-        collegeId = cm ? cm.college_id : null;
-      } else if (user.role === "student") {
-        const student = await db.get("SELECT college_id FROM students WHERE id = ? OR LOWER(email) = ?", [user.reference_id, user.email?.toLowerCase()]);
-        collegeId = student ? student.college_id : null;
-      } else if (user.role === "mentor") {
-        const mentor = await db.get("SELECT college_id FROM mentors WHERE id = ? OR LOWER(email) = ?", [user.reference_id, user.email?.toLowerCase()]);
-        collegeId = mentor ? mentor.college_id : null;
-      }
-    } catch (_) {}
-
-    const userName = await resolveDisplayName(db, user);
+    // College scope and the header display name both live on the role's profile row, so
+    // one read answers both instead of two sequential round trips after the password.
+    const profile = await resolveProfile(db, user);
+    const collegeId = profile.collegeId;
+    const userName = profile.name;
 
     // Check if password change is explicitly enforced
-    const mustChangePassword = user.must_change_password === 1;
+    const mustChangePassword = Boolean(user.must_change_password);
 
     // Client metadata for multi-device auditing (without brittle IP termination)
-    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "127.0.0.1";
-    const userAgent = request.headers.get("user-agent") || "Web Browser";
+    // (ip / userAgent already resolved above, before the throttle check)
 
-    // Record login history and update last_login concurrently without blocking response latency
+    // Login history, last_login and the rehash used to be a bare Promise.all with no
+    // await. Vercel freezes the function the moment the response is returned, so those
+    // writes routinely never ran (and .catch(() => {}) hid it) — the admin's
+    // login-history screen simply lost rows. after() keeps the invocation alive.
     const nowStr = new Date().toISOString();
-    const logId = "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
-    Promise.all([
-      db.run(
-        "INSERT INTO login_history (id, user_id, login_time, ip, device) VALUES (?, ?, ?, ?, ?)",
-        [logId, user.id, nowStr, ip, userAgent]
-      ),
-      db.run("UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.id]),
-      (user.role === 'student' && user.reference_id)
-        ? db.run("UPDATE students SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.reference_id])
-        : Promise.resolve(),
-      (user.role === 'mentor' && user.reference_id)
-        ? db.run("UPDATE mentors SET last_login = ?, updated_at = ? WHERE id = ?", [nowStr, nowStr, user.reference_id])
-        : Promise.resolve()
-    ]).catch(() => {});
+    const logId = generateId("log");
+    const loginWrites: { sql: string; params: any[] }[] = [
+      {
+        sql: "INSERT INTO login_history (id, user_id, login_time, ip, device) VALUES (?, ?, ?, ?, ?)",
+        params: [logId, user.id, nowStr, ip, userAgent],
+      },
+      { sql: "UPDATE users SET last_login = ?, updated_at = ? WHERE id = ?", params: [nowStr, nowStr, user.id] },
+      { sql: "DELETE FROM login_attempts WHERE attempted_at < ?", params: [new Date(Date.now() - 24 * 60 * 60_000).toISOString()] },
+    ];
+    if (needsPwdRehash) {
+      loginWrites.push({ sql: "UPDATE users SET password_hash = ? WHERE id = ?", params: [hashPassword(password), user.id] });
+    }
+    if (user.role === "student" && user.reference_id) {
+      loginWrites.push({ sql: "UPDATE students SET last_login = ?, updated_at = ? WHERE id = ?", params: [nowStr, nowStr, user.reference_id] });
+    }
+    if (user.role === "mentor" && user.reference_id) {
+      loginWrites.push({ sql: "UPDATE mentors SET last_login = ?, updated_at = ? WHERE id = ?", params: [nowStr, nowStr, user.reference_id] });
+    }
+
+    after(async () => {
+      const failures: any[] = [];
+      await db.multiQuery(loginWrites, failures).catch((err: any) => failures.push({ error: err?.message || String(err) }));
+      if (failures.length > 0) {
+        console.warn("[login] post-login writes failed:", failures.map((f: any) => f.error || f.sql).join(" | "));
+      }
+    });
 
     // Create persistent opaque session in DB (storing only SHA-256 hash)
     const { rawToken, csrfToken, expiresAt } = await createUserSession(db, user.id, {

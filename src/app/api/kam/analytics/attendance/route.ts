@@ -1,15 +1,21 @@
-export const preferredRegion = "bom1";
 export const maxDuration = 30;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireKamScope, resolveScopeParams } from "@/lib/kamScope";
+import { getInstitutionDateStrOffset } from "@/lib/localDate";
 
 export async function GET(request: Request) {
   try {
     const db = await getDb();
+    const { scope, errorResponse } = await requireKamScope(request, db);
+    if (errorResponse) return errorResponse;
+
     const { searchParams } = new URL(request.url);
-    const collegeId = searchParams.get("collegeId");
-    const kamId = searchParams.get("kamId");
+    const scoped = resolveScopeParams(scope!, searchParams.get("kamId"), searchParams.get("collegeId"));
+    if (scoped.errorResponse) return scoped.errorResponse;
+    const collegeId = scoped.collegeId;
+    const kamId = scoped.kamId;
     const department = searchParams.get("department");
     const classGroup = searchParams.get("classGroup");
     const startDate = searchParams.get("startDate");
@@ -52,7 +58,10 @@ export async function GET(request: Request) {
       query += " AND sa.dateStr >= ?";
       params.push(startDate);
     } else {
-      query += " AND sa.dateStr >= date('now', '-60 days')";
+      // SQLite's date('now') has no Postgres equivalent, so the default window is
+      // computed here and passed as a bound parameter.
+      query += " AND sa.dateStr >= ?";
+      params.push(getInstitutionDateStrOffset(-60));
     }
     if (endDate) {
       query += " AND sa.dateStr <= ?";

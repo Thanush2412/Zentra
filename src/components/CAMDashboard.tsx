@@ -1,8 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp, Slot, Mentor, Student, Subject, HandoverRequest, ApprovedHandover, StudentAcademicTrackerEntry } from "../context/AppContext";
 import { useToast } from "../context/ToastContext";
+import { apiFetch } from "@/lib/apiFetch";
+import { qk } from "@/lib/queryKeys";
+import { getCurrentAcademicYear } from "@/lib/academicYear";
+import { stableDocRef } from "@/lib/report-export";
+import { ALL_SEMESTERS } from "@/lib/semesters";
+import { generateId } from "@/lib/id";
 import { gsap } from "gsap";
 
 import { Button } from "./Button";
@@ -12,6 +19,9 @@ import { Input } from "./Input";
 import { Select } from "./Select";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Pagination } from "./ui/Pagination";
+import { Combobox } from "./ui/combobox";
+import { Dialog } from "@/components/ui/dialog";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -37,13 +47,31 @@ const CampusAuditManager = dynamic(() => import("./CampusAuditManager").then(mod
   loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Campus E-Audit Studio...</div>
 });
 
-import {
-  ClassObservationView
-} from "./CampusAuditManager";
-import { WeeklyPlanViewer } from "./WeeklyPlanStudio";
-import { CAMPlacementPanel } from "./CAMPlacementPanel";
-import { SkillTrackerPanel } from "./SkillTrackerPanel";
-import { SkillReportPanel } from "./SkillReportPanel";
+// Tab-only panels stay out of the initial CAM bundle until their tab is opened.
+const ClassObservationView = dynamic(() => import("./CampusAuditManager").then(mod => mod.ClassObservationView), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Classroom Observations...</div>
+});
+
+const WeeklyPlanViewer = dynamic(() => import("./WeeklyPlanStudio").then(mod => mod.WeeklyPlanViewer), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Weekly Plan Studio...</div>
+});
+
+const CAMPlacementPanel = dynamic(() => import("./CAMPlacementPanel").then(mod => mod.CAMPlacementPanel), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Placement Panel...</div>
+});
+
+const SkillTrackerPanel = dynamic(() => import("./SkillTrackerPanel").then(mod => mod.SkillTrackerPanel), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Skill Tracker...</div>
+});
+
+const SkillReportPanel = dynamic(() => import("./SkillReportPanel").then(mod => mod.SkillReportPanel), {
+  ssr: false,
+  loading: () => <div className="p-8 text-center text-xs text-slate-400 font-bold">Loading Skill Report...</div>
+});
 
 import {
   Building2, GraduationCap, Users, Calendar, ClipboardList, Sparkles,
@@ -159,7 +187,7 @@ const formatYearWiseRooms = (defaultRoomStr?: string) => {
 };
 
 
-/* ─── Premium Checkmark Dropdown Component ─── */
+/* ─── Premium Checkmark Dropdown Component (Delegated to Reusable Combobox) ─── */
 interface CheckmarkSelectProps {
   label: string;
   value: string;
@@ -177,139 +205,15 @@ const CheckmarkSelect: React.FC<CheckmarkSelectProps> = ({
   searchable = false,
   placeholder = "Select..."
 }) => {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleOutside);
-    };
-  }, [open]);
-
-  const selectedOpt = options.find(o => o.value === value) || options[0];
-
-  const visibleOpts = searchable && query.trim()
-    ? options.filter(o =>
-      o.label.toLowerCase().includes(query.toLowerCase().trim()) ||
-      (o.subtext && o.subtext.toLowerCase().includes(query.toLowerCase().trim()))
-    )
-    : options;
-
   return (
-    <div
-      className={`relative ${open ? "z-[100]" : "z-10"}`}
-      ref={dropdownRef}
-      onMouseDown={e => e.stopPropagation()}
-    >
-      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">
-        {label}
-      </label>
-      <button
-        type="button"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setOpen(prev => !prev);
-          setQuery("");
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen(prev => !prev);
-          setQuery("");
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setOpen(prev => !prev);
-            setQuery("");
-          }
-        }}
-        className="w-full flex items-center justify-between p-2 bg-slate-50 hover:bg-slate-100/90 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none transition-all cursor-pointer text-left focus:ring-1 focus:ring-[#D528A2]"
-      >
-        <span className="truncate pr-1.5">{selectedOpt ? selectedOpt.label : placeholder}</span>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${open ? "rotate-180 text-[#D528A2]" : ""}`} />
-      </button>
-
-      {open && (
-        <div
-          className="absolute left-0 top-full mt-1.5 w-full min-w-[220px] max-w-[340px] bg-white border border-slate-200 rounded-xl shadow-2xl z-[200] overflow-hidden animate-fadeIn"
-          onMouseDown={e => e.stopPropagation()}
-          onClick={e => e.stopPropagation()}
-        >
-          {searchable && options.length > 4 && (
-            <div className="p-2 border-b border-slate-100 bg-slate-50/70" onMouseDown={e => e.stopPropagation()}>
-              <div className="relative">
-                <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder={`Search ${label.toLowerCase()}...`}
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => e.stopPropagation()}
-                  autoFocus
-                  className="w-full pl-7 pr-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md outline-none focus:border-[#D528A2] font-medium text-slate-800"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="max-h-56 overflow-y-auto custom-scrollbar p-1 space-y-0.5" onMouseDown={e => e.stopPropagation()}>
-            {visibleOpts.length === 0 ? (
-              <div className="p-3 text-center text-xs text-slate-400">
-                No matching options
-              </div>
-            ) : (
-              visibleOpts.map(opt => {
-                const isSelected = opt.value === value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onChange(opt.value);
-                      setOpen(false);
-                    }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onChange(opt.value);
-                      setOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-left transition-colors cursor-pointer ${isSelected
-                        ? "bg-[#D528A2]/10 text-[#D528A2] font-black"
-                        : "text-slate-700 hover:bg-slate-50 font-semibold"
-                      }`}
-                  >
-                    <div className="truncate pr-1.5 flex-1 min-w-0">
-                      <div className="truncate">{opt.label}</div>
-                      {opt.subtext && (
-                        <div className="text-[10px] text-slate-400 font-normal truncate">
-                          {opt.subtext}
-                        </div>
-                      )}
-                    </div>
-                    {isSelected && (
-                      <Check className="w-3.5 h-3.5 text-[#D528A2] stroke-[3] shrink-0 ml-1.5" />
-                    )}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+    <Combobox
+      label={label}
+      value={value}
+      onChange={onChange}
+      options={options}
+      searchable={searchable}
+      placeholder={placeholder}
+    />
   );
 };
 
@@ -369,6 +273,15 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
 
   React.useEffect(() => { fetchData(); }, [camId]);
 
+  if (!camId) {
+    return (
+      <div className="py-16 text-center text-sm text-slate-500 space-y-1.5">
+        <IndianRupee className="h-7 w-7 mx-auto text-slate-300" />
+        <p className="font-bold text-slate-700">Fee collection is managed by Campus Managers.</p>
+        <p className="text-xs text-slate-400">The KAM portfolio view does not include fee records.</p>
+      </div>
+    );
+  }
   if (loading) return <div className="py-16 text-center text-sm text-slate-400">Loading fee data…</div>;
   if (!data) return <div className="py-16 text-center text-sm text-rose-400">Failed to load fee data.</div>;
 
@@ -665,6 +578,7 @@ const CAMCampusInsightPanel: React.FC<{
   handoverRequests?: HandoverRequest[];
   approvedHandovers?: ApprovedHandover[];
   studentAcademicTracker?: StudentAcademicTrackerEntry[];
+  readOnly?: boolean;
 }> = ({
   activeCollegeId,
   activeCollegeName,
@@ -675,7 +589,8 @@ const CAMCampusInsightPanel: React.FC<{
   initialStudentAttendance,
   handoverRequests = [],
   approvedHandovers = [],
-  studentAcademicTracker = []
+  studentAcademicTracker = [],
+  readOnly = false
 }) => {
     const { toast } = useToast();
     const [selectedSubTab, setSelectedSubTab] = useState<
@@ -683,33 +598,28 @@ const CAMCampusInsightPanel: React.FC<{
     >("attendance");
 
     // ─── Live Classroom Observations ───
-    const [observations, setObservations] = useState<any[]>([]);
-    const [observationsLoading, setObservationsLoading] = useState<boolean>(false);
-    const [observationsError, setObservationsError] = useState<string>("");
     const [showObsForm, setShowObsForm] = useState<boolean>(false);
     const [obsSaving, setObsSaving] = useState<boolean>(false);
     const [obsDetail, setObsDetail] = useState<any | null>(null);
 
-    const fetchObservations = async () => {
-      setObservationsLoading(true);
-      setObservationsError("");
-      try {
-        const res = await fetch(`/api/audit/observations?college=${encodeURIComponent(activeCollegeName || "")}`);
-        const data = await res.json();
-        if (data.success) setObservations(data.observations || []);
-        else setObservationsError(data.message || "Failed to load observations");
-      } catch (e: any) {
-        setObservationsError("Network error while loading observations");
-      } finally {
-        setObservationsLoading(false);
-      }
-    };
+    const observationsQuery = useQuery({
+      queryKey: qk.observations(activeCollegeName || "all"),
+      enabled: selectedSubTab === "observations",
+      queryFn: async () => {
+        const data = await apiFetch(`/api/audit/observations?college=${encodeURIComponent(activeCollegeName || "")}`);
+        if (!data?.success) throw new Error(data?.message || "Failed to load observations");
+        return (data.observations || []) as any[];
+      },
+    });
+    const observations = observationsQuery.data || [];
+    const observationsLoading = observationsQuery.isFetching;
+    const observationsError = observationsQuery.isError
+      ? (observationsQuery.error as Error)?.message || "Failed to load observations"
+      : "";
+    const fetchObservations = () => observationsQuery.refetch();
 
     // ─── Live Mentor NPS & Student Feedback ───
-    const [mentorNps, setMentorNps] = useState<any | null>(null);
-    const [mentorNpsLoading, setMentorNpsLoading] = useState<boolean>(false);
     const [mentorNpsMonth, setMentorNpsMonth] = useState<string>("all");
-    const [mentorNpsError, setMentorNpsError] = useState<string>("");
 
     // ─── Interactive Detail Modal States ───
     const [selectedMentorNpsRow, setSelectedMentorNpsRow] = useState<any | null>(null);
@@ -717,75 +627,72 @@ const CAMCampusInsightPanel: React.FC<{
     const [showNpsHistoryModal, setShowNpsHistoryModal] = useState<boolean>(false);
     const [selectedDemoRecord, setSelectedDemoRecord] = useState<any | null>(null);
 
-    const fetchMentorNps = async (month = mentorNpsMonth) => {
-      if (!activeCollegeName) return;
-      setMentorNpsLoading(true);
-      setMentorNpsError("");
-      try {
-        const res = await fetch(`/api/audit/mentor-nps?college=${encodeURIComponent(activeCollegeName)}&month=${encodeURIComponent(month)}`);
-        const data = await res.json();
-        if (data.success) setMentorNps(data);
-        else setMentorNpsError(data.message || "Failed to load Mentor NPS");
-      } catch (e: any) {
-        setMentorNpsError("Network error while loading Mentor NPS");
-      } finally {
-        setMentorNpsLoading(false);
+    const mentorNpsQuery = useQuery({
+      queryKey: qk.mentorNps(activeCollegeName || "all", mentorNpsMonth),
+      enabled: selectedSubTab === "mentor_nps" && !!activeCollegeName,
+      queryFn: async () => {
+        const data = await apiFetch(`/api/audit/mentor-nps?college=${encodeURIComponent(activeCollegeName)}&month=${encodeURIComponent(mentorNpsMonth)}`);
+        if (!data?.success) throw new Error(data?.message || "Failed to load Mentor NPS");
+        return data as any;
+      },
+      placeholderData: (prev) => prev,
+    });
+    const mentorNps = mentorNpsQuery.data ?? null;
+    const mentorNpsLoading = mentorNpsQuery.isFetching;
+    const mentorNpsError = mentorNpsQuery.isError
+      ? (mentorNpsQuery.error as Error)?.message || "Failed to load Mentor NPS"
+      : "";
+    const fetchMentorNps = (month = mentorNpsMonth) => {
+      if (month !== mentorNpsMonth) {
+        setMentorNpsMonth(month);
+        return Promise.resolve();
       }
+      return mentorNpsQuery.refetch();
     };
 
     // ─── Live Client NPS ───
-    const [clientNps, setClientNps] = useState<any | null>(null);
-    const [clientNpsLoading, setClientNpsLoading] = useState<boolean>(false);
-    const [clientNpsError, setClientNpsError] = useState<string>("");
-
-    const fetchClientNps = async () => {
-      setClientNpsLoading(true);
-      setClientNpsError("");
-      try {
-        const res = await fetch(`/api/audit/client-nps?college=${encodeURIComponent(activeCollegeName || "")}`);
-        const data = await res.json();
-        if (data.success) setClientNps(data.summary);
-        else setClientNpsError(data.message || "Failed to load Client NPS");
-      } catch (e: any) {
-        setClientNpsError("Network error while loading Client NPS");
-      } finally {
-        setClientNpsLoading(false);
-      }
-    };
+    const clientNpsQuery = useQuery({
+      queryKey: qk.clientNps(activeCollegeName || "all"),
+      enabled: selectedSubTab === "client_nps",
+      queryFn: async () => {
+        const data = await apiFetch(`/api/audit/client-nps?college=${encodeURIComponent(activeCollegeName || "")}`);
+        if (!data?.success) throw new Error(data?.message || "Failed to load Client NPS");
+        return data.summary ?? null;
+      },
+    });
+    const clientNps = clientNpsQuery.data ?? null;
+    const clientNpsLoading = clientNpsQuery.isFetching;
+    const clientNpsError = clientNpsQuery.isError
+      ? (clientNpsQuery.error as Error)?.message || "Failed to load Client NPS"
+      : "";
+    const fetchClientNps = () => clientNpsQuery.refetch();
 
     // ─── Live Placement PMS Data ───
-    const [placementData, setPlacementData] = useState<any | null>(null);
-    const [placementLoading, setPlacementLoading] = useState<boolean>(false);
-    const [placementError, setPlacementError] = useState<string>("");
     const [placementPassingYear, setPlacementPassingYear] = useState<string>("all");
     const [placementDegree, setPlacementDegree] = useState<string>("all");
     const [placementArrearFilter, setPlacementArrearFilter] = useState<string>("all");
     const [placementSearch, setPlacementSearch] = useState<string>("");
 
-    const fetchPlacementData = async (college = activeCollegeName, year = placementPassingYear, degree = placementDegree) => {
-      if (!college) return;
-      setPlacementLoading(true);
-      setPlacementError("");
-      try {
-        const q = `/api/audit/placement?college=${encodeURIComponent(college)}&passingYear=${encodeURIComponent(year)}&degree=${encodeURIComponent(degree)}`;
-        const res = await fetch(q);
-        const data = await res.json();
-        if (data.success) {
-          setPlacementData(data);
-        } else {
-          setPlacementError(data.message || "Failed to load placement data");
-        }
-      } catch (e: any) {
-        setPlacementError("Network error while loading placement data");
-      } finally {
-        setPlacementLoading(false);
-      }
-    };
+    const placementQuery = useQuery({
+      queryKey: qk.placement(activeCollegeName || "all", placementPassingYear, placementDegree),
+      enabled: selectedSubTab === "placement" && !!activeCollegeName,
+      queryFn: async () => {
+        const data = await apiFetch(
+          `/api/audit/placement?college=${encodeURIComponent(activeCollegeName)}&passingYear=${encodeURIComponent(placementPassingYear)}&degree=${encodeURIComponent(placementDegree)}`
+        );
+        if (!data?.success) throw new Error(data?.message || "Failed to load placement data");
+        return data as any;
+      },
+      placeholderData: (prev) => prev,
+    });
+    const placementData = placementQuery.data ?? null;
+    const placementLoading = placementQuery.isFetching;
+    const placementError = placementQuery.isError
+      ? (placementQuery.error as Error)?.message || "Failed to load placement data"
+      : "";
+    const fetchPlacementData = () => placementQuery.refetch();
 
     // ─── Live Student Achievements & Honors ───
-    const [campusAchievements, setCampusAchievements] = useState<any[]>([]);
-    const [achievementsLoading, setAchievementsLoading] = useState<boolean>(false);
-    const [achievementsError, setAchievementsError] = useState<string>("");
     const [achCategoryFilter, setAchCategoryFilter] = useState<string>("all");
     const [achBadgeFilter, setAchBadgeFilter] = useState<string>("all");
     const [achLevelFilter, setAchLevelFilter] = useState<string>("all");
@@ -793,43 +700,21 @@ const CAMCampusInsightPanel: React.FC<{
     const [selectedAchDetail, setSelectedAchDetail] = useState<any | null>(null);
     const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<string | null>(null);
 
-    const fetchCampusAchievements = async () => {
-      setAchievementsLoading(true);
-      setAchievementsError("");
-      try {
-        const collegeParam = activeCollegeId || "";
-        const res = await fetch(`/api/achievements?collegeId=${encodeURIComponent(collegeParam)}`);
-        const data = await res.json();
-        if (data.success) {
-          setCampusAchievements(data.records || []);
-        } else {
-          setAchievementsError(data.error || "Failed to load achievements");
-        }
-      } catch (e: any) {
-        setAchievementsError("Network error while loading achievements");
-      } finally {
-        setAchievementsLoading(false);
-      }
-    };
-
-    // Lazy-load datasets when their sub-tab is opened
-    useEffect(() => {
-      if (selectedSubTab === "observations" && observations.length === 0 && !observationsLoading) {
-        fetchObservations();
-      }
-      if (selectedSubTab === "mentor_nps" && !mentorNps && !mentorNpsLoading) {
-        fetchMentorNps();
-      }
-      if (selectedSubTab === "client_nps" && !clientNps && !clientNpsLoading) {
-        fetchClientNps();
-      }
-      if (selectedSubTab === "placement" && !placementData && !placementLoading) {
-        fetchPlacementData();
-      }
-      if (selectedSubTab === "achievements" && campusAchievements.length === 0 && !achievementsLoading) {
-        fetchCampusAchievements();
-      }
-    }, [selectedSubTab, activeCollegeName, activeCollegeId]);
+    const achievementsQuery = useQuery({
+      queryKey: qk.achievements(activeCollegeId || "all"),
+      enabled: selectedSubTab === "achievements",
+      queryFn: async () => {
+        const data = await apiFetch(`/api/achievements?collegeId=${encodeURIComponent(activeCollegeId || "")}`);
+        if (!data?.success) throw new Error(data?.error || "Failed to load achievements");
+        return (data.records || []) as any[];
+      },
+    });
+    const campusAchievements = achievementsQuery.data || [];
+    const achievementsLoading = achievementsQuery.isFetching;
+    const achievementsError = achievementsQuery.isError
+      ? (achievementsQuery.error as Error)?.message || "Failed to load achievements"
+      : "";
+    const fetchCampusAchievements = () => achievementsQuery.refetch();
 
     const npsColor = (idx: number | null) =>
       idx === null ? "text-slate-400" : idx >= 50 ? "text-emerald-600" : idx >= 0 ? "text-amber-500" : "text-rose-600";
@@ -879,6 +764,7 @@ const CAMCampusInsightPanel: React.FC<{
     const [ticketCampusScope, setTicketCampusScope] = useState<"all" | "campus">("campus");
     const [ticketAttachmentFilter, setTicketAttachmentFilter] = useState<"all" | "with_image" | "no_image">("all");
     const [ticketSortBy, setTicketSortBy] = useState<"date_desc" | "date_asc" | "name_asc" | "status" | "priority">("date_desc");
+    const [ticketPage, setTicketPage] = useState(0);
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
     const [previewImageTitle, setPreviewImageTitle] = useState<string>("");
 
@@ -914,32 +800,25 @@ const CAMCampusInsightPanel: React.FC<{
         .catch(() => { });
     }, [activeCollegeId, initialStudentAttendance]);
 
-    // Fetch campus tickets directly from Supabase Cloud Database REST API
+    // Fetch campus tickets through the authenticated API, which scopes rows to the caller's campus
     const fetchCampusTickets = useCallback(async () => {
       setTicketsLoading(true);
-      const SUPABASE_URL = "https://scuvqabxqqtvibjutoyj.supabase.co";
-      const SUPABASE_ANON_KEY = "sb_publishable_wptvdh6rVvEy2uSppa4Ckw_ozPuC6L4";
-
       try {
-        // Fetch comprehensive tickets dataset with all columns including image_url and notes
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/tickets?select=*&order=created_at.desc&limit=2500`, {
-          headers: {
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
-          }
-        });
+        const res = await fetch(`/api/tickets?collegeId=${encodeURIComponent(activeCollegeId || "all")}`);
         if (res.ok) {
-          const allData = await res.json();
-          if (Array.isArray(allData)) {
-            setAllRawTickets(allData);
+          const json = await res.json();
+          if (json?.success && Array.isArray(json.tickets)) {
+            setAllRawTickets(json.tickets);
           }
+        } else {
+          setAllRawTickets([]);
         }
       } catch (err) {
         console.error("Error fetching campus tickets:", err);
       } finally {
         setTicketsLoading(false);
       }
-    }, []);
+    }, [activeCollegeId]);
 
     useEffect(() => {
       fetchCampusTickets();
@@ -948,7 +827,7 @@ const CAMCampusInsightPanel: React.FC<{
     // Scoped Campus Tickets based on Active College and Scope Selector
     const campusTickets = useMemo(() => {
       if (!allRawTickets || allRawTickets.length === 0) return [];
-      const isGlobal = !activeCollegeName || activeCollegeName === "All Campuses" || activeCollegeName === "All Colleges" || activeCollegeName.toLowerCase() === "all";
+      const isGlobal = activeCollegeId === "all" || !activeCollegeName || activeCollegeName === "All Campuses" || activeCollegeName === "All Colleges" || activeCollegeName.toLowerCase() === "all";
       if (ticketCampusScope === "all" || isGlobal) {
         return allRawTickets;
       }
@@ -957,7 +836,7 @@ const CAMCampusInsightPanel: React.FC<{
         const col = (t.college || "").toLowerCase().trim();
         return col.includes(cleanName) || cleanName.includes(col);
       });
-    }, [allRawTickets, ticketCampusScope, activeCollegeName]);
+    }, [allRawTickets, ticketCampusScope, activeCollegeName, activeCollegeId]);
 
     // Distinct Class Groups / Cohorts in Campus
     const campusCohorts = useMemo(() => {
@@ -1009,45 +888,39 @@ const CAMCampusInsightPanel: React.FC<{
       return s === "progress" || s === "in_progress" || s === "under_review" || s === "review";
     }, []);
 
-    // Live Ticket Status Updater (Supabase REST PATCH)
+    // Live Ticket Status Updater (authenticated API, campus-scoped)
     const updateTicketStatus = useCallback(async (ticketId: string, newStatus: string, notes: string) => {
-      setIsSubmittingTicketUpdate(true);
-      const SUPABASE_URL = "https://scuvqabxqqtvibjutoyj.supabase.co";
-      const SUPABASE_ANON_KEY = "sb_publishable_wptvdh6rVvEy2uSppa4Ckw_ozPuC6L4";
-      const nowIso = new Date().toISOString();
-      const payload: any = {
-        status: newStatus,
-        admin_note: notes || undefined,
-        updated_at: nowIso
-      };
-      if (newStatus === "resolved") {
-        payload.closed_by = "Campus Manager";
-        payload.closed_at = nowIso;
+      if (readOnly) {
+        toast("Read-only portfolio view — ticket updates are disabled.", "warning");
+        return;
       }
+      setIsSubmittingTicketUpdate(true);
       try {
-        await fetch(`${SUPABASE_URL}/rest/v1/tickets?id=eq.${encodeURIComponent(ticketId)}`, {
+        const res = await fetch("/api/tickets", {
           method: "PATCH",
-          headers: {
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-            "Content-Type": "application/json",
-            "Prefer": "return=representation"
-          },
-          body: JSON.stringify(payload)
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: ticketId, status: newStatus, adminNote: notes })
         });
-        setAllRawTickets(prev => prev.map(t => t.id === ticketId ? { ...t, ...payload } : t));
+        if (!res.ok) {
+          const json = await res.json().catch(() => null);
+          throw new Error(json?.message || `Could not update ticket #${ticketId} (HTTP ${res.status})`);
+        }
+        const json = await res.json();
+        const updated = Array.isArray(json?.tickets) ? json.tickets[0] : null;
+        if (updated) {
+          setAllRawTickets(prev => prev.map(t => t.id === ticketId ? { ...t, ...updated } : t));
+        }
         toast(`Ticket #${ticketId} updated to ${newStatus.toUpperCase()}!`, "success");
         setTicketUpdating(null);
         setResolutionNotes("");
       } catch (err: any) {
-        setAllRawTickets(prev => prev.map(t => t.id === ticketId ? { ...t, ...payload } : t));
-        toast(`Ticket status updated locally.`, "info");
+        toast(err?.message || `Could not update ticket #${ticketId}.`, "error");
         setTicketUpdating(null);
         setResolutionNotes("");
       } finally {
         setIsSubmittingTicketUpdate(false);
       }
-    }, [toast]);
+    }, [toast, readOnly]);
 
     // Copy Parent Notice Generator
     const copyParentAlert = useCallback((student: any) => {
@@ -1345,7 +1218,8 @@ const CAMCampusInsightPanel: React.FC<{
         return;
       }
 
-      const docId = `AUD-${(activeCollegeName || "CM").replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+      // Deterministic so two exports of the same audit carry the same document number.
+      const docId = `AUD-${(activeCollegeName || "CM").replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${new Date().getFullYear()}-${stableDocRef([title, subtitle, headers, rows, options?.kpis || []])}`;
 
       const formatCellForPDF = (cell: any): string => {
         if (cell === null || cell === undefined || cell === "") return '<span style="color:#94a3b8;">—</span>';
@@ -2552,6 +2426,19 @@ const CAMCampusInsightPanel: React.FC<{
 
       return sorted;
     }, [campusTickets, selectedTicketCategory, ticketStatusFilter, ticketDeptFilter, ticketAttachmentFilter, ticketPriorityFilter, deferredSearchQuery, ticketSortBy, isResolvedTicket, isInProgressTicket]);
+
+    // The ticket ledger can hold thousands of rows — render one page at a time.
+    const TICKETS_PER_PAGE = 100;
+    const ticketPageCount = Math.max(1, Math.ceil(filteredTickets.length / TICKETS_PER_PAGE));
+    const ticketSafePage = Math.min(ticketPage, ticketPageCount - 1);
+    const paginatedTickets = filteredTickets.slice(
+      ticketSafePage * TICKETS_PER_PAGE,
+      (ticketSafePage + 1) * TICKETS_PER_PAGE
+    );
+
+    useEffect(() => {
+      setTicketPage(0);
+    }, [selectedTicketCategory, ticketStatusFilter, ticketDeptFilter, ticketAttachmentFilter, ticketPriorityFilter, deferredSearchQuery, ticketSortBy]);
 
     // ─────────────────────────────────────────────────────────────────────────────
     // REPORT 6: Semester Exam Eligibility & Hall Ticket Clearance Auditor
@@ -4065,7 +3952,7 @@ const CAMCampusInsightPanel: React.FC<{
 
               {/* Cohort Selector (Attendance) */}
               {selectedSubTab === "attendance" && (
-                <select
+                <select aria-label="Cohort"
                   value={selectedCohort}
                   onChange={e => setSelectedCohort(e.target.value)}
                   className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4080,7 +3967,7 @@ const CAMCampusInsightPanel: React.FC<{
               {/* Attendance Severity Filter & Sort */}
               {selectedSubTab === "attendance" && (
                 <>
-                  <select
+                  <select aria-label="Shortage tier filter"
                     value={attendanceSeverityFilter}
                     onChange={e => setAttendanceSeverityFilter(e.target.value as any)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4089,7 +3976,7 @@ const CAMCampusInsightPanel: React.FC<{
                     <option value="critical">Critical (&lt;65%) Only</option>
                     <option value="warning">Warning (65-74%) Only</option>
                   </select>
-                  <select
+                  <select aria-label="Sort attendance by"
                     value={attendanceSortBy}
                     onChange={e => setAttendanceSortBy(e.target.value as any)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4105,7 +3992,7 @@ const CAMCampusInsightPanel: React.FC<{
               {/* Ticket Category, Status, & Priority Selectors */}
               {selectedSubTab === "tickets" && (
                 <>
-                  <select
+                  <select aria-label="Ticket category filter"
                     value={selectedTicketCategory}
                     onChange={e => setSelectedTicketCategory(e.target.value)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4115,7 +4002,7 @@ const CAMCampusInsightPanel: React.FC<{
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
-                  <select
+                  <select aria-label="Ticket status filter"
                     value={ticketStatusFilter}
                     onChange={e => setTicketStatusFilter(e.target.value as any)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4125,7 +4012,7 @@ const CAMCampusInsightPanel: React.FC<{
                     <option value="progress">In Progress</option>
                     <option value="resolved">Resolved</option>
                   </select>
-                  <select
+                  <select aria-label="Ticket priority filter"
                     value={ticketPriorityFilter}
                     onChange={e => setTicketPriorityFilter(e.target.value)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4142,7 +4029,7 @@ const CAMCampusInsightPanel: React.FC<{
               {/* Faculty Workload Department & Status Selectors */}
               {selectedSubTab === "workload" && (
                 <>
-                  <select
+                  <select aria-label="Workload filter"
                     value={workloadStatusFilter}
                     onChange={e => setWorkloadStatusFilter(e.target.value as any)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4153,7 +4040,7 @@ const CAMCampusInsightPanel: React.FC<{
                     <option value="underload">Underload (&lt;16h)</option>
                   </select>
                   {facultyDepartments.length > 0 && (
-                    <select
+                    <select aria-label="Department filter"
                       value={facultyDeptFilter}
                       onChange={e => setFacultyDeptFilter(e.target.value)}
                       className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4169,7 +4056,7 @@ const CAMCampusInsightPanel: React.FC<{
 
               {/* Syllabus Pace Selector */}
               {selectedSubTab === "syllabus" && (
-                <select
+                <select aria-label="Syllabus pace filter"
                   value={syllabusPaceFilter}
                   onChange={e => setSyllabusPaceFilter(e.target.value as any)}
                   className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4183,7 +4070,7 @@ const CAMCampusInsightPanel: React.FC<{
 
               {/* Demo Status Selector */}
               {selectedSubTab === "demos" && (
-                <select
+                <select aria-label="Demo status filter"
                   value={demoStatusFilter}
                   onChange={e => setDemoStatusFilter(e.target.value as any)}
                   className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4198,7 +4085,7 @@ const CAMCampusInsightPanel: React.FC<{
               {/* Achievements Selectors */}
               {selectedSubTab === "achievements" && (
                 <>
-                  <select
+                  <select aria-label="Achievement category filter"
                     value={achCategoryFilter}
                     onChange={e => setAchCategoryFilter(e.target.value)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4214,7 +4101,7 @@ const CAMCampusInsightPanel: React.FC<{
                     <option value="Other Honors">Other Honors</option>
                   </select>
 
-                  <select
+                  <select aria-label="Achievement badge filter"
                     value={achBadgeFilter}
                     onChange={e => setAchBadgeFilter(e.target.value)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4231,7 +4118,7 @@ const CAMCampusInsightPanel: React.FC<{
                     <option value="Participation">Participation</option>
                   </select>
 
-                  <select
+                  <select aria-label="Achievement level filter"
                     value={achLevelFilter}
                     onChange={e => setAchLevelFilter(e.target.value)}
                     className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -4260,7 +4147,7 @@ const CAMCampusInsightPanel: React.FC<{
               {/* Mentor NPS Month Filter */}
               {selectedSubTab === "mentor_nps" && (
                 <>
-                  <select
+                  <select aria-label="NPS month filter"
                     value={mentorNpsMonth}
                     onChange={e => {
                       setMentorNpsMonth(e.target.value);
@@ -4541,36 +4428,36 @@ const CAMCampusInsightPanel: React.FC<{
 
             {/* Full Interactive Table */}
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3">S.No</th>
-                    <th className="p-3">Student Name</th>
-                    <th className="p-3">Register No</th>
-                    <th className="p-3">Department</th>
-                    <th className="p-3">Class Group</th>
-                    <th className="p-3 text-center">Conducted</th>
-                    <th className="p-3 text-center">Present / OD</th>
-                    <th className="p-3 text-center">Absent</th>
-                    <th className="p-3 text-right">Attendance %</th>
-                    <th className="p-3 text-right">Severity Status</th>
-                    <th className="p-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full text-left text-xs border-collapse">
+                <TableHeader className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <TableRow>
+                    <TableHead className="p-3">S.No</TableHead>
+                    <TableHead className="p-3">Student Name</TableHead>
+                    <TableHead className="p-3">Register No</TableHead>
+                    <TableHead className="p-3">Department</TableHead>
+                    <TableHead className="p-3">Class Group</TableHead>
+                    <TableHead className="p-3 text-center">Conducted</TableHead>
+                    <TableHead className="p-3 text-center">Present / OD</TableHead>
+                    <TableHead className="p-3 text-center">Absent</TableHead>
+                    <TableHead className="p-3 text-right">Attendance %</TableHead>
+                    <TableHead className="p-3 text-right">Severity Status</TableHead>
+                    <TableHead className="p-3 text-center">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {attendanceShortageData.map((s, idx) => {
                     const recoverySessions = Math.max(1, Math.ceil((0.75 * s.conducted - s.present) / 0.25));
                     return (
-                      <tr key={`${s.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="p-3 font-mono text-slate-400">{idx + 1}</td>
-                        <td className="p-3 font-bold text-slate-900">{s.name}</td>
-                        <td className="p-3 font-mono text-slate-600">{s.regNo}</td>
-                        <td className="p-3 text-slate-600">{s.dept}</td>
-                        <td className="p-3 text-slate-500 font-medium">{s.classGroup}</td>
-                        <td className="p-3 text-center font-mono font-bold text-slate-700">{s.conducted}</td>
-                        <td className="p-3 text-center font-mono font-bold text-emerald-700">{s.present}</td>
-                        <td className="p-3 text-center font-mono font-bold text-rose-700">{s.absent}</td>
-                        <td className="p-3 text-right">
+                      <TableRow key={`${s.id}_${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                        <TableCell className="p-3 font-mono text-slate-400">{idx + 1}</TableCell>
+                        <TableCell className="p-3 font-bold text-slate-900">{s.name}</TableCell>
+                        <TableCell className="p-3 font-mono text-slate-600">{s.regNo}</TableCell>
+                        <TableCell className="p-3 text-slate-600">{s.dept}</TableCell>
+                        <TableCell className="p-3 text-slate-500 font-medium">{s.classGroup}</TableCell>
+                        <TableCell className="p-3 text-center font-mono font-bold text-slate-700">{s.conducted}</TableCell>
+                        <TableCell className="p-3 text-center font-mono font-bold text-emerald-700">{s.present}</TableCell>
+                        <TableCell className="p-3 text-center font-mono font-bold text-rose-700">{s.absent}</TableCell>
+                        <TableCell className="p-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <div className="w-14 h-1.5 rounded-full bg-slate-100 overflow-hidden hidden sm:block">
                               <div
@@ -4580,8 +4467,8 @@ const CAMCampusInsightPanel: React.FC<{
                             </div>
                             <span className="font-mono font-black text-rose-700 text-sm">{s.percentage}%</span>
                           </div>
-                        </td>
-                        <td className="p-3 text-right">
+                        </TableCell>
+                        <TableCell className="p-3 text-right">
                           <div className="flex flex-col items-end gap-1">
                             <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${s.percentage < 65 ? "bg-rose-100 text-rose-800 border border-rose-200" : "bg-amber-100 text-amber-800 border border-amber-200"
                               }`}>
@@ -4591,8 +4478,8 @@ const CAMCampusInsightPanel: React.FC<{
                               Need <strong className="text-rose-700 font-bold">{recoverySessions}</strong> sess. to 75%
                             </span>
                           </div>
-                        </td>
-                        <td className="p-3 text-center">
+                        </TableCell>
+                        <TableCell className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
@@ -4611,20 +4498,20 @@ const CAMCampusInsightPanel: React.FC<{
                               View
                             </button>
                           </div>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
                   {attendanceShortageData.length === 0 && (
-                    <tr>
-                      <td colSpan={11} className="p-8 text-center text-emerald-700 font-bold bg-emerald-50/30">
+                    <TableRow>
+                      <TableCell colSpan={11} className="p-8 text-center text-emerald-700 font-bold bg-emerald-50/30">
                         <CheckCircle className="w-6 h-6 mx-auto mb-1.5 text-emerald-600" />
                         All students currently satisfy the 75% attendance requirement!
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}
@@ -4651,6 +4538,7 @@ const CAMCampusInsightPanel: React.FC<{
               setSaving={setObsSaving}
               detail={obsDetail}
               setDetail={setObsDetail}
+              readOnly={readOnly}
             />
           </div>
         )}
@@ -4682,7 +4570,7 @@ const CAMCampusInsightPanel: React.FC<{
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                <select
+                <select aria-label="NPS month filter"
                   value={mentorNpsMonth}
                   onChange={(e) => {
                     setMentorNpsMonth(e.target.value);
@@ -5355,12 +5243,12 @@ const CAMCampusInsightPanel: React.FC<{
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
-                        <th className="p-2 text-left bg-slate-100/70 rounded-tl-lg">Department (Click to filter)</th>
+                  <Table className="w-full text-xs border-collapse">
+                    <TableHeader>
+                      <TableRow className="border-b border-slate-200 text-[10px] font-black uppercase text-slate-500">
+                        <TableHead className="p-2 text-left bg-slate-100/70 rounded-tl-lg">Department (Click to filter)</TableHead>
                         {ticketHeatmapData.categories.map(cat => (
-                          <th
+                          <TableHead
                             key={cat}
                             onClick={() => setSelectedTicketCategory(selectedTicketCategory === cat ? "all" : cat)}
                             className={`p-2 text-center cursor-pointer transition-colors hover:text-indigo-600 ${selectedTicketCategory === cat ? "text-indigo-600 bg-indigo-50 font-black" : ""
@@ -5368,25 +5256,25 @@ const CAMCampusInsightPanel: React.FC<{
                             title={`Click to filter table by category: ${cat}`}
                           >
                             {cat}
-                          </th>
+                          </TableHead>
                         ))}
-                        <th className="p-2 text-right bg-slate-100/70 rounded-tr-lg">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-150">
+                        <TableHead className="p-2 text-right bg-slate-100/70 rounded-tr-lg">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-slate-150">
                       {ticketHeatmapData.matrix.map(row => {
                         const rowTotal = ticketHeatmapData.categories.reduce((acc, cat) => acc + (row.counts[cat] || 0), 0);
                         const isRowSelected = ticketDeptFilter.toLowerCase() === row.dept.toLowerCase();
                         return (
-                          <tr key={row.dept} className={`transition-colors ${isRowSelected ? "bg-indigo-50/60" : "hover:bg-slate-100/40"}`}>
-                            <td
+                          <TableRow key={row.dept} className={`transition-colors ${isRowSelected ? "bg-indigo-50/60" : "hover:bg-slate-100/40"}`}>
+                            <TableCell
                               onClick={() => setTicketDeptFilter(ticketDeptFilter.toLowerCase() === row.dept.toLowerCase() ? "all" : row.dept)}
                               className={`p-2 font-bold text-xs whitespace-nowrap cursor-pointer transition-colors ${isRowSelected ? "text-indigo-700 underline font-black" : "text-slate-800 hover:text-indigo-600"
                                 }`}
                               title={`Click to filter table by department: ${row.dept}`}
                             >
                               {row.dept} {isRowSelected && "✓"}
-                            </td>
+                            </TableCell>
                             {ticketHeatmapData.categories.map(cat => {
                               const count = row.counts[cat] || 0;
                               const isCellActive = (selectedTicketCategory === cat) && isRowSelected;
@@ -5399,7 +5287,7 @@ const CAMCampusInsightPanel: React.FC<{
                                     : "bg-rose-100 text-rose-800 font-black border border-rose-200";
 
                               return (
-                                <td
+                                <TableCell
                                   key={cat}
                                   onClick={() => {
                                     setSelectedTicketCategory(selectedTicketCategory === cat ? "all" : cat);
@@ -5412,15 +5300,15 @@ const CAMCampusInsightPanel: React.FC<{
                                   <span className={`inline-block px-2 py-0.5 rounded text-[11px] ${cellStyle}`}>
                                     {count}
                                   </span>
-                                </td>
+                                </TableCell>
                               );
                             })}
-                            <td className="p-2 text-right font-black text-slate-800 font-mono text-xs">{rowTotal}</td>
-                          </tr>
+                            <TableCell className="p-2 text-right font-black text-slate-800 font-mono text-xs">{rowTotal}</TableCell>
+                          </TableRow>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             )}
@@ -5451,7 +5339,7 @@ const CAMCampusInsightPanel: React.FC<{
               {/* Dropdown Filters Group */}
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Category Select */}
-                <select
+                <select aria-label="Ticket category filter"
                   value={selectedTicketCategory}
                   onChange={e => setSelectedTicketCategory(e.target.value)}
                   className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -5463,7 +5351,7 @@ const CAMCampusInsightPanel: React.FC<{
                 </select>
 
                 {/* Department Select */}
-                <select
+                <select aria-label="Ticket department filter"
                   value={ticketDeptFilter}
                   onChange={e => setTicketDeptFilter(e.target.value)}
                   className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer max-w-[180px]"
@@ -5475,7 +5363,7 @@ const CAMCampusInsightPanel: React.FC<{
                 </select>
 
                 {/* Status Select */}
-                <select
+                <select aria-label="Ticket status filter"
                   value={ticketStatusFilter}
                   onChange={e => setTicketStatusFilter(e.target.value as any)}
                   className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -5487,7 +5375,7 @@ const CAMCampusInsightPanel: React.FC<{
                 </select>
 
                 {/* Priority Select */}
-                <select
+                <select aria-label="Ticket priority filter"
                   value={ticketPriorityFilter}
                   onChange={e => setTicketPriorityFilter(e.target.value)}
                   className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
@@ -5537,45 +5425,46 @@ const CAMCampusInsightPanel: React.FC<{
             </div>
 
             {/* Full Interactive Table */}
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "date_desc" ? "date_asc" : "date_desc")}>
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+              <Table className="w-full text-left text-xs border-collapse">
+                <TableHeader className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <TableRow>
+                    <TableHead className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "date_desc" ? "date_asc" : "date_desc")}>
                       <div className="flex items-center gap-1">
                         <span>Ticket ID</span>
                         <ArrowUpDown className="w-3 h-3 text-slate-400" />
                       </div>
-                    </th>
-                    <th className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "name_asc" ? "date_desc" : "name_asc")}>
+                    </TableHead>
+                    <TableHead className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "name_asc" ? "date_desc" : "name_asc")}>
                       <div className="flex items-center gap-1">
                         <span>Student Name</span>
                         {ticketSortBy === "name_asc" && <span className="text-indigo-600">▲</span>}
                       </div>
-                    </th>
-                    <th className="p-3">Roll Number</th>
-                    <th className="p-3">Department</th>
-                    <th className="p-3">Category</th>
-                    <th className="p-3">Subject</th>
-                    <th className="p-3 text-center">Attachment</th>
-                    <th className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "status" ? "date_desc" : "status")}>
+                    </TableHead>
+                    <TableHead className="p-3">Roll Number</TableHead>
+                    <TableHead className="p-3">Department</TableHead>
+                    <TableHead className="p-3">Category</TableHead>
+                    <TableHead className="p-3">Subject</TableHead>
+                    <TableHead className="p-3 text-center">Attachment</TableHead>
+                    <TableHead className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "status" ? "date_desc" : "status")}>
                       <div className="flex items-center gap-1">
                         <span>Status</span>
                         {ticketSortBy === "status" && <span className="text-indigo-600">▲</span>}
                       </div>
-                    </th>
-                    <th className="p-3">Priority</th>
-                    <th className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "date_desc" ? "date_asc" : "date_desc")}>
+                    </TableHead>
+                    <TableHead className="p-3">Priority</TableHead>
+                    <TableHead className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "date_desc" ? "date_asc" : "date_desc")}>
                       <div className="flex items-center gap-1">
                         <span>Created</span>
                         <span className="text-slate-400 text-[9px]">{ticketSortBy === "date_asc" ? "▲" : "▼"}</span>
                       </div>
-                    </th>
-                    <th className="p-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredTickets.map((t, idx) => {
+                    </TableHead>
+                    <TableHead className="p-3 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
+                  {paginatedTickets.map((t, idx) => {
                     const isExpanded = expandedTicketId === t.id;
                     const isResolved = isResolvedTicket(t.status);
                     const isInProgress = isInProgressTicket(t.status);
@@ -5583,14 +5472,14 @@ const CAMCampusInsightPanel: React.FC<{
 
                     return (
                       <React.Fragment key={`${t.id || "tkt"}_${idx}`}>
-                        <tr
+                        <TableRow
                           onClick={() => setExpandedTicketId(isExpanded ? null : t.id)}
                           className={`transition-colors cursor-pointer ${isExpanded ? "bg-indigo-50/30" : "hover:bg-slate-50/80"}`}
                         >
-                          <td className="p-3 font-mono font-bold text-slate-800">{t.id}</td>
-                          <td className="p-3 font-bold text-slate-900">{t.student_name || "Unknown"}</td>
-                          <td className="p-3 font-mono text-slate-500">{t.roll_number || "—"}</td>
-                          <td className="p-3 text-slate-700 font-medium max-w-[140px] truncate" title={t.department}>
+                          <TableCell className="p-3 font-mono font-bold text-slate-800">{t.id}</TableCell>
+                          <TableCell className="p-3 font-bold text-slate-900">{t.student_name || "Unknown"}</TableCell>
+                          <TableCell className="p-3 font-mono text-slate-500">{t.roll_number || "—"}</TableCell>
+                          <TableCell className="p-3 text-slate-700 font-medium max-w-[140px] truncate" title={t.department}>
                             <button
                               type="button"
                               onClick={(e) => {
@@ -5601,8 +5490,8 @@ const CAMCampusInsightPanel: React.FC<{
                             >
                               {t.department || "—"}
                             </button>
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -5614,11 +5503,11 @@ const CAMCampusInsightPanel: React.FC<{
                             >
                               {t.category || "General"}
                             </button>
-                          </td>
-                          <td className="p-3 text-slate-800 font-semibold max-w-[180px] truncate" title={t.subject}>
+                          </TableCell>
+                          <TableCell className="p-3 text-slate-800 font-semibold max-w-[180px] truncate" title={t.subject}>
                             {t.subject || "No Subject"}
-                          </td>
-                          <td className="p-3 text-center">
+                          </TableCell>
+                          <TableCell className="p-3 text-center">
                             {hasImage ? (
                               <button
                                 type="button"
@@ -5636,8 +5525,8 @@ const CAMCampusInsightPanel: React.FC<{
                             ) : (
                               <span className="text-slate-300 font-mono">—</span>
                             )}
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -5654,8 +5543,8 @@ const CAMCampusInsightPanel: React.FC<{
                             >
                               {isResolved ? "Resolved" : isInProgress ? "In Progress" : "Open"}
                             </button>
-                          </td>
-                          <td className="p-3 font-medium text-slate-600 capitalize">
+                          </TableCell>
+                          <TableCell className="p-3 font-medium text-slate-600 capitalize">
                             <span className={`px-1.5 py-0.2 rounded text-[10px] ${(t.priority || "").toLowerCase() === "urgent"
                                 ? "bg-rose-100 text-rose-800 font-black"
                                 : (t.priority || "").toLowerCase() === "high"
@@ -5664,36 +5553,38 @@ const CAMCampusInsightPanel: React.FC<{
                               }`}>
                               {t.priority || "Normal"}
                             </span>
-                          </td>
-                          <td className="p-3 text-slate-500 text-[11px] whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="p-3 text-slate-500 text-[11px] whitespace-nowrap">
                             {t.created_at ? new Date(t.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" }) : "—"}
-                          </td>
-                          <td className="p-3 text-right">
+                          </TableCell>
+                          <TableCell className="p-3 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTicketUpdating(t);
-                                  setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
-                                  setResolutionNotes(t.admin_note || "");
-                                }}
-                                className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
-                                title="Update resolution status or add notes"
-                              >
-                                Resolve
-                              </button>
+                              {!readOnly && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setTicketUpdating(t);
+                                    setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
+                                    setResolutionNotes(t.admin_note || "");
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
+                                  title="Update resolution status or add notes"
+                                >
+                                  Resolve
+                                </button>
+                              )}
                               <span className="text-[11px] text-slate-500 font-bold hover:underline">
                                 {isExpanded ? "Hide" : "View"}
                               </span>
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
 
                         {/* Expandable row: Full Details & Attached Screenshot */}
                         {isExpanded && (
-                          <tr className="bg-slate-50/60">
-                            <td colSpan={11} className="p-4 border-t border-slate-200 space-y-3">
+                          <TableRow className="bg-slate-50/60">
+                            <TableCell colSpan={11} className="p-4 border-t border-slate-200 space-y-3">
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                 {/* Left Column: Problem & Admin Note */}
                                 <div className="space-y-3">
@@ -5789,35 +5680,66 @@ const CAMCampusInsightPanel: React.FC<{
                                   {t.closed_by && <span>Resolved by: <strong className="text-slate-700">{t.closed_by}</strong></span>}
                                   {t.closed_at && <span>Closed on: <strong className="text-slate-700">{new Date(t.closed_at).toLocaleString("en-IN")}</strong></span>}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setTicketUpdating(t);
-                                    setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
-                                    setResolutionNotes(t.admin_note || "");
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors self-start sm:self-auto"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                  <span>Update Status / Remarks</span>
-                                </button>
+                                {!readOnly && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setTicketUpdating(t);
+                                      setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
+                                      setResolutionNotes(t.admin_note || "");
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors self-start sm:self-auto"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                    <span>Update Status / Remarks</span>
+                                  </button>
+                                )}
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         )}
                       </React.Fragment>
                     );
                   })}
                   {filteredTickets.length === 0 && (
-                    <tr>
-                      <td colSpan={11} className="p-8 text-center text-slate-500 italic">
-                        {ticketsLoading ? "Connecting to Supabase tickets table..." : "No tickets found matching your search or active filters."}
-                      </td>
-                    </tr>
+                    <TableRow>
+                      <TableCell colSpan={11} className="p-8 text-center text-slate-500 italic">
+                        {ticketsLoading ? "Loading support tickets..." : "No tickets found matching your search or active filters."}
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
+              </div>
+              {filteredTickets.length > TICKETS_PER_PAGE && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 border-t border-slate-200 bg-slate-50/70">
+                  <span className="text-[11px] font-semibold text-slate-500">
+                    Showing {ticketSafePage * TICKETS_PER_PAGE + 1}–{Math.min((ticketSafePage + 1) * TICKETS_PER_PAGE, filteredTickets.length)} of {filteredTickets.length} tickets
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={ticketSafePage === 0}
+                      onClick={() => setTicketPage(ticketSafePage - 1)}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      Prev
+                    </button>
+                    <span className="text-[11px] font-bold text-slate-600 min-w-[90px] text-center">
+                      Page {ticketSafePage + 1} / {ticketPageCount}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={ticketSafePage >= ticketPageCount - 1}
+                      onClick={() => setTicketPage(ticketSafePage + 1)}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -5983,43 +5905,43 @@ const CAMCampusInsightPanel: React.FC<{
 
             {/* Full Table */}
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3">S.No</th>
-                    <th className="p-3">Mentor Name</th>
-                    <th className="p-3">SME Evaluator</th>
-                    <th className="p-3">Subject Demo</th>
-                    <th className="p-3">Stream / Class</th>
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Status</th>
-                    <th className="p-3 text-center">Score</th>
-                    <th className="p-3">Feedback</th>
-                    <th className="p-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full text-left text-xs border-collapse">
+                <TableHeader className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <TableRow>
+                    <TableHead className="p-3">S.No</TableHead>
+                    <TableHead className="p-3">Mentor Name</TableHead>
+                    <TableHead className="p-3">SME Evaluator</TableHead>
+                    <TableHead className="p-3">Subject Demo</TableHead>
+                    <TableHead className="p-3">Stream / Class</TableHead>
+                    <TableHead className="p-3">Date</TableHead>
+                    <TableHead className="p-3">Status</TableHead>
+                    <TableHead className="p-3 text-center">Score</TableHead>
+                    <TableHead className="p-3">Feedback</TableHead>
+                    <TableHead className="p-3 text-center">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {demoEvaluationData.map(d => (
-                    <tr
+                    <TableRow
                       key={d.id}
                       onClick={() => setSelectedDemoRecord(d)}
                       className="hover:bg-purple-50/50 cursor-pointer transition-colors group"
                     >
-                      <td className="p-3 font-mono text-slate-400">{d.sNo}</td>
-                      <td className="p-3 font-bold text-slate-900 group-hover:text-purple-900">{d.mentorName}</td>
-                      <td className="p-3 font-semibold text-slate-700">{d.smeName}</td>
-                      <td className="p-3 text-slate-800">{d.subject}</td>
-                      <td className="p-3 text-slate-500">{d.stream}</td>
-                      <td className="p-3 text-slate-500">{d.dateStr}</td>
-                      <td className="p-3">
+                      <TableCell className="p-3 font-mono text-slate-400">{d.sNo}</TableCell>
+                      <TableCell className="p-3 font-bold text-slate-900 group-hover:text-purple-900">{d.mentorName}</TableCell>
+                      <TableCell className="p-3 font-semibold text-slate-700">{d.smeName}</TableCell>
+                      <TableCell className="p-3 text-slate-800">{d.subject}</TableCell>
+                      <TableCell className="p-3 text-slate-500">{d.stream}</TableCell>
+                      <TableCell className="p-3 text-slate-500">{d.dateStr}</TableCell>
+                      <TableCell className="p-3">
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${d.status === "Completed" ? "bg-emerald-100 text-emerald-800" : d.status.includes("Reallocation") ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700"
                           }`}>
                           {d.status}
                         </span>
-                      </td>
-                      <td className="p-3 text-center font-mono font-black text-indigo-700 text-sm">{d.marks}</td>
-                      <td className="p-3 text-slate-600 max-w-xs truncate" title={d.comments}>{d.comments}</td>
-                      <td className="p-3 text-center">
+                      </TableCell>
+                      <TableCell className="p-3 text-center font-mono font-black text-indigo-700 text-sm">{d.marks}</TableCell>
+                      <TableCell className="p-3 text-slate-600 max-w-xs truncate" title={d.comments}>{d.comments}</TableCell>
+                      <TableCell className="p-3 text-center">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -6031,18 +5953,18 @@ const CAMCampusInsightPanel: React.FC<{
                           <Eye className="w-3 h-3" />
                           <span>View</span>
                         </button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
                   {demoEvaluationData.length === 0 && (
-                    <tr>
-                      <td colSpan={10} className="p-8 text-center text-slate-400 italic">
+                    <TableRow>
+                      <TableCell colSpan={10} className="p-8 text-center text-slate-400 italic">
                         No mentor demo evaluations logged for this campus.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}
@@ -6206,37 +6128,37 @@ const CAMCampusInsightPanel: React.FC<{
 
             {/* Full Table */}
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3">S.No</th>
-                    <th className="p-3">Faculty Name</th>
-                    <th className="p-3">Email</th>
-                    <th className="p-3">Department</th>
-                    <th className="p-3 text-center">Assigned Weekly Hours</th>
-                    <th className="p-3 text-center">Target Limit</th>
-                    <th className="p-3 text-center">Variance</th>
-                    <th className="p-3 text-right">Workload Status</th>
-                    <th className="p-3 text-center">Timetable</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full text-left text-xs border-collapse">
+                <TableHeader className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <TableRow>
+                    <TableHead className="p-3">S.No</TableHead>
+                    <TableHead className="p-3">Faculty Name</TableHead>
+                    <TableHead className="p-3">Email</TableHead>
+                    <TableHead className="p-3">Department</TableHead>
+                    <TableHead className="p-3 text-center">Assigned Weekly Hours</TableHead>
+                    <TableHead className="p-3 text-center">Target Limit</TableHead>
+                    <TableHead className="p-3 text-center">Variance</TableHead>
+                    <TableHead className="p-3 text-right">Workload Status</TableHead>
+                    <TableHead className="p-3 text-center">Timetable</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {facultyWorkloadData.map(f => (
-                    <tr key={`${f.id}_${f.sNo}`} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="p-3 font-mono text-slate-400">{f.sNo}</td>
-                      <td className="p-3 font-bold text-slate-900">{f.name}</td>
-                      <td className="p-3 text-slate-500">{f.email}</td>
-                      <td className="p-3 text-slate-600">{f.dept}</td>
-                      <td className="p-3 text-center font-mono font-black text-slate-800">{f.assignedHours} hrs</td>
-                      <td className="p-3 text-center font-mono text-slate-500">{f.targetLimit} hrs</td>
-                      <td className="p-3 text-center font-mono font-bold text-indigo-700">{f.variance}</td>
-                      <td className="p-3 text-right">
+                    <TableRow key={`${f.id}_${f.sNo}`} className="hover:bg-slate-50/60 transition-colors">
+                      <TableCell className="p-3 font-mono text-slate-400">{f.sNo}</TableCell>
+                      <TableCell className="p-3 font-bold text-slate-900">{f.name}</TableCell>
+                      <TableCell className="p-3 text-slate-500">{f.email}</TableCell>
+                      <TableCell className="p-3 text-slate-600">{f.dept}</TableCell>
+                      <TableCell className="p-3 text-center font-mono font-black text-slate-800">{f.assignedHours} hrs</TableCell>
+                      <TableCell className="p-3 text-center font-mono text-slate-500">{f.targetLimit} hrs</TableCell>
+                      <TableCell className="p-3 text-center font-mono font-bold text-indigo-700">{f.variance}</TableCell>
+                      <TableCell className="p-3 text-right">
                         <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${f.status === "Overload" ? "bg-amber-100 text-amber-800" : f.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"
                           }`}>
                           {f.status}
                         </span>
-                      </td>
-                      <td className="p-3 text-center">
+                      </TableCell>
+                      <TableCell className="p-3 text-center">
                         <button
                           type="button"
                           onClick={() => setSelectedFacultyForModal(f)}
@@ -6244,11 +6166,11 @@ const CAMCampusInsightPanel: React.FC<{
                         >
                           View Schedule ({f.slots?.length || 0})
                         </button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}
@@ -6409,39 +6331,39 @@ const CAMCampusInsightPanel: React.FC<{
 
             {/* Full Table */}
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3">S.No</th>
-                    <th className="p-3">Subject Name</th>
-                    <th className="p-3">Department</th>
-                    <th className="p-3">Semester</th>
-                    <th className="p-3">Type</th>
-                    <th className="p-3 text-center">Conducted</th>
-                    <th className="p-3 text-center">Target Hours</th>
-                    <th className="p-3 text-center">Pace %</th>
-                    <th className="p-3 text-right">Delivery Status</th>
-                    <th className="p-3 text-center">Remediation Planner</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full text-left text-xs border-collapse">
+                <TableHeader className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <TableRow>
+                    <TableHead className="p-3">S.No</TableHead>
+                    <TableHead className="p-3">Subject Name</TableHead>
+                    <TableHead className="p-3">Department</TableHead>
+                    <TableHead className="p-3">Semester</TableHead>
+                    <TableHead className="p-3">Type</TableHead>
+                    <TableHead className="p-3 text-center">Conducted</TableHead>
+                    <TableHead className="p-3 text-center">Target Hours</TableHead>
+                    <TableHead className="p-3 text-center">Pace %</TableHead>
+                    <TableHead className="p-3 text-right">Delivery Status</TableHead>
+                    <TableHead className="p-3 text-center">Remediation Planner</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {syllabusPaceData.map(sub => (
-                    <tr key={sub.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="p-3 font-mono text-slate-400">{sub.sNo}</td>
-                      <td className="p-3 font-bold text-slate-900">{sub.name}</td>
-                      <td className="p-3 text-slate-600">{sub.dept}</td>
-                      <td className="p-3 text-slate-500">{sub.sem}</td>
-                      <td className="p-3 text-slate-500">{sub.type}</td>
-                      <td className="p-3 text-center font-mono font-bold text-indigo-700">{sub.actualHours} hrs</td>
-                      <td className="p-3 text-center font-mono text-slate-500">{sub.targetHours} hrs</td>
-                      <td className="p-3 text-center font-mono font-black text-slate-800 text-sm">{sub.completionPct}%</td>
-                      <td className="p-3 text-right">
+                    <TableRow key={sub.id} className="hover:bg-slate-50/60 transition-colors">
+                      <TableCell className="p-3 font-mono text-slate-400">{sub.sNo}</TableCell>
+                      <TableCell className="p-3 font-bold text-slate-900">{sub.name}</TableCell>
+                      <TableCell className="p-3 text-slate-600">{sub.dept}</TableCell>
+                      <TableCell className="p-3 text-slate-500">{sub.sem}</TableCell>
+                      <TableCell className="p-3 text-slate-500">{sub.type}</TableCell>
+                      <TableCell className="p-3 text-center font-mono font-bold text-indigo-700">{sub.actualHours} hrs</TableCell>
+                      <TableCell className="p-3 text-center font-mono text-slate-500">{sub.targetHours} hrs</TableCell>
+                      <TableCell className="p-3 text-center font-mono font-black text-slate-800 text-sm">{sub.completionPct}%</TableCell>
+                      <TableCell className="p-3 text-right">
                         <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${sub.status === "On Track" ? "bg-emerald-100 text-emerald-800" : sub.status === "In Progress" ? "bg-blue-100 text-blue-800" : "bg-rose-100 text-rose-800"
                           }`}>
                           {sub.status}
                         </span>
-                      </td>
-                      <td className="p-3 text-center">
+                      </TableCell>
+                      <TableCell className="p-3 text-center">
                         {sub.completionPct < 80 ? (
                           <span className="px-2.5 py-1 rounded-md text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
                             +{sub.extraHoursPerWeek} extra hrs/wk
@@ -6449,11 +6371,11 @@ const CAMCampusInsightPanel: React.FC<{
                         ) : (
                           <span className="text-[10px] font-bold text-emerald-600">On Target</span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}
@@ -6535,41 +6457,41 @@ const CAMCampusInsightPanel: React.FC<{
 
             {/* Data Table */}
             <div className="overflow-x-auto border border-slate-200/90 rounded-xl shadow-xs">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3 w-12 text-center">#</th>
-                    <th className="p-3">Achievement Title &amp; Event</th>
-                    <th className="p-3">Category</th>
-                    <th className="p-3">Standing / Badge</th>
-                    <th className="p-3">Level</th>
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Student(s) / Team</th>
-                    <th className="p-3">Prize / Reward</th>
-                    <th className="p-3 text-center">Proof / Media</th>
-                    <th className="p-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
+              <Table className="w-full text-left text-xs border-collapse">
+                <TableHeader className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                  <TableRow>
+                    <TableHead className="p-3 w-12 text-center">#</TableHead>
+                    <TableHead className="p-3">Achievement Title &amp; Event</TableHead>
+                    <TableHead className="p-3">Category</TableHead>
+                    <TableHead className="p-3">Standing / Badge</TableHead>
+                    <TableHead className="p-3">Level</TableHead>
+                    <TableHead className="p-3">Date</TableHead>
+                    <TableHead className="p-3">Student(s) / Team</TableHead>
+                    <TableHead className="p-3">Prize / Reward</TableHead>
+                    <TableHead className="p-3 text-center">Proof / Media</TableHead>
+                    <TableHead className="p-3 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100">
                   {achievementsLoading ? (
-                    <tr>
-                      <td colSpan={10} className="p-12 text-center text-slate-400">
+                    <TableRow>
+                      <TableCell colSpan={10} className="p-12 text-center text-slate-400">
                         <div className="flex flex-col items-center justify-center gap-2">
                           <RefreshCw className="w-6 h-6 animate-spin text-amber-600" />
                           <span className="text-xs font-bold text-slate-600">Loading Student Achievements &amp; Honors...</span>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : filteredAchievements.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="p-12 text-center text-slate-400">
+                    <TableRow>
+                      <TableCell colSpan={10} className="p-12 text-center text-slate-400">
                         <div className="flex flex-col items-center justify-center gap-2">
                           <Award className="w-8 h-8 text-slate-300" />
                           <span className="text-sm font-bold text-slate-700">No Student Achievements Found</span>
                           <span className="text-xs text-slate-400">Try clearing filters or search criteria.</span>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
                     filteredAchievements.map((ach: any, idx: number) => {
                       let studentNamesList: string[] = [];
@@ -6618,33 +6540,33 @@ const CAMCampusInsightPanel: React.FC<{
                         : "bg-slate-100 text-slate-700";
 
                       return (
-                        <tr key={ach.id || idx} className="hover:bg-amber-50/20 transition-colors">
-                          <td className="p-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</td>
-                          <td className="p-3">
+                        <TableRow key={ach.id || idx} className="hover:bg-amber-50/20 transition-colors">
+                          <TableCell className="p-3 text-center font-mono text-slate-400 font-bold">{idx + 1}</TableCell>
+                          <TableCell className="p-3">
                             <div className="font-bold text-slate-900 leading-snug">{ach.title || "Untitled Achievement"}</div>
                             <div className="text-[11px] text-slate-500 font-medium mt-0.5">
                               {ach.event_name || ach.topic || (ach.organizer ? `Organized by ${ach.organizer}` : "Campus Event")}
                             </div>
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                               {ach.category || "General Honor"}
                             </span>
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${badgeBadgeClass}`}>
                               {ach.badge || "Participation"}
                             </span>
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold ${levelClass}`}>
                               {ach.achievement_level || "Campus"}
                             </span>
-                          </td>
-                          <td className="p-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
+                          </TableCell>
+                          <TableCell className="p-3 text-slate-600 font-mono text-[11px] whitespace-nowrap">
                             {ach.date_str || "—"}
-                          </td>
-                          <td className="p-3 max-w-[200px]">
+                          </TableCell>
+                          <TableCell className="p-3 max-w-[200px]">
                             {ach.participation_type === "team" && ach.team_name ? (
                               <div>
                                 <span className="font-bold text-indigo-700 text-[11px] block">{ach.team_name}</span>
@@ -6657,8 +6579,8 @@ const CAMCampusInsightPanel: React.FC<{
                                 {studentNamesList.length > 0 ? studentNamesList.join(", ") : "—"}
                               </span>
                             )}
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             {ach.reward_prize ? (
                               <span className="font-bold text-emerald-700 text-xs bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
                                 {ach.reward_prize}
@@ -6666,8 +6588,8 @@ const CAMCampusInsightPanel: React.FC<{
                             ) : (
                               <span className="text-slate-400 text-xs">—</span>
                             )}
-                          </td>
-                          <td className="p-3 text-center">
+                          </TableCell>
+                          <TableCell className="p-3 text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               {ach.proof_link && (
                                 <a
@@ -6695,8 +6617,8 @@ const CAMCampusInsightPanel: React.FC<{
                                 <span className="text-slate-300 text-xs">—</span>
                               )}
                             </div>
-                          </td>
-                          <td className="p-3 text-right">
+                          </TableCell>
+                          <TableCell className="p-3 text-right">
                             <button
                               type="button"
                               onClick={() => setSelectedAchDetail(ach)}
@@ -6705,21 +6627,26 @@ const CAMCampusInsightPanel: React.FC<{
                               <Eye className="w-3 h-3" />
                               <span>View</span>
                             </button>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         )}
 
         {/* ──────────────────────── MODAL: STUDENT ACHIEVEMENT DETAIL ──────────────────────── */}
         {selectedAchDetail && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <Dialog
+            open={!!selectedAchDetail}
+            onOpenChange={(next) => { if (!next) setSelectedAchDetail(null); }}
+            ariaLabel={`Achievement details — ${selectedAchDetail.title}`}
+            overlayClassName="bg-black/40 backdrop-blur-xs p-4"
+            panelClassName="bg-white border-slate-200 rounded-2xl max-w-xl p-6 space-y-5 max-h-[90vh] overflow-y-auto custom-scrollbar"
+          >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold border border-amber-200">
@@ -6735,6 +6662,7 @@ const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => setSelectedAchDetail(null)}
+                  aria-label="Close achievement details"
                   className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -6842,8 +6770,7 @@ const CAMCampusInsightPanel: React.FC<{
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ──────────────────────── MODAL: PHOTO LIGHTBOX PREVIEW ──────────────────────── */}
@@ -6871,8 +6798,13 @@ const CAMCampusInsightPanel: React.FC<{
 
         {/* ──────────────────────── MODAL 1: STUDENT ATTENDANCE & PARENT NOTICE ──────────────────────── */}
         {selectedStudentForModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setSelectedStudentForModal(null); }}
+            ariaLabel="Student Attendance and Parent Notice"
+            overlayClassName="bg-black/40 backdrop-blur-xs animate-in fade-in duration-200"
+            panelClassName="rounded-2xl max-w-lg p-6 space-y-5 animate-in zoom-in-95 duration-200"
+          >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -6949,14 +6881,18 @@ const CAMCampusInsightPanel: React.FC<{
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ──────────────────────── MODAL 2: FACULTY TIMETABLE SCHEDULE ──────────────────────── */}
         {selectedFacultyForModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setSelectedFacultyForModal(null); }}
+            ariaLabel="Faculty Timetable Schedule"
+            overlayClassName="bg-black/40 backdrop-blur-xs animate-in fade-in duration-200"
+            panelClassName="rounded-2xl max-w-2xl p-6 space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
+          >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
@@ -6970,6 +6906,7 @@ const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => setSelectedFacultyForModal(null)}
+                  aria-label="Close faculty timetable dialog"
                   className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -6999,35 +6936,35 @@ const CAMCampusInsightPanel: React.FC<{
 
               {/* Allocated Timetable Slots Table */}
               <div className="overflow-y-auto flex-1 border border-slate-200 rounded-xl">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase sticky top-0">
-                    <tr>
-                      <th className="p-2.5">Day</th>
-                      <th className="p-2.5">Time Slot</th>
-                      <th className="p-2.5">Subject / Course</th>
-                      <th className="p-2.5">Class Group</th>
-                      <th className="p-2.5">Room</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+                <Table containerClassName="overflow-visible" className="w-full text-left text-xs border-collapse">
+                  <TableHeader className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase sticky top-0">
+                    <TableRow>
+                      <TableHead className="p-2.5">Day</TableHead>
+                      <TableHead className="p-2.5">Time Slot</TableHead>
+                      <TableHead className="p-2.5">Subject / Course</TableHead>
+                      <TableHead className="p-2.5">Class Group</TableHead>
+                      <TableHead className="p-2.5">Room</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-slate-100">
                     {(selectedFacultyForModal.slots || []).map((slot: any, sIdx: number) => (
-                      <tr key={`${slot.id || 'slot'}_${sIdx}`} className="hover:bg-slate-50/60">
-                        <td className="p-2.5 font-bold text-slate-800">{slot.day || "—"}</td>
-                        <td className="p-2.5 font-mono text-slate-600">{slot.time || slot.timeSlot || "Period"}</td>
-                        <td className="p-2.5 font-semibold text-indigo-700">{slot.course || "—"}</td>
-                        <td className="p-2.5 text-slate-600">{slot.classGroup || "General"}</td>
-                        <td className="p-2.5 text-slate-500 font-mono">{slot.room || "—"}</td>
-                      </tr>
+                      <TableRow key={`${slot.id || 'slot'}_${sIdx}`} className="hover:bg-slate-50/60">
+                        <TableCell className="p-2.5 font-bold text-slate-800">{slot.day || "—"}</TableCell>
+                        <TableCell className="p-2.5 font-mono text-slate-600">{slot.time || slot.timeSlot || "Period"}</TableCell>
+                        <TableCell className="p-2.5 font-semibold text-indigo-700">{slot.course || "—"}</TableCell>
+                        <TableCell className="p-2.5 text-slate-600">{slot.classGroup || "General"}</TableCell>
+                        <TableCell className="p-2.5 text-slate-500 font-mono">{slot.room || "—"}</TableCell>
+                      </TableRow>
                     ))}
                     {(!selectedFacultyForModal.slots || selectedFacultyForModal.slots.length === 0) && (
-                      <tr>
-                        <td colSpan={5} className="p-6 text-center text-slate-400 italic">
+                      <TableRow>
+                        <TableCell colSpan={5} className="p-6 text-center text-slate-400 italic">
                           No active timetable slots allocated in this campus schedule.
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
 
               <div className="flex justify-end pt-2">
@@ -7039,14 +6976,18 @@ const CAMCampusInsightPanel: React.FC<{
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ──────────────────────── MODAL 3: QUICK TICKET STATUS UPDATE & RESOLUTION ──────────────────────── */}
         {ticketUpdating && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setTicketUpdating(null); }}
+            ariaLabel={`Update Ticket #${ticketUpdating.id}`}
+            overlayClassName="bg-black/40 backdrop-blur-xs animate-in fade-in duration-200"
+            panelClassName="rounded-2xl max-w-lg p-6 space-y-5 animate-in zoom-in-95 duration-200"
+          >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -7060,6 +7001,7 @@ const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => setTicketUpdating(null)}
+                  aria-label="Close ticket update dialog"
                   className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -7151,6 +7093,7 @@ const CAMCampusInsightPanel: React.FC<{
                   Official Administrative Resolution Remarks
                 </label>
                 <textarea
+                  aria-label="Official Administrative Resolution Remarks"
                   value={resolutionNotes}
                   onChange={e => setResolutionNotes(e.target.value)}
                   placeholder="Enter actions taken, counselor guidance, or closure reason..."
@@ -7170,7 +7113,7 @@ const CAMCampusInsightPanel: React.FC<{
                 </button>
                 <button
                   type="button"
-                  disabled={isSubmittingTicketUpdate}
+                  disabled={readOnly || isSubmittingTicketUpdate}
                   onClick={() => updateTicketStatus(ticketUpdating.id, updatingTicketStatus, resolutionNotes)}
                   className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                 >
@@ -7178,8 +7121,7 @@ const CAMCampusInsightPanel: React.FC<{
                   <span>Save to Supabase</span>
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ──────────────────────── MODAL 4: FULL-SCREEN IMAGE LIGHTBOX PREVIEW ──────────────────────── */}
@@ -7241,14 +7183,13 @@ const CAMCampusInsightPanel: React.FC<{
 
         {/* ──────────────────────── MODAL 7: MENTOR 360 NPS & STUDENT SURVEY POPUP ──────────────────────── */}
         {selectedMentorNpsRow && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200"
-            onClick={() => setSelectedMentorNpsRow(null)}
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setSelectedMentorNpsRow(null); }}
+            ariaLabel="Mentor NPS and Student Survey"
+            overlayClassName="bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+            panelClassName="rounded-2xl max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
           >
-            <div
-              className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-              onClick={e => e.stopPropagation()}
-            >
               {/* Modal Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-indigo-50/50">
                 <div className="flex items-center gap-3">
@@ -7272,6 +7213,7 @@ const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => setSelectedMentorNpsRow(null)}
+                  aria-label="Close mentor NPS dialog"
                   className="p-1.5 rounded-xl hover:bg-slate-200/80 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -7391,20 +7333,18 @@ const CAMCampusInsightPanel: React.FC<{
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ──────────────────────── MODAL 8: CLIENT LEADERSHIP VERBATIM & EVALUATION POPUP ──────────────────────── */}
         {selectedClientVerbatim && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200"
-            onClick={() => setSelectedClientVerbatim(null)}
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setSelectedClientVerbatim(null); }}
+            ariaLabel="Partner Leadership Evaluation"
+            overlayClassName="bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+            panelClassName="rounded-2xl max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
           >
-            <div
-              className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-              onClick={e => e.stopPropagation()}
-            >
               {/* Modal Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-teal-50/70">
                 <div className="flex items-center gap-3">
@@ -7433,6 +7373,7 @@ const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => setSelectedClientVerbatim(null)}
+                  aria-label="Close partner evaluation dialog"
                   className="p-1.5 rounded-xl hover:bg-slate-200/80 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -7507,20 +7448,18 @@ const CAMCampusInsightPanel: React.FC<{
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ──────────────────────── MODAL 9: NPS CENSUS & MONTHLY HISTORY POPUP ──────────────────────── */}
         {showNpsHistoryModal && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200"
-            onClick={() => setShowNpsHistoryModal(false)}
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setShowNpsHistoryModal(false); }}
+            ariaLabel="Student Satisfaction Census and NPS History"
+            overlayClassName="bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+            panelClassName="rounded-2xl max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
           >
-            <div
-              className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-              onClick={e => e.stopPropagation()}
-            >
               {/* Modal Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
                 <div className="flex items-center gap-3">
@@ -7542,6 +7481,7 @@ const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => setShowNpsHistoryModal(false)}
+                  aria-label="Close NPS history dialog"
                   className="p-1.5 rounded-xl hover:bg-slate-200/80 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -7580,31 +7520,31 @@ const CAMCampusInsightPanel: React.FC<{
                     Monthly Census Progression
                   </h4>
                   <div className="border border-slate-200 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase border-b border-slate-200">
-                        <tr>
-                          <th className="p-3">Month / Cycle</th>
-                          <th className="p-3 text-center">Student Responses</th>
-                          <th className="p-3 text-center">NPS Index</th>
-                          <th className="p-3 text-center">Sentiment</th>
-                          <th className="p-3 text-right">Quick Filter</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
+                    <Table className="w-full text-left text-xs border-collapse">
+                      <TableHeader className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase border-b border-slate-200">
+                        <TableRow>
+                          <TableHead className="p-3">Month / Cycle</TableHead>
+                          <TableHead className="p-3 text-center">Student Responses</TableHead>
+                          <TableHead className="p-3 text-center">NPS Index</TableHead>
+                          <TableHead className="p-3 text-center">Sentiment</TableHead>
+                          <TableHead className="p-3 text-right">Quick Filter</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-slate-100 font-medium">
                         {(mentorNps?.perMonth && mentorNps.perMonth.length > 0) ? (
                           mentorNps.perMonth.map((pm: any) => (
-                            <tr key={pm.key} className="hover:bg-slate-50">
-                              <td className="p-3 font-bold text-slate-900">{pm.label || pm.key}</td>
-                              <td className="p-3 text-center font-mono font-bold text-slate-700">{pm.total}</td>
-                              <td className="p-3 text-center font-mono font-black">
+                            <TableRow key={pm.key} className="hover:bg-slate-50">
+                              <TableCell className="p-3 font-bold text-slate-900">{pm.label || pm.key}</TableCell>
+                              <TableCell className="p-3 text-center font-mono font-bold text-slate-700">{pm.total}</TableCell>
+                              <TableCell className="p-3 text-center font-mono font-black">
                                 <span className={npsColor(pm.npsIndex)}>
                                   {pm.npsIndex != null ? (pm.npsIndex > 0 ? `+${pm.npsIndex}` : pm.npsIndex) : "—"}
                                 </span>
-                              </td>
-                              <td className="p-3 text-center">
+                              </TableCell>
+                              <TableCell className="p-3 text-center">
                                 <span className="text-[10px] font-bold text-slate-600">{npsLabel(pm.npsIndex)}</span>
-                              </td>
-                              <td className="p-3 text-right">
+                              </TableCell>
+                              <TableCell className="p-3 text-right">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -7616,17 +7556,17 @@ const CAMCampusInsightPanel: React.FC<{
                                 >
                                   View Month
                                 </button>
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           ))
                         ) : (
                           mentorNps?.availableMonths?.map((am: any) => (
-                            <tr key={am.key} className="hover:bg-slate-50">
-                              <td className="p-3 font-bold text-slate-900">{am.label}</td>
-                              <td className="p-3 text-center font-mono font-bold text-slate-700">Census Period</td>
-                              <td className="p-3 text-center font-mono font-black text-indigo-600">—</td>
-                              <td className="p-3 text-center text-slate-400 text-[10px]">Verified Batch</td>
-                              <td className="p-3 text-right">
+                            <TableRow key={am.key} className="hover:bg-slate-50">
+                              <TableCell className="p-3 font-bold text-slate-900">{am.label}</TableCell>
+                              <TableCell className="p-3 text-center font-mono font-bold text-slate-700">Census Period</TableCell>
+                              <TableCell className="p-3 text-center font-mono font-black text-indigo-600">—</TableCell>
+                              <TableCell className="p-3 text-center text-slate-400 text-[10px]">Verified Batch</TableCell>
+                              <TableCell className="p-3 text-right">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -7638,18 +7578,18 @@ const CAMCampusInsightPanel: React.FC<{
                                 >
                                   Select Cycle
                                 </button>
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )) || (
-                            <tr>
-                              <td colSpan={5} className="p-4 text-center text-slate-400 italic">
+                            <TableRow>
+                              <TableCell colSpan={5} className="p-4 text-center text-slate-400 italic">
                                 No monthly progression history available.
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )
                         )}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
 
@@ -7690,20 +7630,18 @@ const CAMCampusInsightPanel: React.FC<{
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
 
         {/* ──────────────────────── MODAL 10: FACULTY DEMO EVALUATION DETAIL POPUP ──────────────────────── */}
         {selectedDemoRecord && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4 animate-in fade-in duration-200"
-            onClick={() => setSelectedDemoRecord(null)}
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setSelectedDemoRecord(null); }}
+            ariaLabel="Faculty Demo Evaluation"
+            overlayClassName="bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
+            panelClassName="rounded-2xl max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
           >
-            <div
-              className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
-              onClick={e => e.stopPropagation()}
-            >
               {/* Modal Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-purple-50/60">
                 <div className="flex items-center gap-3">
@@ -7730,6 +7668,7 @@ const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => setSelectedDemoRecord(null)}
+                  aria-label="Close demo evaluation dialog"
                   className="p-1.5 rounded-xl hover:bg-slate-200/80 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -7779,8 +7718,7 @@ const CAMCampusInsightPanel: React.FC<{
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         )}
       </div>
     );
@@ -7792,6 +7730,7 @@ let isFirstSidebarAnimationDone = false;
 /* ─── CAM Mentor Attendance & Punching Panel ─── */
 const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; readOnly?: boolean }> = ({ collegeId, camName, readOnly = false }) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   const [dateStr, setDateStr] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split("T")[0]);
   const [records, setRecords] = useState<any[]>([]);
@@ -8036,28 +7975,20 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
 
   // Faculty Leave & Permission Requests State
   const [subView, setSubView] = useState<"roster" | "leave_approvals">("roster");
-  const [facultyLeaveReqs, setFacultyLeaveReqs] = useState<any[]>([]);
-  const [loadingLeaveReqs, setLoadingLeaveReqs] = useState(false);
   const [actionReqId, setActionReqId] = useState<string | null>(null);
 
-  const fetchFacultyLeaveRequests = async () => {
-    setLoadingLeaveReqs(true);
-    try {
-      const res = await fetch(`/api/requests/faculty-leave?collegeId=${encodeURIComponent(collegeId)}`);
-      const json = await res.json();
-      if (json.success) {
-        setFacultyLeaveReqs(json.records || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingLeaveReqs(false);
-    }
-  };
+  const facultyLeaveQuery = useQuery({
+    queryKey: qk.facultyLeave(collegeId),
+    queryFn: async () => {
+      const json = await apiFetch(`/api/requests/faculty-leave?collegeId=${encodeURIComponent(collegeId)}`);
+      return json?.success && Array.isArray(json.records) ? (json.records as any[]) : [];
+    },
+  });
+  const facultyLeaveReqs = facultyLeaveQuery.data || [];
+  const loadingLeaveReqs = facultyLeaveQuery.isFetching;
 
-  useEffect(() => {
-    fetchFacultyLeaveRequests();
-  }, [collegeId]);
+  const fetchFacultyLeaveRequests = () =>
+    queryClient.invalidateQueries({ queryKey: qk.facultyLeave(collegeId) });
 
   const handleResolveFacultyLeave = async (requestId: string, action: "approve" | "reject") => {
     setActionReqId(requestId);
@@ -8198,7 +8129,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
               {dateMode === "single" ? (
                 <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
                   <span className="text-xs font-bold text-slate-500 pl-2">Select Date:</span>
-                  <input
+                  <input aria-label="Session date"
                     type="date"
                     value={dateStr}
                     onChange={(e) => setDateStr(e.target.value)}
@@ -8209,14 +8140,14 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
                     <span className="text-xs font-bold text-slate-500 pl-2">From:</span>
-                    <input
+                    <input aria-label="Start date"
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="bg-white dark:bg-slate-900 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
                     />
                     <span className="text-xs font-bold text-slate-500">To:</span>
-                    <input
+                    <input aria-label="End date"
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
@@ -8294,53 +8225,53 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
           </div>
 
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                  <th className="p-3">Faculty / Mentor</th>
-                  <th className="p-3">Department</th>
-                  <th className="p-3">Request Type</th>
-                  <th className="p-3">From Date</th>
-                  <th className="p-3">To Date</th>
-                  <th className="p-3">Mandatory Reason</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
+            <Table className="w-full text-left text-xs">
+              <TableHeader>
+                <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                  <TableHead className="p-3">Faculty / Mentor</TableHead>
+                  <TableHead className="p-3">Department</TableHead>
+                  <TableHead className="p-3">Request Type</TableHead>
+                  <TableHead className="p-3">From Date</TableHead>
+                  <TableHead className="p-3">To Date</TableHead>
+                  <TableHead className="p-3">Mandatory Reason</TableHead>
+                  <TableHead className="p-3">Status</TableHead>
+                  <TableHead className="p-3 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
                 {loadingLeaveReqs ? (
-                  <tr><td colSpan={7} className="p-8 text-center text-slate-400">Loading leave requests...</td></tr>
+                  <TableRow><TableCell colSpan={7} className="p-8 text-center text-slate-400">Loading leave requests...</TableCell></TableRow>
                 ) : facultyLeaveReqs.length === 0 ? (
-                  <tr><td colSpan={7} className="p-8 text-center text-slate-400 italic">No faculty leave or permission requests found.</td></tr>
+                  <TableRow><TableCell colSpan={7} className="p-8 text-center text-slate-400 italic">No faculty leave or permission requests found.</TableCell></TableRow>
                 ) : (
                   facultyLeaveReqs.map((req) => (
-                    <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3">
+                    <TableRow key={req.id} className="hover:bg-slate-50/80 transition-colors">
+                      <TableCell className="p-3">
                         <div className="font-extrabold text-slate-900">{req.mentorName}</div>
                         <div className="text-[10px] font-mono text-slate-400">{req.mentorEmail}</div>
-                      </td>
-                      <td className="p-3">
+                      </TableCell>
+                      <TableCell className="p-3">
                         <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
                           {req.mentorDepartment || "General"}
                         </span>
-                      </td>
-                      <td className="p-3 font-extrabold">
+                      </TableCell>
+                      <TableCell className="p-3 font-extrabold">
                         {(req.request_type === "Leave" || req.request_type === "Casual Leave") && <span className="text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 text-[10px] font-black uppercase">{req.request_type === "Casual Leave" ? "Casual Leave" : "Leave"}</span>}
                         {req.request_type === "Emergency Leave" && <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 text-[10px] font-black uppercase">Emergency</span>}
                         {req.request_type === "Permission" && <span className="text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 text-[10px] font-black uppercase">Permission</span>}
                         {req.request_type === "OD" && <span className="text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-200 text-[10px] font-black uppercase">OD (On Duty)</span>}
-                      </td>
-                      <td className="p-3 font-mono text-[11px] text-slate-700 font-bold">{req.start_date}</td>
-                      <td className="p-3 font-mono text-[11px] text-slate-700 font-bold">{req.end_date}</td>
-                      <td className="p-3 text-[11px] italic text-slate-700 max-w-[200px] truncate" title={req.reason}>
+                      </TableCell>
+                      <TableCell className="p-3 font-mono text-[11px] text-slate-700 font-bold">{req.start_date}</TableCell>
+                      <TableCell className="p-3 font-mono text-[11px] text-slate-700 font-bold">{req.end_date}</TableCell>
+                      <TableCell className="p-3 text-[11px] italic text-slate-700 max-w-[200px] truncate" title={req.reason}>
                         {req.reason}
-                      </td>
-                      <td className="p-3">
+                      </TableCell>
+                      <TableCell className="p-3">
                         {req.status === "pending" && <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase">Pending CM</span>}
                         {req.status === "approved" && <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">Approved</span>}
                         {req.status === "rejected" && <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase">Rejected</span>}
-                      </td>
-                      <td className="p-3 text-right">
+                      </TableCell>
+                      <TableCell className="p-3 text-right">
                         {req.status === "pending" ? (
                           <div className="flex items-center gap-1.5 justify-end">
                             <button
@@ -8363,12 +8294,12 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                         ) : (
                           <span className="text-[10px] text-slate-400 font-bold italic">Resolved by {req.approved_by || "CM"}</span>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
       ) : (
@@ -8491,6 +8422,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <label className="text-xs font-bold text-slate-500 shrink-0">Department:</label>
                 <select
+                  aria-label="Department"
                   value={selectedDept}
                   onChange={(e) => setSelectedDept(e.target.value)}
                   className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-indigo-500"
@@ -8505,74 +8437,74 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
 
             {/* Attendance Roster Table */}
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs">
-                <thead>
+              <Table className="w-full text-left text-xs">
+                <TableHeader>
                   {dateMode === "range" ? (
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                      <th className="p-3">Faculty / Mentor</th>
-                      <th className="p-3">Department</th>
-                      <th className="p-3 text-center">Working Days</th>
-                      <th className="p-3 text-center">Present Days</th>
-                      <th className="p-3 text-center">OD Days</th>
-                      <th className="p-3 text-center">Leave Days</th>
-                      <th className="p-3 text-center">Absent Days</th>
-                      <th className="p-3 text-right">Attendance Rate</th>
-                    </tr>
+                    <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                      <TableHead className="p-3">Faculty / Mentor</TableHead>
+                      <TableHead className="p-3">Department</TableHead>
+                      <TableHead className="p-3 text-center">Working Days</TableHead>
+                      <TableHead className="p-3 text-center">Present Days</TableHead>
+                      <TableHead className="p-3 text-center">OD Days</TableHead>
+                      <TableHead className="p-3 text-center">Leave Days</TableHead>
+                      <TableHead className="p-3 text-center">Absent Days</TableHead>
+                      <TableHead className="p-3 text-right">Attendance Rate</TableHead>
+                    </TableRow>
                   ) : (
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                      <th className="p-3">Faculty / Mentor</th>
-                      <th className="p-3">Department</th>
-                      <th className="p-3">Punch Time</th>
-                      <th className="p-3">Current Status</th>
-                      <th className="p-3">OD / Remarks</th>
-                      <th className="p-3 text-right">Quick Punch Actions</th>
-                    </tr>
+                    <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                      <TableHead className="p-3">Faculty / Mentor</TableHead>
+                      <TableHead className="p-3">Department</TableHead>
+                      <TableHead className="p-3">Punch Time</TableHead>
+                      <TableHead className="p-3">Current Status</TableHead>
+                      <TableHead className="p-3">OD / Remarks</TableHead>
+                      <TableHead className="p-3 text-right">Quick Punch Actions</TableHead>
+                    </TableRow>
                   )}
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
+                </TableHeader>
+                <TableBody className="divide-y divide-slate-100 bg-white font-medium text-slate-800">
                   {loading ? (
-                    <tr>
-                      <td colSpan={dateMode === "range" ? 8 : 6} className="p-8 text-center text-slate-400 font-medium">
+                    <TableRow>
+                      <TableCell colSpan={dateMode === "range" ? 8 : 6} className="p-8 text-center text-slate-400 font-medium">
                         Loading mentor attendance records...
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : filteredRecords.length === 0 ? (
-                    <tr>
-                      <td colSpan={dateMode === "range" ? 8 : 6} className="p-8 text-center text-slate-400 font-medium">
+                    <TableRow>
+                      <TableCell colSpan={dateMode === "range" ? 8 : 6} className="p-8 text-center text-slate-400 font-medium">
                         No faculty found matching the selected filters.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
                     paginatedRecords.map((m) => {
                       if (dateMode === "range") {
                         const pct = parseFloat(m.attendancePct || "0");
                         return (
-                          <tr key={m.mentorId} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="p-3">
+                          <TableRow key={m.mentorId} className="hover:bg-slate-50/80 transition-colors">
+                            <TableCell className="p-3">
                               <div className="font-extrabold text-slate-900">{m.name}</div>
                               <div className="text-[10px] font-mono text-slate-400">{m.email}</div>
-                            </td>
-                            <td className="p-3">
+                            </TableCell>
+                            <TableCell className="p-3">
                               <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
                                 {m.department || "General"}
                               </span>
-                            </td>
-                            <td className="p-3 text-center font-bold text-slate-700">
+                            </TableCell>
+                            <TableCell className="p-3 text-center font-bold text-slate-700">
                               {m.totalDays || distinctDates.length}
-                            </td>
-                            <td className="p-3 text-center font-bold text-emerald-700">
+                            </TableCell>
+                            <TableCell className="p-3 text-center font-bold text-emerald-700">
                               {m.presentDays || 0}
-                            </td>
-                            <td className="p-3 text-center font-bold text-indigo-700">
+                            </TableCell>
+                            <TableCell className="p-3 text-center font-bold text-indigo-700">
                               {m.odDays || 0}
-                            </td>
-                            <td className="p-3 text-center font-bold text-amber-700">
+                            </TableCell>
+                            <TableCell className="p-3 text-center font-bold text-amber-700">
                               {m.leaveDays || 0}
-                            </td>
-                            <td className="p-3 text-center font-bold text-rose-700">
+                            </TableCell>
+                            <TableCell className="p-3 text-center font-bold text-rose-700">
                               {m.absentDays || 0}
-                            </td>
-                            <td className="p-3 text-right">
+                            </TableCell>
+                            <TableCell className="p-3 text-right">
                               <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black ${pct >= 85 ? "bg-emerald-100 text-emerald-800" :
                                   pct >= 75 ? "bg-indigo-100 text-indigo-800" :
                                     pct >= 60 ? "bg-amber-100 text-amber-800" :
@@ -8580,27 +8512,27 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                                 }`}>
                                 {m.attendancePct || "0.0"}%
                               </span>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         );
                       }
 
                       const isMarking = markingMentorId === m.mentorId;
                       return (
-                        <tr key={m.mentorId} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="p-3">
+                        <TableRow key={m.mentorId} className="hover:bg-slate-50/80 transition-colors">
+                          <TableCell className="p-3">
                             <div className="font-extrabold text-slate-900">{m.name}</div>
                             <div className="text-[10px] font-mono text-slate-400">{m.email}</div>
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
                               {m.department || "General"}
                             </span>
-                          </td>
-                          <td className="p-3 font-mono text-[11px] text-slate-600">
+                          </TableCell>
+                          <TableCell className="p-3 font-mono text-[11px] text-slate-600">
                             {formatPunchTime(m.punchInTime)}
-                          </td>
-                          <td className="p-3">
+                          </TableCell>
+                          <TableCell className="p-3">
                             {m.status === "Present" && (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
                                 <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Present
@@ -8626,11 +8558,11 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                                 Unpunched
                               </span>
                             )}
-                          </td>
-                          <td className="p-3 text-[11px] italic text-slate-500 max-w-[150px] truncate" title={m.reason || ""}>
+                          </TableCell>
+                          <TableCell className="p-3 text-[11px] italic text-slate-500 max-w-[150px] truncate" title={m.reason || ""}>
                             {m.reason || <span className="text-slate-300">—</span>}
-                          </td>
-                          <td className="p-3 text-right">
+                          </TableCell>
+                          <TableCell className="p-3 text-right">
                             <div className="flex items-center gap-1.5 justify-end">
                               {/* Present Button */}
                               <button
@@ -8684,13 +8616,13 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                                 Absent
                               </button>
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
               <Pagination
                 currentPage={page}
                 totalItems={filteredRecords.length}
@@ -8703,8 +8635,13 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
 
           {/* OD / Leave Reason Remarks Modal */}
           {showReasonModal && activeReasonMentor && (
-            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4 border border-slate-200 animate-scaleUp">
+            <Dialog
+              open={true}
+              onOpenChange={(next) => { if (!next) setShowReasonModal(false); }}
+              ariaLabel={`Mark ${pendingStatus} Details`}
+              overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+              panelClassName="max-w-md p-6 space-y-4 animate-scaleUp"
+            >
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900">
@@ -8716,6 +8653,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                   </div>
                   <button
                     onClick={() => setShowReasonModal(false)}
+                    aria-label="Close attendance reason dialog"
                     className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                   >
                     <X className="h-5 w-5" />
@@ -8728,6 +8666,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                       Reason / Event Remarks (Optional)
                     </label>
                     <textarea
+                      aria-label="Reason / Event Remarks (Optional)"
                       rows={3}
                       placeholder={
                         pendingStatus === "OD"
@@ -8757,8 +8696,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                     Save Attendance →
                   </button>
                 </div>
-              </div>
-            </div>
+            </Dialog>
           )}
         </>
       )}
@@ -8917,8 +8855,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     if (isKAMView && currentKAM?.id && !isSuperAdminUser) {
       return colleges.filter(c => c.kam_id === currentKAM.id || (c as any).kamId === currentKAM.id);
     }
+    if (!isSuperAdminUser && !isKAMView && (currentCAM?.college_id || overrideCollegeId)) {
+      const myCollegeId = overrideCollegeId || currentCAM?.college_id;
+      return colleges.filter(c => c.id === myCollegeId);
+    }
     return colleges;
-  }, [colleges, allowedCollegeIds, isKAMView, currentKAM?.id, isSuperAdminUser]);
+  }, [colleges, allowedCollegeIds, isKAMView, currentKAM?.id, isSuperAdminUser, currentCAM?.college_id, overrideCollegeId]);
 
   const [internalSelectedCollegeId, setInternalSelectedCollegeId] = useState<string>(() => {
     if (overrideCollegeId) return overrideCollegeId;
@@ -8926,7 +8868,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     if (currentCAM?.college_id) return currentCAM.college_id;
     // Default to a college with students if available, otherwise first college
     const collegeWithStudents = colleges.find(c => students.some(s => s.college_id === c.id));
-    return collegeWithStudents?.id || colleges[0]?.id || "college_1";
+    return collegeWithStudents?.id || colleges[0]?.id || "";
   });
 
   const activeCollegeId = overrideCollegeId !== undefined
@@ -8935,7 +8877,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       ? (superAdminScope === "all" ? "all" : superAdminScope)
       : isKAMView
         ? internalSelectedCollegeId
-        : (currentCAM?.college_id || internalSelectedCollegeId || colleges[0]?.id || "college_1");
+        : (currentCAM?.college_id || internalSelectedCollegeId || colleges[0]?.id || "");
 
   const isGlobalAllCampuses = activeCollegeId === "all" || (isSuperAdminUser && superAdminScope === "all") || (isKAMView && activeCollegeId === "all");
 
@@ -9064,7 +9006,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     // Immediate fetch on tab open so data is always fresh
     refreshAttendance(activeCollegeId);
     const interval = setInterval(() => {
-      if (isMounted) refreshAttendance(activeCollegeId);
+      if (isMounted && document.visibilityState === "visible") refreshAttendance(activeCollegeId);
     }, 30_000); // every 30 seconds
     return () => {
       isMounted = false;
@@ -9563,7 +9505,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "21CS001",
         resolvedDept,
         resolvedShift,
-        "Anitha R",
+        "[SAMPLE] Anitha R",
         "85",
         "C2",
         "Lakshmi R",
@@ -9579,7 +9521,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "9876543211",
         "123456789012",
         "ABCDE1234F",
-        "anitha@university.edu",
+        "anitha@example.com",
         "https://linkedin.com/in/anitha",
         "https://github.com/anitha",
         "https://hackerrank.com/anitha",
@@ -9591,7 +9533,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "21CS002",
         resolvedDept,
         resolvedShift,
-        "Bala Kumar M",
+        "[SAMPLE] Bala Kumar M",
         "78",
         "B2",
         "Meena M",
@@ -9607,7 +9549,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         "9876543221",
         "987654321098",
         "WXYZ9876K",
-        "bala@university.edu",
+        "bala@example.com",
         "https://linkedin.com/in/bala",
         "https://github.com/bala",
         "https://hackerrank.com/bala",
@@ -10667,25 +10609,38 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [isImportingFaculty, setIsImportingFaculty] = useState(false);
 
   const handleDownloadFacultyTemplate = async () => {
-    const sampleDept = facultyDepts[0] || (collegeCourses[0]?.name) || "B.Sc Mathematics";
+    const sampleDept = facultyDepts[0] || (collegeCourses[0]?.name) || "General";
+    const campusSubjects = (subjectsList || [])
+      .filter(s => !activeCollegeId || activeCollegeId === "all" || s.college_id === activeCollegeId)
+      .map(s => s.name);
+    const sampleSubjects1 = campusSubjects.slice(0, 2).join(", ") || "Subject 1, Subject 2";
+    const sampleSubjects2 = campusSubjects.slice(2, 4).join(", ") || "Subject 3, Subject 4";
+
+    const campusClasses = Array.from(new Set((students || [])
+      .filter(s => !activeCollegeId || activeCollegeId === "all" || s.college_id === activeCollegeId)
+      .map(s => s.classGroup)
+      .filter(Boolean)));
+    const sampleClass1 = campusClasses[0] || "Section A";
+    const sampleClass2 = campusClasses[1] || campusClasses[0] || "Section B";
+
     const sampleData = [
       {
-        "Faculty Name": "Dr. Anitha Ramesh",
+        "Faculty Name": "[SAMPLE] Dr. Anitha Ramesh",
         "Email Address": "anitha.ramesh@faceprep.in",
         "Department": sampleDept,
         "Shift": isCampusShiftBased ? "Shift 1" : "General Shift",
-        "College ID": activeCollegeId || "college_1",
-        "Subjects": "Programming in C, Digital Fundamentals",
-        "Classes": "Year 1 Section A"
+        "College ID": activeCollegeId || colleges[0]?.id || "",
+        "Subjects": sampleSubjects1,
+        "Classes": sampleClass1
       },
       {
-        "Faculty Name": "Prof. Rajesh Kumar",
+        "Faculty Name": "[SAMPLE] Prof. Rajesh Kumar",
         "Email Address": "rajesh.kumar@faceprep.in",
         "Department": sampleDept,
         "Shift": isCampusShiftBased ? "Shift 2" : "General Shift",
-        "College ID": activeCollegeId || "college_1",
-        "Subjects": "Computer Fundamentals, Mathematics for Computer Science",
-        "Classes": "Year 1 Section A"
+        "College ID": activeCollegeId || colleges[0]?.id || "",
+        "Subjects": sampleSubjects2,
+        "Classes": sampleClass2
       }
     ];
 
@@ -10745,7 +10700,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             college_id: collegeId,
             subjects: String(subjects).trim(),
             classes: String(classes).trim(),
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(String(email).trim())}`
+            avatar: ""
           };
         }).filter(f => f.name || f.email);
 
@@ -10957,7 +10912,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   }, [collegeCourses, collegeStudents]);
 
   const dbSemesterOptions = useMemo(() => {
-    const defaultSems = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+    const defaultSems = ALL_SEMESTERS;
     const fromStudents = collegeStudents
       .map(s => {
         const raw = s.semester?.trim() || (s.classGroup ? s.classGroup.match(/Semester\s*\d+/i)?.[0] : null);
@@ -11004,13 +10959,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
   // 1. Academic Configuration states
   const academicYears = dbAcademicYears;
-  const [selectedYear, setSelectedYear] = useState("2026-2027");
+  const [selectedYear, setSelectedYear] = useState(getCurrentAcademicYear());
   const [workingDays, setWorkingDays] = useState<string[]>(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
   const [configCollegeId, setConfigCollegeId] = useState<string>("");
 
   useEffect(() => {
-    const targetId = configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : (colleges[0]?.id || ""));
-    const activeCollege = colleges.find(c => c.id === targetId) || colleges[0];
+    const isMultiCampus = isSuperAdminUser || isKAMView;
+    const targetId = isMultiCampus
+      ? (configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : (scopedColleges[0]?.id || "")))
+      : (activeCollegeId || currentCAM?.college_id || scopedColleges[0]?.id || "");
+    const activeCollege = colleges.find(c => c.id === targetId) || scopedColleges[0] || colleges[0];
     const daysCount = activeCollege?.working_days !== undefined ? Number(activeCollege.working_days) : 5;
     if (daysCount === 6) {
       setWorkingDays(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]);
@@ -11025,14 +10983,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     if (activeCollege?.academic_year) {
       setSelectedYear(activeCollege.academic_year);
     }
-  }, [configCollegeId, activeCollegeId, colleges]);
+  }, [configCollegeId, activeCollegeId, colleges, scopedColleges, isSuperAdminUser, isKAMView, currentCAM?.college_id]);
 
   const [collegeHours, setCollegeHours] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const [isSavingCollegeHours, setIsSavingCollegeHours] = useState(false);
 
   const handleSaveCollegeHoursAndDays = async () => {
-    const targetId = configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : (colleges[0]?.id || ""));
-    const activeCollege = colleges.find(c => c.id === targetId) || colleges[0];
+    const isMultiCampus = isSuperAdminUser || isKAMView;
+    const targetId = isMultiCampus
+      ? (configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : (scopedColleges[0]?.id || "")))
+      : (activeCollegeId || currentCAM?.college_id || "");
+    const activeCollege = colleges.find(c => c.id === targetId) || scopedColleges[0];
     if (!activeCollege) {
       toast("No active college selected.", "error");
       return;
@@ -11212,7 +11173,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [currType, setCurrType] = useState("theory");
   const [currDept, setCurrDept] = useState("General");
   const [currSemester, setCurrSemester] = useState("Semester 1");
-  const [currYear, setCurrYear] = useState("2026-2027");
+  const [currYear, setCurrYear] = useState(getCurrentAcademicYear());
   const [currShift, setCurrShift] = useState("General");
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
 
@@ -11222,7 +11183,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [editSubType, setEditSubType] = useState("theory");
   const [editSubDept, setEditSubDept] = useState("General");
   const [editSubSemester, setEditSubSemester] = useState("Semester 1");
-  const [editSubYear, setEditSubYear] = useState("2026-2027");
+  const [editSubYear, setEditSubYear] = useState(getCurrentAcademicYear());
   const [editSubShift, setEditSubShift] = useState("General");
 
   // Sub-Tab configuration inside curriculum mapping page
@@ -11268,10 +11229,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [showSubstitutionModal, setShowSubstitutionModal] = useState(false);
 
   // 4. Timetables & Rooms states
-  const [timetableVersions, setTimetableVersions] = useState<Array<{ sem: string, ver: string, date: string }>>([
-    { sem: "Semester I", ver: "v1.2", date: "2026-06-20" },
-    { sem: "Semester III", ver: "v1.0", date: "2026-06-15" }
-  ]);
+  const [timetableVersions, setTimetableVersions] = useState<Array<{ sem: string, ver: string, date: string }>>([]);
   const [selectedDay, setSelectedDay] = useState("Monday");
   const [selectedPeriod, setSelectedPeriod] = useState("9.00 AM - 10.00 AM");
 
@@ -11422,11 +11380,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   };
   // Load and save state
   useEffect(() => {
-    // Allowed Student Profile Edit Classes
-    const savedEditClasses = localStorage.getItem("fp_allowed_profile_edit_classes");
-    if (savedEditClasses) {
-      setAllowedProfileEditClasses(JSON.parse(savedEditClasses));
-    }
+    // Allowed Student Profile Edit Classes — stored server-side so the policy
+    // applies to every student browser, not just this machine.
+    apiFetch("/api/profile-edit-policy")
+      .then((data: any) => {
+        if (data?.success && Array.isArray(data.classes)) {
+          setAllowedProfileEditClasses(data.classes);
+        }
+      })
+      .catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -11653,25 +11615,30 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     });
   }, [collegeStudents, deferredStudentSearch, studentDeptFilter, studentBatchFilter]);
 
+  /** Dates that count toward compliance (holidays and non-working Sundays removed once) */
+  const attMonitoringComplianceDates = useMemo(() => {
+    return attMonitoringWorkingDates.filter(dStr => {
+      const holidayObj = attMonitoringHolidayMap.get(dStr);
+      const cfg = attMonitoringDailyConfigMap.get(dStr);
+      const isSunday = new Date(dStr + "T00:00:00").getDay() === 0;
+      const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
+      return !((!isExplicitWorkingSunday && isSunday) || holidayObj || cfg?.day_type === "holiday");
+    });
+  }, [attMonitoringWorkingDates, attMonitoringHolidayMap, attMonitoringDailyConfigMap]);
+
   /** Per-student compliance stats (powers both infographics AND the table %) */
   const attMonitoringStudentStats = useMemo(() => {
     return attMonitoringFiltered.map(st => {
       let presentDays = 0, absentDays = 0, totalMarkedDays = 0;
-      attMonitoringWorkingDates.forEach(dStr => {
-        const holidayObj = attMonitoringHolidayMap.get(dStr);
-        const cfg = attMonitoringDailyConfigMap.get(dStr);
-        const isSunday = new Date(dStr + "T00:00:00").getDay() === 0;
-        const isExplicitWorkingSunday = isSunday && cfg?.day_type === "working" && cfg?.day_order && cfg.day_order !== "None";
-        if ((!isExplicitWorkingSunday && isSunday) || holidayObj || cfg?.day_type === "holiday") return; // Holidays & Sundays are excluded from compliance calculations
-
+      for (const dStr of attMonitoringComplianceDates) {
         const recs = attMonitoringMap.get(`${st.id}_${dStr}`);
-        if (!recs || recs.length === 0) return;
+        if (!recs || recs.length === 0) continue;
         totalMarkedDays++;
         const isExam = attMonitoringExamDateSet.has(dStr);
-        const ev = evaluateDailyStudentAttendance(recs, 0, isExam, false, cfg?.notes || "");
+        const ev = evaluateDailyStudentAttendance(recs, 0, isExam, false, attMonitoringDailyConfigMap.get(dStr)?.notes || "");
         presentDays += ev.presentDays;
         absentDays += ev.absentDays;
-      });
+      }
       const pct = totalMarkedDays > 0 ? Math.round((presentDays / totalMarkedDays) * 100) : -1;
       return {
         id: st.id, name: st.name,
@@ -11680,7 +11647,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         presentDays, absentDays, totalMarkedDays,
       };
     });
-  }, [attMonitoringFiltered, attMonitoringWorkingDates, attMonitoringMap, attMonitoringExamDateSet, attMonitoringHolidayMap, attMonitoringDailyConfigMap]);
+  }, [attMonitoringFiltered, attMonitoringComplianceDates, attMonitoringMap, attMonitoringExamDateSet, attMonitoringDailyConfigMap]);
 
   /** O(1) Student Stats Map lookup */
   const attMonitoringStudentStatsMap = useMemo(() => {
@@ -12520,7 +12487,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const sampleRows = [
       [
         "1",
-        "CodeCraft 2026 - 24hr Campus Hackathon",
+        "[SAMPLE] CodeCraft - 24hr Campus Hackathon",
         "2026-08-28",
         "2026-08-29",
         "Coding Fest & Hackathon",
@@ -12534,7 +12501,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       ],
       [
         "2",
-        "CyberShield & Cloud Security Hands-on BootCamp",
+        "[SAMPLE] CyberShield & Cloud Security Hands-on BootCamp",
         "2026-09-08",
         "2026-09-09",
         "Workshop & Hands-on BootCamp",
@@ -12548,7 +12515,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       ],
       [
         "3",
-        "InnovateX - Annual Tech Symposium & Project Expo",
+        "[SAMPLE] InnovateX - Annual Tech Symposium & Project Expo",
         "2026-09-22",
         "2026-09-23",
         "Technical Symposium & Project Expo",
@@ -12834,7 +12801,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     setDynamicSubjects(prev => [
       ...prev,
       {
-        id: "row_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+        id: generateId("row"),
         name: "",
         type: bulkDefaultType || "SKILL",
         weekly_hours: bulkDefaultHours || 4,
@@ -12871,7 +12838,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
           if (allCurrentEmpty) {
             return parsed.map((p, i) => ({
-              id: "row_" + Date.now() + "_" + i + "_" + Math.random().toString(36).substring(2, 5),
+              id: generateId(`row_${i}`),
               name: p.name,
               type: p.type,
               weekly_hours: p.weekly_hours,
@@ -12881,7 +12848,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
           const before = prev.slice(0, targetIndex);
           const newRows = parsed.map((p, i) => ({
-            id: "row_" + Date.now() + "_" + i + "_" + Math.random().toString(36).substring(2, 5),
+            id: generateId(`row_${i}`),
             name: p.name,
             type: p.type,
             weekly_hours: p.weekly_hours,
@@ -12902,7 +12869,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const parsed = parseBulkSubjectsList(text, bulkDefaultType, bulkDefaultHours);
     if (parsed.length > 0) {
       setDynamicSubjects(parsed.map((p, i) => ({
-        id: "row_" + Date.now() + "_" + i + "_" + Math.random().toString(36).substring(2, 5),
+        id: generateId(`row_${i}`),
         name: p.name,
         type: p.type,
         weekly_hours: p.weekly_hours,
@@ -13395,7 +13362,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   };
 
   const handlePublishTimetable = (sem: string) => {
-    const version = "v" + (1 + Math.random() * 2).toFixed(1);
+    const existing = timetableVersions.find(v => v.sem === sem);
+    let nextNum = 1.0;
+    if (existing) {
+      const match = existing.ver.match(/^v(\d+(\.\d+)?)/);
+      if (match) {
+        nextNum = parseFloat(match[1]) + 0.1;
+      }
+    }
+    const version = "v" + nextNum.toFixed(1);
     const newVer = { sem, ver: version, date: new Date().toISOString().slice(0, 10) };
     setTimetableVersions([newVer, ...timetableVersions.filter(v => v.sem !== sem)]);
     toast(`Successfully published version ${version} of schedule for ${sem}.`, "success");
@@ -13767,7 +13742,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       { header: "Mentor (ID/Name/Email)", key: "mentor", width: 40 }
     ];
     if (collegeMentors.length === 0) {
-      wsMentors.addRow({ mentor: "Unassigned Faculty" });
+      wsMentors.addRow({ mentor: "(No faculty assigned to this campus)" });
     } else {
       collegeMentors.forEach(m => {
         wsMentors.addRow({ mentor: `${m.name} (${m.id})` });
@@ -14602,15 +14577,24 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     }
   };
 
-  const toggleClassProfileEdit = (cls: string) => {
-    let updated;
-    if (allowedProfileEditClasses.includes(cls)) {
-      updated = allowedProfileEditClasses.filter(c => c !== cls);
-    } else {
-      updated = [...allowedProfileEditClasses, cls];
-    }
+  const persistProfileEditClasses = async (updated: string[]) => {
     setAllowedProfileEditClasses(updated);
-    localStorage.setItem("fp_allowed_profile_edit_classes", JSON.stringify(updated));
+    try {
+      await apiFetch("/api/profile-edit-policy", {
+        method: "POST",
+        body: { classes: updated }
+      });
+    } catch (err: any) {
+      toast(err?.message || "Could not save the profile-edit policy.", "error");
+    }
+  };
+
+  const toggleClassProfileEdit = (cls: string) => {
+    if (readOnly) return;
+    const updated = allowedProfileEditClasses.includes(cls)
+      ? allowedProfileEditClasses.filter(c => c !== cls)
+      : [...allowedProfileEditClasses, cls];
+    persistProfileEditClasses(updated);
   };
 
   const handleEscalateIssue = async (id: string) => {
@@ -14978,6 +14962,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <div className="flex items-center gap-2">
                 <label className="text-xs font-bold text-slate-500 whitespace-nowrap">Filter Campus:</label>
                 <select
+                  aria-label="Filter Campus"
                   value={activeCollegeId}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -15353,7 +15338,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div key={str} className="flex items-center justify-between p-2.5 border border-slate-200 rounded-xl bg-white shadow-sm">
                           {editingYearIndex === index ? (
                             <div className="flex gap-2 w-full">
-                              <input
+                              <input aria-label="Academic year"
                                 type="text"
                                 value={editingYearValue}
                                 onChange={e => setEditingYearValue(e.target.value)}
@@ -15394,18 +15379,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div>
                       <h3 className="text-xs font-black text-indigo-655 uppercase tracking-wider">Configure Working Days & Hours</h3>
                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                        Configuring: <strong className="text-indigo-600">{colleges.find(c => c.id === (configCollegeId || activeCollegeId))?.name || (configCollegeId || activeCollegeId)}</strong>
+                        Configuring: <strong className="text-indigo-600">{colleges.find(c => c.id === ((isSuperAdminUser || isKAMView) ? (configCollegeId || activeCollegeId) : (activeCollegeId || currentCAM?.college_id)))?.name || activeCollegeName}</strong>
                       </p>
                     </div>
-                    {colleges.length > 1 && (
+                    {(isSuperAdminUser || isKAMView) && scopedColleges.length > 1 && (
                       <div className="flex items-center gap-1.5">
                         <label className="text-[10px] font-bold text-slate-500 uppercase shrink-0">Campus:</label>
                         <select
-                          value={configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : colleges[0]?.id || "")}
+                          aria-label="Campus"
+                          value={configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : scopedColleges[0]?.id || "")}
                           onChange={e => setConfigCollegeId(e.target.value)}
                           className="p-1 px-2.5 text-xs font-bold border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-1 focus:ring-indigo-500 outline-none shadow-xs"
                         >
-                          {colleges.map(c => (
+                          {scopedColleges.map(c => (
                             <option key={c.id} value={c.id}>
                               {c.name || c.id}
                             </option>
@@ -15536,14 +15522,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-650"
                         />
                       </div>
-                      <select value={subjectTypeFilter} onChange={e => setSubjectTypeFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
+                      <select aria-label="Subject type filter" value={subjectTypeFilter} onChange={e => setSubjectTypeFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
                         <option value="all">All Types</option>
                         <option value="SKILL">SKILL</option>
                         <option value="ACADEMIC">ACADEMIC</option>
                         <option value="LAB">LAB</option>
                         <option value="GENERAL">GENERAL</option>
                       </select>
-                      <select value={subjectShiftFilter} onChange={e => setSubjectShiftFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
+                      <select aria-label="Subject shift filter" value={subjectShiftFilter} onChange={e => setSubjectShiftFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
                         <option value="all">All Shifts</option>
                         <option value="Shift 1">Shift 1 (Day)</option>
                         <option value="Shift 2">Shift 2 (Evening)</option>
@@ -15879,7 +15865,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       className="pl-8 pr-3 py-1.5 border border-slate-205 rounded-xl bg-slate-50 text-[11px] focus:ring-1 focus:ring-indigo-500 outline-none font-semibold w-full sm:w-40 shadow-sm"
                     />
                   </div>
-                  <select
+                  <select aria-label="Faculty department filter"
                     value={facultyDeptFilter}
                     onChange={e => setFacultyDeptFilter(e.target.value)}
                     className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm flex-grow sm:flex-grow-0"
@@ -16163,7 +16149,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               role={isKAMView ? "kam" : "cm"}
               reviewerName={isKAMView ? (currentKAM?.name || "Key Account Manager") : (currentCAM?.name || "Campus Manager")}
               allowedCollegeIds={allowedCollegeIds}
-              allColleges={colleges.map(c => ({ id: c.id, name: c.name }))}
+              allColleges={scopedColleges.map(c => ({ id: c.id, name: c.name }))}
             />
           )}
 
@@ -16323,6 +16309,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Faculty Member</label>
                     <select
+                      aria-label="Faculty Member"
                       value={camDemoMentorFilter}
                       onChange={(e) => setCamDemoMentorFilter(e.target.value)}
                       className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
@@ -16349,6 +16336,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     </div>
                     <input
                       type="date"
+                      aria-label="Scheduled Date"
                       value={camDemoDateFilter}
                       onChange={(e) => setCamDemoDateFilter(e.target.value)}
                       className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
@@ -16358,6 +16346,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Status</label>
                     <select
+                      aria-label="Status"
                       value={camDemoStatusFilter}
                       onChange={(e) => setCamDemoStatusFilter(e.target.value)}
                       className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
@@ -16376,6 +16365,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                       <input
                         type="text"
+                        aria-label="Search"
                         placeholder="Search faculty, SME, topic..."
                         value={camDemoSearch}
                         onChange={(e) => setCamDemoSearch(e.target.value)}
@@ -16410,20 +16400,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
-                            <th className="p-3 w-12 text-center">#</th>
-                            <th className="p-3">Date &amp; Slot</th>
-                            <th className="p-3">Faculty Member</th>
-                            <th className="p-3">SME Evaluator</th>
-                            <th className="p-3">Subject / Topic</th>
-                            <th className="p-3">Status</th>
-                            <th className="p-3">Evaluation / Score</th>
-                            <th className="p-3 text-center">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
+                      <Table className="w-full text-left text-xs border-collapse">
+                        <TableHeader>
+                          <TableRow className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                            <TableHead className="p-3 w-12 text-center">#</TableHead>
+                            <TableHead className="p-3">Date &amp; Slot</TableHead>
+                            <TableHead className="p-3">Faculty Member</TableHead>
+                            <TableHead className="p-3">SME Evaluator</TableHead>
+                            <TableHead className="p-3">Subject / Topic</TableHead>
+                            <TableHead className="p-3">Status</TableHead>
+                            <TableHead className="p-3">Evaluation / Score</TableHead>
+                            <TableHead className="p-3 text-center">Action</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody className="divide-y divide-slate-100 bg-white">
                           {filteredDemos.map((demo, idx) => {
                             const statusStr = (demo.status || "scheduled").toLowerCase();
                             const isConfirmed = statusStr === "confirmed";
@@ -16431,25 +16421,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             const isReallocation = statusStr.includes("reallocat");
 
                             return (
-                              <tr key={demo.id || idx} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="p-3 text-center text-slate-400 font-bold">{idx + 1}</td>
-                                <td className="p-3">
+                              <TableRow key={demo.id || idx} className="hover:bg-slate-50/50 transition-colors">
+                                <TableCell className="p-3 text-center text-slate-400 font-bold">{idx + 1}</TableCell>
+                                <TableCell className="p-3">
                                   <div className="font-extrabold text-slate-800">{demo.dateStr || "—"}</div>
                                   <div className="text-[10px] text-slate-400 font-semibold">{demo.timeSlot || "Allocated Slot"}</div>
-                                </td>
-                                <td className="p-3">
+                                </TableCell>
+                                <TableCell className="p-3">
                                   <div className="font-bold text-slate-800">{demo.mentorName || "Unassigned"}</div>
                                   <div className="text-[10px] text-slate-400">{demo.mentorId || "Faculty"}</div>
-                                </td>
-                                <td className="p-3">
+                                </TableCell>
+                                <TableCell className="p-3">
                                   <div className="font-bold text-slate-800">{demo.smeName || "Pending SME Allocation"}</div>
                                   <div className="text-[10px] text-slate-400">{demo.stream || "Subject Expert"}</div>
-                                </td>
-                                <td className="p-3">
+                                </TableCell>
+                                <TableCell className="p-3">
                                   <span className="font-semibold text-slate-800 block">{demo.subject || "Demo Topic"}</span>
                                   <span className="text-[10px] text-slate-400">{demo.stream || "General"}</span>
-                                </td>
-                                <td className="p-3">
+                                </TableCell>
+                                <TableCell className="p-3">
                                   {isCompleted ? (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-extrabold">
                                       <CheckCircle2 className="w-3 h-3" /> Completed
@@ -16467,8 +16457,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       <Clock className="w-3 h-3" /> Scheduled
                                     </span>
                                   )}
-                                </td>
-                                <td className="p-3">
+                                </TableCell>
+                                <TableCell className="p-3">
                                   {demo.marks !== undefined && demo.marks !== null ? (
                                     <div>
                                       <span className="font-black text-slate-800 text-xs">{demo.marks}/100</span>
@@ -16479,8 +16469,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   ) : (
                                     <span className="text-slate-400 text-[11px] italic">Pending</span>
                                   )}
-                                </td>
-                                <td className="p-3 text-center">
+                                </TableCell>
+                                <TableCell className="p-3 text-center">
                                   <button
                                     type="button"
                                     onClick={() => setSelectedDemoDetails(demo)}
@@ -16488,20 +16478,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   >
                                     View Details
                                   </button>
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             );
                           })}
-                        </tbody>
-                      </table>
+                        </TableBody>
+                      </Table>
                     </div>
                   )}
                 </div>
 
                 {/* Session Details Modal */}
                 {selectedDemoDetails && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-                    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-6 space-y-5 animate-scaleUp">
+                  <Dialog
+                    open={true}
+                    onOpenChange={(next) => { if (!next) setSelectedDemoDetails(null); }}
+                    ariaLabel="Demo Session Details"
+                    overlayClassName="bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+                    panelClassName="rounded-2xl max-w-lg p-6 space-y-5 animate-scaleUp"
+                  >
                       <div className="flex items-center justify-between border-b border-slate-150 pb-3">
                         <div className="flex items-center gap-2">
                           <Sparkles className="w-4 h-4 text-purple-600" />
@@ -16510,6 +16505,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => setSelectedDemoDetails(null)}
+                          aria-label="Close demo session details"
                           className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                         >
                           <X className="w-4 h-4" />
@@ -16564,8 +16560,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           Close
                         </button>
                       </div>
-                    </div>
-                  </div>
+                  </Dialog>
                 )}
               </div>
             );
@@ -16721,7 +16716,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {/* Course Dropdown */}
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Course:</span>
-                            <select
+                            <select aria-label="Course filter"
                               value={selectedCohortCourse}
                               onChange={e => handleCohortCourseChange(e.target.value)}
                               className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-indigo-500"
@@ -16739,7 +16734,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {/* Semester Dropdown */}
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Semester:</span>
-                            <select
+                            <select aria-label="Semester filter"
                               value={selectedCohortSem}
                               onChange={e => handleCohortSemChange(e.target.value)}
                               className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-indigo-500"
@@ -16928,43 +16923,43 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </div>
                       ) : (
                         <div className="overflow-auto max-h-[70vh] rounded-xl border border-slate-200 shadow-sm relative no-scrollbar">
-                          <table className="w-full border-collapse text-left min-w-[800px] table-fixed">
-                            <thead>
-                              <tr className="text-[9.5px] font-bold uppercase">
-                                <th className="sticky top-0 left-0 z-30 p-3 text-slate-500 bg-slate-100/95 backdrop-blur-xs border-r border-b border-slate-200 w-[15%]">Time Slot</th>
+                          <Table containerClassName="overflow-visible" className="w-full border-collapse text-left min-w-[800px] table-fixed">
+                            <TableHeader>
+                              <TableRow className="text-[9.5px] font-bold uppercase">
+                                <TableHead className="sticky top-0 left-0 z-30 p-3 text-slate-500 bg-slate-100/95 backdrop-blur-xs border-r border-b border-slate-200 w-[15%]">Time Slot</TableHead>
                                 {DAYS.map(day => (
-                                  <th key={day} className="sticky top-0 z-20 p-3 text-slate-700 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200">{day}</th>
+                                  <TableHead key={day} className="sticky top-0 z-20 p-3 text-slate-700 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200">{day}</TableHead>
                                 ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-slate-100 bg-white">
                               {dynamicRows.map((row, rIdx) => {
                                 if (row.type === "break" || row.type === "lunch") {
                                   return (
-                                    <tr key={`break-${rIdx}`} className="bg-slate-50/40">
-                                      <td className="sticky left-0 z-10 p-3 text-[10px] font-bold text-slate-500 border-r border-slate-100 bg-slate-100/95 backdrop-blur-xs whitespace-nowrap">
+                                    <TableRow key={`break-${rIdx}`} className="bg-slate-50/40">
+                                      <TableCell className="sticky left-0 z-10 p-3 text-[10px] font-bold text-slate-500 border-r border-slate-100 bg-slate-100/95 backdrop-blur-xs whitespace-nowrap">
                                         <div className="flex items-center gap-1.5 font-bold text-slate-500">
                                           <Clock className="h-3 w-3 text-slate-400" />
                                           {row.timeRange}
                                         </div>
-                                      </td>
-                                      <td colSpan={5} className="p-3 text-center text-[10px] font-black tracking-widest text-slate-450 uppercase italic bg-slate-55/40">
+                                      </TableCell>
+                                      <TableCell colSpan={5} className="p-3 text-center text-[10px] font-black tracking-widest text-slate-450 uppercase italic bg-slate-55/40">
                                         {row.label}
-                                      </td>
-                                    </tr>
+                                      </TableCell>
+                                    </TableRow>
                                   );
                                 }
 
                                 if (row.type === "slot") {
                                   const time = row.time;
                                   return (
-                                    <tr key={time} className="hover:bg-slate-55/30 transition-colors">
-                                      <td className="sticky left-0 z-10 p-3 text-[10px] font-semibold text-slate-600 border-r border-slate-100 bg-slate-50/95 backdrop-blur-xs whitespace-nowrap">
+                                    <TableRow key={time} className="hover:bg-slate-55/30 transition-colors">
+                                      <TableCell className="sticky left-0 z-10 p-3 text-[10px] font-semibold text-slate-600 border-r border-slate-100 bg-slate-50/95 backdrop-blur-xs whitespace-nowrap">
                                         <div className="flex items-center gap-1.5">
                                           <Clock className="h-3 w-3 text-slate-400" />
                                           {time}
                                         </div>
-                                      </td>
+                                      </TableCell>
                                       {DAYS.map(day => {
                                         const slot = collegeSlots.find(
                                           s =>
@@ -16975,7 +16970,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         );
                                         const mentor = slot ? collegeMentors.find(m => m.id === slot.mentorId) : null;
                                         return (
-                                          <td key={day} className="p-2 border-r border-slate-100 last:border-r-0 h-20">
+                                          <TableCell key={day} className="p-2 border-r border-slate-100 last:border-r-0 h-20">
                                             {slot ? (
                                               <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-indigo-100 bg-indigo-50/20 text-xs shadow-sm">
                                                 <div className="text-[9px] font-extrabold text-indigo-650 uppercase tracking-wider truncate">
@@ -16989,16 +16984,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                 <span className="text-[9px] text-slate-350 font-medium">Free</span>
                                               </div>
                                             )}
-                                          </td>
+                                          </TableCell>
                                         );
                                       })}
-                                    </tr>
+                                    </TableRow>
                                   );
                                 }
                                 return null;
                               })}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
                       )}
                     </div>
@@ -17142,6 +17137,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               )}
                             </div>
                             <select
+                              aria-label="Course / Department"
                               value={genSelectedCourse}
                               onChange={e => handleGenCourseChange(e.target.value)}
                               className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
@@ -17156,11 +17152,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Semester</label>
                             <select
+                              aria-label="Semester"
                               value={genSelectedSemester}
                               onChange={e => handleGenSemesterChange(e.target.value)}
                               className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
                             >
-                              {["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"].map(s => (
+                              {ALL_SEMESTERS.map(s => (
                                 <option key={s} value={s}>{s}</option>
                               ))}
                             </select>
@@ -17227,6 +17224,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                     return (
                                       <select
+                                        aria-label="Default Classroom / Room"
                                         value={genRoom}
                                         onChange={e => setGenRoom(e.target.value)}
                                         className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer text-slate-800"
@@ -17252,6 +17250,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Class Group (Cohort Name)</label>
                             <input
                               type="text"
+                              aria-label="Class Group (Cohort Name)"
                               placeholder="e.g. B.Sc. CS - SEM I (2026-2027)"
                               value={genClassGroup}
                               onChange={e => setGenClassGroup(e.target.value)}
@@ -17299,17 +17298,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                         ) : (
                           <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-sm">
-                            <table className="w-full border-collapse text-left text-xs font-semibold table-fixed">
-                              <thead>
-                                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-400 font-bold uppercase">
-                                  <th className="p-3 w-[10%] text-center">Include</th>
-                                  <th className="p-3 w-[35%]">Subject Name</th>
-                                  <th className="p-3 w-[15%]">Weekly Hours</th>
-                                  <th className="p-3 w-[20%]">Room</th>
-                                  <th className="p-3 w-[20%]">Assigned Faculty</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100 bg-white">
+                            <Table className="w-full border-collapse text-left text-xs font-semibold table-fixed">
+                              <TableHeader>
+                                <TableRow className="bg-slate-50 border-b border-slate-200 text-[10px] text-slate-400 font-bold uppercase">
+                                  <TableHead className="p-3 w-[10%] text-center">Include</TableHead>
+                                  <TableHead className="p-3 w-[35%]">Subject Name</TableHead>
+                                  <TableHead className="p-3 w-[15%]">Weekly Hours</TableHead>
+                                  <TableHead className="p-3 w-[20%]">Room</TableHead>
+                                  <TableHead className="p-3 w-[20%]">Assigned Faculty</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody className="divide-y divide-slate-100 bg-white">
                                 {genAllocations.map((a, index) => {
                                   const updateAlloc = (field: string, val: any) => {
                                     const copy = [...genAllocations];
@@ -17363,23 +17362,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   const assignedHrs = a.mentorId ? getMentorHrs(a.mentorId) : null;
 
                                   return (
-                                    <tr key={a.subjectId} className="hover:bg-slate-50/20">
-                                      <td className="p-3 text-center">
+                                    <TableRow key={a.subjectId} className="hover:bg-slate-50/20">
+                                      <TableCell className="p-3 text-center">
                                         <input
                                           type="checkbox"
                                           checked={a.isSelected}
                                           onChange={e => updateAlloc("isSelected", e.target.checked)}
                                           className="h-4.5 w-4.5 border-slate-200 text-indigo-650 rounded-lg cursor-pointer"
                                         />
-                                      </td>
-                                      <td className="p-3">
+                                      </TableCell>
+                                      <TableCell className="p-3">
                                         <div className="font-bold text-slate-800 truncate" title={a.subjectName}>{a.subjectName}</div>
                                         {a.isNew && (
                                           <span className="text-[8px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-1 py-0.2 rounded-md font-bold uppercase mt-0.5 inline-block">Quick Added</span>
                                         )}
-                                      </td>
-                                      <td className="p-3">
-                                        <input
+                                      </TableCell>
+                                      <TableCell className="p-3">
+                                        <input aria-label="Weekly hours"
                                           type="number"
                                           min={1}
                                           max={12}
@@ -17387,17 +17386,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           onChange={e => updateAlloc("weeklyHours", parseInt(e.target.value) || 4)}
                                           className="w-16 p-1.5 border border-slate-200 rounded-lg text-center font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                         />
-                                      </td>
-                                      <td className="p-3">
-                                        <input
+                                      </TableCell>
+                                      <TableCell className="p-3">
+                                        <input aria-label="Room"
                                           type="text"
                                           value={a.room}
                                           onChange={e => updateAlloc("room", e.target.value)}
                                           className="w-full p-1.5 border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                         />
-                                      </td>
-                                      <td className="p-3 space-y-1">
-                                        <select
+                                      </TableCell>
+                                      <TableCell className="p-3 space-y-1">
+                                        <select aria-label="Mentor"
                                           value={a.mentorId}
                                           onChange={e => updateAlloc("mentorId", e.target.value)}
                                           className="w-full p-1.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -17426,12 +17425,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                             <span>{assignedHrs} hrs already scheduled</span>
                                           </div>
                                         )}
-                                      </td>
-                                    </tr>
+                                      </TableCell>
+                                    </TableRow>
                                   );
                                 })}
-                              </tbody>
-                            </table>
+                              </TableBody>
+                            </Table>
                           </div>
                         )}
 
@@ -17458,6 +17457,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <label className="text-[10px] text-slate-400 font-bold block">Subject Name</label>
                                   <input
                                     type="text"
+                                    aria-label="Subject Name"
                                     value={quickSubName}
                                     onChange={e => setQuickSubName(e.target.value)}
                                     placeholder="e.g. CS501: Data Science"
@@ -17467,6 +17467,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <div className="space-y-1">
                                   <label className="text-[10px] text-slate-400 font-bold block">Subject Type</label>
                                   <select
+                                    aria-label="Subject Type"
                                     value={quickSubType}
                                     onChange={e => setQuickSubType(e.target.value)}
                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-xs cursor-pointer"
@@ -17480,6 +17481,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <div className="space-y-1">
                                   <label className="text-[10px] text-slate-400 font-bold block">Assigned Faculty</label>
                                   <select
+                                    aria-label="Assigned Faculty"
                                     value={quickSubMentorId}
                                     onChange={e => setQuickSubMentorId(e.target.value)}
                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-xs cursor-pointer"
@@ -17497,6 +17499,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <label className="text-[10px] text-slate-400 font-bold block">Weekly Hours</label>
                                   <input
                                     type="number"
+                                    aria-label="Weekly Hours"
                                     min="1"
                                     max="12"
                                     value={quickSubHours}
@@ -17508,6 +17511,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <label className="text-[10px] text-slate-400 font-bold block">Room</label>
                                   <input
                                     type="text"
+                                    aria-label="Room"
                                     value={quickSubRoom}
                                     onChange={e => setQuickSubRoom(e.target.value)}
                                     className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold text-xs"
@@ -17611,50 +17615,50 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                         {/* Preview Calendar Grid */}
                         <div className="overflow-auto max-h-[70vh] rounded-xl border border-slate-200 shadow-sm relative no-scrollbar">
-                          <table className="w-full border-collapse text-left min-w-[800px] table-fixed">
-                            <thead>
-                              <tr className="text-[9.5px] font-bold uppercase">
-                                <th className="sticky top-0 left-0 z-30 p-3 text-slate-500 bg-slate-100/95 backdrop-blur-xs border-r border-b border-slate-200 w-[15%]">Time Slot</th>
+                          <Table containerClassName="overflow-visible" className="w-full border-collapse text-left min-w-[800px] table-fixed">
+                            <TableHeader>
+                              <TableRow className="text-[9.5px] font-bold uppercase">
+                                <TableHead className="sticky top-0 left-0 z-30 p-3 text-slate-500 bg-slate-100/95 backdrop-blur-xs border-r border-b border-slate-200 w-[15%]">Time Slot</TableHead>
                                 {DAYS.map(day => (
-                                  <th key={day} className="sticky top-0 z-20 p-3 text-slate-700 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200">{day}</th>
+                                  <TableHead key={day} className="sticky top-0 z-20 p-3 text-slate-700 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200">{day}</TableHead>
                                 ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-slate-100 bg-white">
                               {dynamicRows.map((row, rIdx) => {
                                 if (row.type === "break" || row.type === "lunch") {
                                   return (
-                                    <tr key={`break-${rIdx}`} className="bg-slate-50/40">
-                                      <td className="sticky left-0 z-10 p-3 text-[10px] font-bold text-slate-500 border-r border-slate-100 bg-slate-100/95 backdrop-blur-xs whitespace-nowrap">
+                                    <TableRow key={`break-${rIdx}`} className="bg-slate-50/40">
+                                      <TableCell className="sticky left-0 z-10 p-3 text-[10px] font-bold text-slate-500 border-r border-slate-100 bg-slate-100/95 backdrop-blur-xs whitespace-nowrap">
                                         <div className="flex items-center gap-1.5 font-bold text-slate-500">
                                           <Clock className="h-3 w-3 text-slate-400" />
                                           {row.timeRange}
                                         </div>
-                                      </td>
-                                      <td colSpan={5} className="p-3 text-center text-[10px] font-black tracking-widest text-slate-450 uppercase italic bg-slate-55/40">
+                                      </TableCell>
+                                      <TableCell colSpan={5} className="p-3 text-center text-[10px] font-black tracking-widest text-slate-450 uppercase italic bg-slate-55/40">
                                         {row.label}
-                                      </td>
-                                    </tr>
+                                      </TableCell>
+                                    </TableRow>
                                   );
                                 }
 
                                 if (row.type === "slot") {
                                   const time = row.time;
                                   return (
-                                    <tr key={time} className="hover:bg-slate-55/30 transition-colors">
-                                      <td className="sticky left-0 z-10 p-3 text-[10px] font-semibold text-slate-600 border-r border-slate-100 bg-slate-50/95 backdrop-blur-xs whitespace-nowrap">
+                                    <TableRow key={time} className="hover:bg-slate-55/30 transition-colors">
+                                      <TableCell className="sticky left-0 z-10 p-3 text-[10px] font-semibold text-slate-600 border-r border-slate-100 bg-slate-50/95 backdrop-blur-xs whitespace-nowrap">
                                         <div className="flex items-center gap-1.5">
                                           <Clock className="h-3 w-3 text-slate-400" />
                                           {time}
                                         </div>
-                                      </td>
+                                      </TableCell>
                                       {DAYS.map(day => {
                                         const slot = genPreviewSlots.find(
                                           s => s.day === day && s.time === time
                                         );
                                         const mentor = slot ? collegeMentors.find(m => m.id === slot.mentorId) : null;
                                         return (
-                                          <td key={day} className="p-2 border-r border-slate-100 last:border-r-0 h-20">
+                                          <TableCell key={day} className="p-2 border-r border-slate-100 last:border-r-0 h-20">
                                             {slot ? (
                                               <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-indigo-150 bg-indigo-50/30 text-xs shadow-xs">
                                                 <div className="text-[9px] font-extrabold text-indigo-700 uppercase tracking-wider truncate">
@@ -17668,16 +17672,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                 <span className="text-[9px] text-slate-350 font-medium">Free</span>
                                               </div>
                                             )}
-                                          </td>
+                                          </TableCell>
                                         );
                                       })}
-                                    </tr>
+                                    </TableRow>
                                   );
                                 }
                                 return null;
                               })}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
 
                         <div className="flex justify-between items-center pt-4 border-t border-slate-100">
@@ -18127,7 +18131,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     {/* From & To Pickers */}
                     <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">From:</span>
-                      <input
+                      <input aria-label="Attendance from date"
                         type="date"
                         value={attendanceStartDate}
                         onChange={e => e.target.value && setAttendanceStartDate(e.target.value)}
@@ -18136,7 +18140,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     </div>
                     <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">To:</span>
-                      <input
+                      <input aria-label="Attendance to date"
                         type="date"
                         value={attendanceEndDate}
                         onChange={e => e.target.value && setAttendanceEndDate(e.target.value)}
@@ -18181,7 +18185,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     </div>
 
                     {/* Department filter */}
-                    <select
+                    <select aria-label="Student department filter"
                       value={studentDeptFilter}
                       onChange={e => setStudentDeptFilter(e.target.value)}
                       className="py-1.5 px-2.5 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold cursor-pointer outline-none"
@@ -18193,7 +18197,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     </select>
 
                     {/* Batch filter */}
-                    <select
+                    <select aria-label="Student batch filter"
                       value={studentBatchFilter}
                       onChange={e => setStudentBatchFilter(e.target.value)}
                       className="py-1.5 px-2.5 border border-slate-200 rounded-xl bg-slate-50 text-xs font-bold cursor-pointer outline-none"
@@ -18216,17 +18220,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Master Multi-Date Attendance Register Table */}
                   <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs max-h-[70vh]">
-                    <table className="w-full border-collapse text-left text-xs font-semibold">
-                      <thead className="sticky top-0 z-20 shadow-2xs">
-                        <tr className="bg-gradient-to-r from-slate-100 via-indigo-50/40 to-slate-100 border-b border-slate-200 text-slate-700 font-black uppercase text-[9px] tracking-wider whitespace-nowrap">
-                          <th className="p-2.5 border-r border-slate-200 text-center sticky left-0 z-30 bg-slate-100 w-12">Sl. No.</th>
-                          <th className="p-2.5 border-r border-slate-200 sticky left-12 z-30 bg-slate-100 min-w-[110px]">Roll No</th>
-                          <th className="p-2.5 border-r border-slate-200 sticky left-[158px] z-30 bg-slate-100 min-w-[150px]">Name</th>
-                          <th className="p-2.5 border-r border-slate-200 min-w-[110px]">Department</th>
-                          <th className="p-2.5 border-r border-slate-200 text-center min-w-[70px]">Total days</th>
-                          <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-emerald-700">Total Present</th>
-                          <th className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</th>
-                          <th className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</th>
+                    <Table containerClassName="overflow-visible" className="w-full border-collapse text-left text-xs font-semibold">
+                      <TableHeader className="sticky top-0 z-20 shadow-2xs">
+                        <TableRow className="bg-gradient-to-r from-slate-100 via-indigo-50/40 to-slate-100 border-b border-slate-200 text-slate-700 font-black uppercase text-[9px] tracking-wider whitespace-nowrap">
+                          <TableHead className="p-2.5 border-r border-slate-200 text-center sticky left-0 z-30 bg-slate-100 w-12">Sl. No.</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 sticky left-12 z-30 bg-slate-100 min-w-[110px]">Roll No</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 sticky left-[158px] z-30 bg-slate-100 min-w-[150px]">Name</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 min-w-[110px]">Department</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[70px]">Total days</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-emerald-700">Total Present</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</TableHead>
                           {workingDates.map(dStr => {
                             const cfg = attMonitoringDailyConfigMap.get(dStr);
                             const holidayObj = attMonitoringHolidayMap.get(dStr);
@@ -18245,7 +18249,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             const tooltipText = `${formatDateToDMY(dStr)} (${fullCalendarDay})${dayOrder ? ` • Order: ${dayOrder}` : ""}${isHoliday ? ` • Holiday: ${notes || "College Holiday"}` : isEvent ? ` • Event: ${notes || "Campus Event"}` : isExam ? ` • Exam Day: ${notes || "Assessment"}` : " • Regular Working Day"}${cfg?.session_mode ? ` • Mode: ${cfg.session_mode}` : ""}${notes && !isHoliday ? `\nRemarks: ${notes}` : ""}`;
 
                             return (
-                              <th
+                              <TableHead
                                 key={dStr}
                                 onClick={() => setSelectedHeaderDateModal(dStr)}
                                 className={`p-2 border-r border-slate-200 text-center min-w-[88px] transition-all cursor-pointer select-none group hover:bg-indigo-100/80 hover:shadow-xs active:scale-[0.98] ${isToday ? "bg-indigo-50/90 border-b-2 border-b-indigo-600 ring-1 ring-inset ring-indigo-200" : isHoliday ? "bg-rose-50/50" : isExam ? "bg-purple-50/70" : isEvent ? "bg-amber-50/50" : "hover:bg-slate-100"
@@ -18277,12 +18281,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     {notes}
                                   </div>
                                 )}
-                              </th>
+                              </TableHead>
                             );
                           })}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-slate-100 bg-white text-slate-700 text-xs">
                         {paginatedStudents.map((st, idx) => {
                           const stStats = studentStatsMap.get(st.id);
                           const rowSerial = attendancePageSize > 0 ? ((safePage - 1) * attendancePageSize) + idx + 1 : idx + 1;
@@ -18297,14 +18301,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             if (isHoliday) {
                               return (
-                                <td key={dStr} className="p-1.5 text-center border-r border-slate-100 bg-rose-50/20">
+                                <TableCell key={dStr} className="p-1.5 text-center border-r border-slate-100 bg-rose-50/20">
                                   <span
                                     className="inline-flex items-center justify-center h-5 w-6 rounded font-black text-[10px] bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs cursor-default"
                                     title={`${st.name} | ${formatDateToDMY(dStr)}\n🎉 Holiday: ${notes || "College Holiday"}\n(No classes scheduled)`}
                                   >
                                     H
                                   </span>
-                                </td>
+                                </TableCell>
                               );
                             }
 
@@ -18315,9 +18319,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             // Only render blank if there are NO slots AND NO attendance records for this date
                             if (stSlots.length === 0 && stDayAtt.length === 0) {
                               return (
-                                <td key={dStr} className="p-1.5 text-center border-r border-slate-100 text-slate-300">
+                                <TableCell key={dStr} className="p-1.5 text-center border-r border-slate-100 text-slate-300">
                                   <span className="text-[10px]">—</span>
-                                </td>
+                                </TableCell>
                               );
                             }
 
@@ -18334,7 +18338,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             const tooltipText = `${st.name} | ${formatDateToDMY(dStr)} (${dayName}${dayOrderLabel})${notes ? `\nNote: ${notes}` : ""}\n${evalRes.tooltipInfo}\n${stDayAtt.map((a, i) => `• Period ${i + 1}: ${a.status.toUpperCase()}`).join('\n') || "No periods marked yet"}\n(Click to Mark/Edit)`;
 
                             return (
-                              <td key={dStr} className="p-1.5 text-center border-r border-slate-100">
+                              <TableCell key={dStr} className="p-1.5 text-center border-r border-slate-100">
                                 <button
                                   type="button"
                                   onClick={() => setMarkingStudentForDate({ student: st, dateStr: dStr })}
@@ -18343,7 +18347,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 >
                                   {evalRes.status}
                                 </button>
-                              </td>
+                              </TableCell>
                             );
                           });
 
@@ -18355,14 +18359,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           const pct = (rawPct !== undefined && rawPct >= 0) ? rawPct : 0;
 
                           return (
-                            <tr key={st.id} className="hover:bg-indigo-50/20 transition-colors">
-                              <td className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{rowSerial}</td>
-                              <td className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">{st.roll_number || st.id}</td>
-                              <td className="p-2.5 border-r border-slate-100 sticky left-[158px] z-10 bg-white min-w-[150px]">
+                            <TableRow key={st.id} className="hover:bg-indigo-50/20 transition-colors">
+                              <TableCell className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{rowSerial}</TableCell>
+                              <TableCell className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">{st.roll_number || st.id}</TableCell>
+                              <TableCell className="p-2.5 border-r border-slate-100 sticky left-[158px] z-10 bg-white min-w-[150px]">
                                 <div className="font-bold text-slate-800">{st.name}</div>
                                 <div className="text-[10px] text-slate-400 font-medium truncate max-w-[180px]">{st.email}</div>
-                              </td>
-                              <td className="p-2.5 border-r border-slate-100 whitespace-nowrap min-w-[110px]">
+                              </TableCell>
+                              <TableCell className="p-2.5 border-r border-slate-100 whitespace-nowrap min-w-[110px]">
                                 <div className="font-bold text-slate-800">{st.department || "General"}</div>
                                 <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                                   {st.classGroup && (
@@ -18376,11 +18380,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     </span>
                                   )}
                                 </div>
-                              </td>
-                              <td className="p-2.5 text-center font-bold text-slate-700 border-r border-slate-100">{effectiveTotal}</td>
-                              <td className="p-2.5 text-center font-black text-emerald-700 border-r border-slate-100 bg-emerald-50/20">{presentDays}</td>
-                              <td className="p-2.5 text-center font-black text-rose-700 border-r border-slate-100 bg-rose-50/20">{absentDays}</td>
-                              <td className="p-2.5 text-center border-r border-slate-100">
+                              </TableCell>
+                              <TableCell className="p-2.5 text-center font-bold text-slate-700 border-r border-slate-100">{effectiveTotal}</TableCell>
+                              <TableCell className="p-2.5 text-center font-black text-emerald-700 border-r border-slate-100 bg-emerald-50/20">{presentDays}</TableCell>
+                              <TableCell className="p-2.5 text-center font-black text-rose-700 border-r border-slate-100 bg-rose-50/20">{absentDays}</TableCell>
+                              <TableCell className="p-2.5 text-center border-r border-slate-100">
                                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded font-black text-[10.5px] ${pct >= 75
                                     ? "bg-emerald-50 text-emerald-700"
                                     : pct >= 60
@@ -18389,20 +18393,20 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   }`}>
                                   {pct}%
                                 </span>
-                              </td>
+                              </TableCell>
                               {dateCells}
-                            </tr>
+                            </TableRow>
                           );
                         })}
                         {filtered.length === 0 && (
-                          <tr>
-                            <td colSpan={8 + workingDates.length} className="p-8 text-center text-slate-400 italic">
+                          <TableRow>
+                            <TableCell colSpan={8 + workingDates.length} className="p-8 text-center text-slate-400 italic">
                               No students matched the active filters.
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
 
                   {/* Pagination Footer Controls */}
@@ -18414,7 +18418,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <span className="text-slate-300">|</span>
                       <div className="flex items-center gap-1.5">
                         <span className="text-slate-400 text-[11px]">Rows per page:</span>
-                        <select
+                        <select aria-label="Rows per page"
                           value={attendancePageSize}
                           onChange={(e) => {
                             setAttendancePageSize(Number(e.target.value));
@@ -18589,8 +18593,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   ];
 
                   return (
-                    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                      <div className="bg-white rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] shadow-2xl flex flex-col space-y-4 border border-slate-200 animate-scaleUp font-sans">
+                    <Dialog
+                      open={true}
+                      onOpenChange={(next) => {
+                        if (!next) {
+                          setSelectedHeaderDateModal(null);
+                          setDateModalSearch("");
+                          setDateModalStatusFilter("all");
+                          setDateModalDeptFilter("all");
+                          setDateModalCohortFilter("all");
+                        }
+                      }}
+                      ariaLabel="Attendance Details"
+                      overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+                      panelClassName="rounded-2xl p-6 max-w-4xl max-h-[90vh] flex flex-col space-y-4 animate-scaleUp"
+                    >
                         {/* Modal Header */}
                         <div className="flex items-start justify-between border-b border-slate-150 pb-3">
                           <div className="space-y-1">
@@ -18640,6 +18657,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               setDateModalDeptFilter("all");
                               setDateModalCohortFilter("all");
                             }}
+                            aria-label="Close attendance details dialog"
                             className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
                           >
                             <X className="h-5 w-5" />
@@ -18695,7 +18713,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               </div>
 
                               {modalAvailableDepts.length > 1 && (
-                                <select
+                                <select aria-label="Department filter"
                                   value={dateModalDeptFilter}
                                   onChange={(e) => {
                                     setDateModalDeptFilter(e.target.value);
@@ -18711,7 +18729,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               )}
 
                               {modalAvailableCohorts.length > 1 && (
-                                <select
+                                <select aria-label="Cohort filter"
                                   value={dateModalCohortFilter}
                                   onChange={(e) => setDateModalCohortFilter(e.target.value)}
                                   className="py-1.5 px-3 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-500 max-w-[200px] truncate"
@@ -18748,51 +18766,51 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                         {/* Student Roster Table */}
                         <div className="overflow-y-auto max-h-[360px] border border-slate-200 rounded-xl">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
-                              <tr>
-                                <th className="p-2.5 text-center w-12">#</th>
-                                <th className="p-2.5">Student Details</th>
-                                <th className="p-2.5">Department / Cohort</th>
-                                <th className="p-2.5 text-center">Periods Detail</th>
-                                <th className="p-2.5 text-center">Day Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
+                          <Table containerClassName="overflow-visible" className="w-full text-left text-xs border-collapse">
+                            <TableHeader className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
+                              <TableRow>
+                                <TableHead className="p-2.5 text-center w-12">#</TableHead>
+                                <TableHead className="p-2.5">Student Details</TableHead>
+                                <TableHead className="p-2.5">Department / Cohort</TableHead>
+                                <TableHead className="p-2.5 text-center">Periods Detail</TableHead>
+                                <TableHead className="p-2.5 text-center">Day Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-slate-100 bg-white">
                               {filteredRoster.length === 0 ? (
-                                <tr>
-                                  <td colSpan={5} className="p-8 text-center text-slate-400 font-medium italic">
+                                <TableRow>
+                                  <TableCell colSpan={5} className="p-8 text-center text-slate-400 font-medium italic">
                                     No students matching the selected filter.
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               ) : (
                                 filteredRoster.map((r, idx) => {
                                   const st = r.student;
                                   return (
-                                    <tr key={st.id} className="hover:bg-slate-50/80 transition-colors">
-                                      <td className="p-2.5 text-center text-slate-400 font-mono text-[11px]">
+                                    <TableRow key={st.id} className="hover:bg-slate-50/80 transition-colors">
+                                      <TableCell className="p-2.5 text-center text-slate-400 font-mono text-[11px]">
                                         {idx + 1}
-                                      </td>
-                                      <td className="p-2.5">
+                                      </TableCell>
+                                      <TableCell className="p-2.5">
                                         <div className="font-extrabold text-slate-900">{st.name}</div>
                                         <div className="font-mono text-[10px] text-slate-400">{st.roll_number || st.id}</div>
-                                      </td>
-                                      <td className="p-2.5">
+                                      </TableCell>
+                                      <TableCell className="p-2.5">
                                         <span className="font-semibold text-slate-700">{st.department || "General"}</span>
                                         {st.classGroup && (
                                           <span className="block text-[10px] text-slate-400 font-medium truncate max-w-[200px]">
                                             {st.classGroup}
                                           </span>
                                         )}
-                                      </td>
-                                      <td className="p-2.5 text-center font-mono text-[11px] text-slate-600">
+                                      </TableCell>
+                                      <TableCell className="p-2.5 text-center font-mono text-[11px] text-slate-600">
                                         {r.totalSlots > 0 ? (
                                           <span>P: {r.pCount} | AB: {r.aCount} | OD: {r.odCount}</span>
                                         ) : (
                                           <span className="text-slate-300">—</span>
                                         )}
-                                      </td>
-                                      <td className="p-2.5 text-center">
+                                      </TableCell>
+                                      <TableCell className="p-2.5 text-center">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${r.category === "present" ? "bg-emerald-100 text-emerald-800" :
                                             r.category === "absent" ? "bg-rose-100 text-rose-800" :
                                               r.category === "od" ? "bg-sky-100 text-sky-800" :
@@ -18804,13 +18822,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               r.category === "od" ? "OD" :
                                                 r.status === "H" ? "Holiday" : "Unmarked"}
                                         </span>
-                                      </td>
-                                    </tr>
+                                      </TableCell>
+                                    </TableRow>
                                   );
                                 })
                               )}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
 
                         {/* Footer */}
@@ -18835,8 +18853,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             Close
                           </button>
                         </div>
-                      </div>
-                    </div>
+                    </Dialog>
                   );
                 })()}
 
@@ -18870,7 +18887,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                       const daySlots = slots.filter(s => {
                         const m = mentors.find(men => men.id === s.mentorId);
-                        const matchesCollege = m && (m.college_id === activeCollegeId || (!m.college_id && activeCollegeId === "college_1"));
+                        const matchesCollege = m && (m.college_id === activeCollegeId || (!m.college_id && activeCollegeId === colleges[0]?.id));
                         return matchesCollege && s.day === dayName;
                       });
 
@@ -19074,6 +19091,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               handoverRequests={requests}
               approvedHandovers={approvedHandovers}
               studentAcademicTracker={studentAcademicTracker}
+              readOnly={readOnly}
             />
           )}
 
@@ -19176,7 +19194,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     </div>
                     <div className="space-y-1">
                       <label className="text-slate-455 text-[10px] uppercase font-bold">Description</label>
-                      <textarea rows={3} placeholder="Details of the issue..." value={issueDesc} onChange={e => setIssueDesc(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm" required />
+                      <textarea aria-label="Description" rows={3} placeholder="Details of the issue..." value={issueDesc} onChange={e => setIssueDesc(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm" required />
                     </div>
                     <div className="flex gap-2 pt-2">
                       <Button type="submit" variant="primary" size="md" className="w-full" icon={<Plus className="h-4 w-4" />}>
@@ -19202,7 +19220,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           className="w-full pl-7 pr-2 py-1.5 border border-slate-200 rounded-xl bg-slate-50 text-[10px] focus:outline-none shadow-sm"
                         />
                       </div>
-                      <select
+                      <select aria-label="Issue status filter"
                         value={issueStatusFilter}
                         onChange={e => setIssueStatusFilter(e.target.value)}
                         className="p-1 border border-slate-200 rounded-lg bg-white font-bold cursor-pointer outline-none shadow-sm"
@@ -19211,7 +19229,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <option value="open">Open</option>
                         <option value="resolved">Resolved</option>
                       </select>
-                      <select
+                      <select aria-label="Issue type filter"
                         value={issueTypeFilter}
                         onChange={e => setIssueTypeFilter(e.target.value)}
                         className="p-1 border border-slate-200 rounded-lg bg-white font-bold cursor-pointer outline-none shadow-sm"
@@ -19265,7 +19283,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 </div>
                                 <div className="space-y-1">
                                   <label className="text-[9px] uppercase font-bold text-slate-400">Description</label>
-                                  <textarea rows={2} value={editIssueDesc} onChange={ev => setEditIssueDesc(ev.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-xs" required />
+                                  <textarea aria-label="Description" rows={2} value={editIssueDesc} onChange={ev => setEditIssueDesc(ev.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-xs" required />
                                 </div>
                                 <div className="flex gap-2 pt-2">
                                   <Button type="submit" variant="success" size="xs" className="flex-1">Save</Button>
@@ -19556,36 +19574,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Table */}
                   <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                    <table className="w-full border-collapse text-left text-xs font-semibold min-w-[1200px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                          <th className="p-3 border-r border-slate-100">Date &amp; Time</th>
-                          <th className="p-3 border-r border-slate-100">Class / Subject</th>
-                          <th className="p-3 border-r border-slate-100">Faculty Requestor</th>
-                          <th className="p-3 border-r border-slate-100">Type / Target</th>
-                          <th className="p-3 border-r border-slate-100">Reason &amp; Remarks</th>
-                          <th className="p-3 border-r border-slate-100">Status</th>
-                          <th className="p-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                    <Table className="w-full border-collapse text-left text-xs font-semibold min-w-[1200px]">
+                      <TableHeader>
+                        <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                          <TableHead className="p-3 border-r border-slate-100">Date &amp; Time</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Class / Subject</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Faculty Requestor</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Type / Target</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Reason &amp; Remarks</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Status</TableHead>
+                          <TableHead className="p-3 text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-slate-100 bg-white text-slate-700">
                         {filteredByCat.map(req => {
                           const isLate = isLateAttReq(req);
                           const isExam = isExamMarkReq(req);
                           return (
-                            <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="p-3 border-r border-slate-100">
+                            <TableRow key={req.id} className="hover:bg-slate-50/50 transition-colors">
+                              <TableCell className="p-3 border-r border-slate-100">
                                 <div className="font-bold text-slate-850">{req.dateStr}</div>
                                 <div className="text-[10px] text-slate-400 font-mono mt-0.5">{req.time || "—"}</div>
-                              </td>
-                              <td className="p-3 border-r border-slate-100">
+                              </TableCell>
+                              <TableCell className="p-3 border-r border-slate-100">
                                 <div className="font-bold text-slate-850">{req.course}</div>
                                 {req.classGroup && <div className="text-[10px] text-slate-400 font-semibold">{req.classGroup}</div>}
-                              </td>
-                              <td className="p-3 font-bold border-r border-slate-100 text-slate-800">
+                              </TableCell>
+                              <TableCell className="p-3 font-bold border-r border-slate-100 text-slate-800">
                                 {req.requestorName}
-                              </td>
-                              <td className="p-3 border-r border-slate-100">
+                              </TableCell>
+                              <TableCell className="p-3 border-r border-slate-100">
                                 {isLate ? (
                                   <span className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-black inline-flex items-center gap-1">
                                     Period Attendance Unlock
@@ -19609,11 +19627,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 ) : (
                                   <span className="font-bold text-indigo-700">{req.targetStaffName || "Cover Staff"}</span>
                                 )}
-                              </td>
-                              <td className="p-3 italic text-slate-600 border-r border-slate-100 text-[11px] max-w-xs truncate" title={req.reason}>
+                              </TableCell>
+                              <TableCell className="p-3 italic text-slate-600 border-r border-slate-100 text-[11px] max-w-xs truncate" title={req.reason}>
                                 {req.reason}
-                              </td>
-                              <td className="p-3 border-r border-slate-100">
+                              </TableCell>
+                              <TableCell className="p-3 border-r border-slate-100">
                                 {isExam ? (
                                   <span className="px-2 py-0.5 rounded border text-[9.5px] font-black uppercase bg-purple-50 border-purple-200 text-purple-700 flex items-center gap-1 w-fit">
                                     <FileText className="w-3 h-3" />
@@ -19645,8 +19663,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <span>Awaiting Colleague</span>
                                   </span>
                                 )}
-                              </td>
-                              <td className="p-3 text-right">
+                              </TableCell>
+                              <TableCell className="p-3 text-right">
                                 {readOnly ? (
                                   <span className="text-[10px] text-slate-400 font-semibold italic">View only</span>
                                 ) : isExam ? (
@@ -19769,13 +19787,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     Awaiting cover staff ({req.targetStaffName})
                                   </span>
                                 )}
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           );
                         })}
                         {filteredByCat.length === 0 && (
-                          <tr>
-                            <td colSpan={7} className="p-12 text-center text-slate-400">
+                          <TableRow>
+                            <TableCell colSpan={7} className="p-12 text-center text-slate-400">
                               <div className="flex flex-col items-center justify-center gap-2">
                                 <CheckCircle className="h-8 w-8 text-emerald-400/80" />
                                 <p className="text-xs font-bold text-slate-600">No pending requests in this category.</p>
@@ -19783,18 +19801,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {isAllColleges ? "All campus requests have been reviewed." : `All requests for ${colleges.find(c => c.id === activeCollegeId)?.name || "this campus"} have been reviewed.`}
                                 </p>
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
 
                 {/* Modal: CAM Direct Free Faculty Allocation */}
                 {camAssigningReq && (
-                  <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200 animate-scaleUp space-y-0">
+                  <Dialog
+                    open={true}
+                    onOpenChange={(next) => { if (!next) setCamAssigningReq(null); }}
+                    ariaLabel="Map Free Faculty for Cover"
+                    overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+                    panelClassName="max-w-md overflow-hidden animate-scaleUp space-y-0 p-0 max-h-[90vh]"
+                  >
                       {/* Header */}
                       <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
                         <div className="flex items-center gap-2.5">
@@ -19809,6 +19832,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => setCamAssigningReq(null)}
+                          aria-label="Close free faculty dialog"
                           className="text-slate-400 hover:text-slate-700 p-1 rounded-md cursor-pointer"
                         >
                           <X className="h-4 w-4" />
@@ -19898,8 +19922,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {camAssignSubmitting ? "Assigning..." : "Confirm & Assign Cover →"}
                         </button>
                       </div>
-                    </div>
-                  </div>
+                    </Dialog>
                 )}
 
                 {/* Compact Approval Subject Dialog - Not full screen, simple card overlay */}
@@ -19908,11 +19931,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   if (!reviewReq) return null;
                   const coverMentor = mentors.find(m => m.id === reviewReq.targetStaffId);
                   return (
-                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 backdrop-blur-sm">
-                      <div className="bg-white rounded-xl shadow-xl border border-slate-150 p-5 w-full max-w-sm mx-4">
+                    <Dialog
+                      open={true}
+                      onOpenChange={(next) => { if (!next) setReviewingRequestId(null); }}
+                      ariaLabel="Select Subject for Coverage"
+                      overlayClassName="z-[9999] bg-slate-900/25 backdrop-blur-sm"
+                      panelClassName="max-w-sm p-5 mx-4 space-y-0"
+                    >
                         <div className="flex items-center justify-between mb-4">
                           <h3 className="text-sm font-black text-slate-900">Select Subject for Coverage</h3>
-                          <button onClick={() => setReviewingRequestId(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                          <button onClick={() => setReviewingRequestId(null)} aria-label="Close subject selection dialog" className="text-slate-400 hover:text-slate-600 transition-colors">
                             <XCircle className="h-4.5 w-4.5" />
                           </button>
                         </div>
@@ -19939,7 +19967,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </button>
 
                           {handoverSubject === "substitute_own" && (
-                            <select
+                            <select aria-label="Subject"
                               value={selectedSubjName}
                               onChange={(e) => setSelectedSubjName(e.target.value)}
                               className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -20013,8 +20041,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             Confirm Approve
                           </LoadingButton>
                         </div>
-                      </div>
-                    </div>
+                    </Dialog>
                   );
                 })()}
 
@@ -20025,49 +20052,49 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
 
                   <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                    <table className="w-full border-collapse text-left text-xs font-semibold min-w-[480px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                          <th className="p-3 border-r border-slate-100">Date</th>
-                          <th className="p-3 border-r border-slate-100">Time / Class</th>
-                          <th className="p-3 border-r border-slate-100">Original Mentor</th>
-                          <th className="p-3 border-r border-slate-100">Covering Mentor</th>
-                          <th className="p-3 border-r border-slate-100">Subject Taught</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                    <Table className="w-full border-collapse text-left text-xs font-semibold min-w-[480px]">
+                      <TableHeader>
+                        <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                          <TableHead className="p-3 border-r border-slate-100">Date</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Time / Class</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Original Mentor</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Covering Mentor</TableHead>
+                          <TableHead className="p-3 border-r border-slate-100">Subject Taught</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-slate-100 bg-white text-slate-700">
                         {campusApproved.map(h => {
                           const req = campusRequests.find(r => r.id === h.requestId);
                           const originalMentor = mentors.find(m => m.id === h.originalMentorId);
                           return (
-                            <tr key={h.requestId} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="p-3 font-bold text-slate-805 border-r border-slate-100">{h.dateStr}</td>
-                              <td className="p-3 border-r border-slate-100">
+                            <TableRow key={h.requestId} className="hover:bg-slate-50/50 transition-colors">
+                              <TableCell className="p-3 font-bold text-slate-805 border-r border-slate-100">{h.dateStr}</TableCell>
+                              <TableCell className="p-3 border-r border-slate-100">
                                 <div className="font-bold text-slate-805">{req?.classGroup || "-"}</div>
                                 <div className="text-[10px] text-slate-400">{req?.time || "-"}</div>
-                              </td>
-                              <td className="p-3 text-slate-500 font-bold border-r border-slate-100">{originalMentor?.name || "Unknown"}</td>
-                              <td className="p-3 font-bold text-emerald-700 border-r border-slate-100">{h.coverStaffName}</td>
-                              <td className="p-3 font-bold text-slate-805 border-r border-slate-100">
+                              </TableCell>
+                              <TableCell className="p-3 text-slate-500 font-bold border-r border-slate-100">{originalMentor?.name || "Unknown"}</TableCell>
+                              <TableCell className="p-3 font-bold text-emerald-700 border-r border-slate-100">{h.coverStaffName}</TableCell>
+                              <TableCell className="p-3 font-bold text-slate-805 border-r border-slate-100">
                                 {h.course}
                                 {req && req.course !== h.course && (
                                   <span className="ml-2 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[9px] uppercase border border-indigo-100">
                                     Custom Subject
                                   </span>
                                 )}
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           );
                         })}
                         {campusApproved.length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="p-8 text-center text-slate-400 italic">
+                          <TableRow>
+                            <TableCell colSpan={5} className="p-8 text-center text-slate-400 italic">
                               No approved handovers logged for this campus.
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
 
@@ -20113,44 +20140,44 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </div>
                       ) : (
                         <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
-                          <table className="w-full border-collapse text-left text-xs font-semibold min-w-[580px]">
-                            <thead>
-                              <tr className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[9px] tracking-widest">
-                                <th className="p-3">Date Offered</th>
-                                <th className="p-3">Debtor (Owes Hours)</th>
-                                <th className="p-3">Creditor (Owed Hours)</th>
-                                <th className="p-3">Class Offered</th>
-                                <th className="p-3">Time</th>
-                                <th className="p-3 text-center">Status</th>
-                                <th className="p-3 text-right">Requested</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                          <Table className="w-full border-collapse text-left text-xs font-semibold min-w-[580px]">
+                            <TableHeader>
+                              <TableRow className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[9px] tracking-widest">
+                                <TableHead className="p-3">Date Offered</TableHead>
+                                <TableHead className="p-3">Debtor (Owes Hours)</TableHead>
+                                <TableHead className="p-3">Creditor (Owed Hours)</TableHead>
+                                <TableHead className="p-3">Class Offered</TableHead>
+                                <TableHead className="p-3">Time</TableHead>
+                                <TableHead className="p-3 text-center">Status</TableHead>
+                                <TableHead className="p-3 text-right">Requested</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody className="divide-y divide-slate-100 bg-white text-slate-700">
                               {swapRequests.slice().sort((a: any, b: any) => (b.timestamp || "").localeCompare(a.timestamp || "")).map((req: any) => {
                                 const debtorMentor = mentors.find(m => m.id === req.requestorId);
                                 const creditorMentor = mentors.find(m => m.id === req.targetStaffId);
                                 const isPending = req.status === "pending" || req.status === "pending_cam";
                                 const isApproved = req.status === "approved";
                                 return (
-                                  <tr key={req.id} className="hover:bg-indigo-50/20 transition-colors">
-                                    <td className="p-3">
+                                  <TableRow key={req.id} className="hover:bg-indigo-50/20 transition-colors">
+                                    <TableCell className="p-3">
                                       <div className="font-bold text-slate-800">{req.dateFormatted}</div>
                                       <div className="text-[9px] text-slate-400 mt-0.5">{req.dateStr}</div>
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                       <div className="font-black text-rose-700">{debtorMentor?.name || req.requestorName}</div>
                                       <div className="text-[9px] text-rose-400 mt-0.5">{debtorMentor?.department || "—"}</div>
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                       <div className="font-black text-emerald-700">{creditorMentor?.name || req.targetStaffName}</div>
                                       <div className="text-[9px] text-emerald-400 mt-0.5">{creditorMentor?.department || "—"}</div>
-                                    </td>
-                                    <td className="p-3">
+                                    </TableCell>
+                                    <TableCell className="p-3">
                                       <div className="font-bold text-slate-800 max-w-[180px] truncate" title={req.course}>{req.course}</div>
                                       <div className="text-[9px] text-slate-400 mt-0.5">{req.day}</div>
-                                    </td>
-                                    <td className="p-3 text-slate-600 font-medium whitespace-nowrap">{req.time}</td>
-                                    <td className="p-3 text-center">
+                                    </TableCell>
+                                    <TableCell className="p-3 text-slate-600 font-medium whitespace-nowrap">{req.time}</TableCell>
+                                    <TableCell className="p-3 text-center">
                                       {isApproved ? (
                                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teal-100 border border-teal-200 text-teal-800 text-[8.5px] font-black uppercase">
                                           Yes Settled
@@ -20164,15 +20191,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           No Declined
                                         </span>
                                       )}
-                                    </td>
-                                    <td className="p-3 text-right text-slate-400 font-medium whitespace-nowrap">
+                                    </TableCell>
+                                    <TableCell className="p-3 text-right text-slate-400 font-medium whitespace-nowrap">
                                       {new Date(req.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                                    </td>
-                                  </tr>
+                                    </TableCell>
+                                  </TableRow>
                                 );
                               })}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </div>
                       )}
                     </div>
@@ -20406,6 +20433,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1.5">
                         <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
                         <select
+                          aria-label="Department"
                           value={activeDept}
                           onChange={(e) => {
                             setCamAcadWeeklyDept(e.target.value);
@@ -20422,6 +20450,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1.5">
                         <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
                         <select
+                          aria-label="Semester"
                           value={activeSemester}
                           onChange={(e) => {
                             setCamAcadWeeklySem(e.target.value);
@@ -20436,6 +20465,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1.5">
                         <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Academic Subject</label>
                         <select
+                          aria-label="Academic Subject"
                           value={activeSubject}
                           onChange={(e) => setCamAcadWeeklySubj(e.target.value)}
                           className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white font-sans"
@@ -20449,6 +20479,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">From Date</label>
                         <input
                           type="date"
+                          aria-label="From Date"
                           value={camAcadWeeklyFrom}
                           onChange={(e) => setCamAcadWeeklyFrom(e.target.value)}
                           className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
@@ -20459,6 +20490,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">To Date</label>
                         <input
                           type="date"
+                          aria-label="To Date"
                           value={camAcadWeeklyTo}
                           min={camAcadWeeklyFrom || undefined}
                           onChange={(e) => setCamAcadWeeklyTo(e.target.value)}
@@ -20540,26 +20572,26 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
 
                       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white scroll-touch">
-                        <table className="w-full border-collapse text-left text-xs font-semibold min-w-[950px]">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[9.5px] whitespace-nowrap">
-                              <th className="p-3.5 w-12 text-center border-r border-slate-100">#</th>
-                              <th className="p-3.5 border-r border-slate-100 min-w-[180px]">Student Name &amp; Email</th>
-                              <th className="p-3.5 border-r border-slate-100 w-[110px] text-center">Attendance</th>
-                              <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-amber-50/40 text-amber-900">Quiz (10)</th>
-                              <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-purple-50/40 text-purple-900">Assessment (10)</th>
-                              <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-emerald-50/40 text-emerald-900">Assignment (10)</th>
-                              <th className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-indigo-50/40 text-indigo-900">Total (30)</th>
-                              <th className="p-3.5 min-w-[180px]">Feedback / Remarks</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                        <Table className="w-full border-collapse text-left text-xs font-semibold min-w-[950px]">
+                          <TableHeader>
+                            <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[9.5px] whitespace-nowrap">
+                              <TableHead className="p-3.5 w-12 text-center border-r border-slate-100">#</TableHead>
+                              <TableHead className="p-3.5 border-r border-slate-100 min-w-[180px]">Student Name &amp; Email</TableHead>
+                              <TableHead className="p-3.5 border-r border-slate-100 w-[110px] text-center">Attendance</TableHead>
+                              <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-amber-50/40 text-amber-900">Quiz (10)</TableHead>
+                              <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-purple-50/40 text-purple-900">Assessment (10)</TableHead>
+                              <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-emerald-50/40 text-emerald-900">Assignment (10)</TableHead>
+                              <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-indigo-50/40 text-indigo-900">Total (30)</TableHead>
+                              <TableHead className="p-3.5 min-w-[180px]">Feedback / Remarks</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-100 bg-white text-slate-700">
                             {cohortStudents.length === 0 ? (
-                              <tr>
-                                <td colSpan={8} className="p-8 text-center text-xs text-slate-400 italic">
+                              <TableRow>
+                                <TableCell colSpan={8} className="p-8 text-center text-xs text-slate-400 italic">
                                   No students registered in {activeClassGroup}.
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ) : (
                               cohortStudents.map((student, idx) => {
                                 const entry = (studentAcademicTracker || []).find(
@@ -20573,30 +20605,30 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 const total = entry?.total_marks !== undefined && entry?.total_marks !== null ? entry.total_marks : "—";
 
                                 return (
-                                  <tr key={`${student.id}_wk${activeWeek}`} className="hover:bg-slate-50/60 transition-colors">
-                                    <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">{idx + 1}</td>
-                                    <td className="p-3 border-r border-slate-100">
+                                  <TableRow key={`${student.id}_wk${activeWeek}`} className="hover:bg-slate-50/60 transition-colors">
+                                    <TableCell className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">{idx + 1}</TableCell>
+                                    <TableCell className="p-3 border-r border-slate-100">
                                       <div className="font-bold text-slate-900">{student.name}</div>
                                       <div className="text-[10px] text-indigo-650 font-mono font-bold mt-0.5">{student.email}</div>
                                       <div className="text-[9px] text-slate-400 font-mono">ID: {student.id} {student.register_number ? `• Reg: ${student.register_number}` : ""}</div>
-                                    </td>
-                                    <td className="p-3 text-center border-r border-slate-100">
+                                    </TableCell>
+                                    <TableCell className="p-3 text-center border-r border-slate-100">
                                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${(entry?.attendance_status || "Present") === "Absent" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"
                                         }`}>
                                         {entry?.attendance_status || "Present"}
                                       </span>
-                                    </td>
-                                    <td className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-amber-50/10">{qm}</td>
-                                    <td className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-purple-50/10">{asm}</td>
-                                    <td className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-emerald-50/10">{agm}</td>
-                                    <td className="p-3 text-center border-r border-slate-100 font-black text-indigo-900 bg-indigo-50/20">{total !== "—" ? `${total} / 30` : "—"}</td>
-                                    <td className="p-3 text-slate-600 text-xs">{entry?.feedback || "—"}</td>
-                                  </tr>
+                                    </TableCell>
+                                    <TableCell className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-amber-50/10">{qm}</TableCell>
+                                    <TableCell className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-purple-50/10">{asm}</TableCell>
+                                    <TableCell className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-emerald-50/10">{agm}</TableCell>
+                                    <TableCell className="p-3 text-center border-r border-slate-100 font-black text-indigo-900 bg-indigo-50/20">{total !== "—" ? `${total} / 30` : "—"}</TableCell>
+                                    <TableCell className="p-3 text-slate-600 text-xs">{entry?.feedback || "—"}</TableCell>
+                                  </TableRow>
                                 );
                               })
                             )}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     </div>
                   </div>
@@ -20986,7 +21018,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             {/* Date Range */}
                             <div className="flex items-center gap-1.5 text-xs text-slate-500 font-bold">
                               <span>From:</span>
-                              <input
+                              <input aria-label="Academic start date"
                                 type="date"
                                 value={camAcadStartDate}
                                 onChange={e => {
@@ -20996,7 +21028,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 className="p-1 border border-slate-200 rounded-lg text-xs bg-white text-slate-700 outline-none"
                               />
                               <span>To:</span>
-                              <input
+                              <input aria-label="Academic end date"
                                 type="date"
                                 value={camAcadEndDate}
                                 onChange={e => {
@@ -21069,59 +21101,59 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </div>
                         ) : (
                           <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs border-collapse">
-                              <thead>
-                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
-                                  <th className="p-3 w-12 text-center">#</th>
-                                  <th className="p-3">Date &amp; Slot</th>
-                                  <th className="p-3">Class Group</th>
-                                  <th className="p-3 w-[88px] text-center">Semester</th>
-                                  <th className="p-3">Academic Subject</th>
-                                  <th className="p-3">Faculty Member</th>
-                                  <th className="p-3">Unit</th>
-                                  <th className="p-3">Topic Covered</th>
-                                  <th className="p-3">Status</th>
-                                  <th className="p-3">Delivery Remarks</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
+                            <Table className="w-full text-left text-xs border-collapse">
+                              <TableHeader>
+                                <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                                  <TableHead className="p-3 w-12 text-center">#</TableHead>
+                                  <TableHead className="p-3">Date &amp; Slot</TableHead>
+                                  <TableHead className="p-3">Class Group</TableHead>
+                                  <TableHead className="p-3 w-[88px] text-center">Semester</TableHead>
+                                  <TableHead className="p-3">Academic Subject</TableHead>
+                                  <TableHead className="p-3">Faculty Member</TableHead>
+                                  <TableHead className="p-3">Unit</TableHead>
+                                  <TableHead className="p-3">Topic Covered</TableHead>
+                                  <TableHead className="p-3">Status</TableHead>
+                                  <TableHead className="p-3">Delivery Remarks</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody className="divide-y divide-slate-100">
                                 {paginatedLogs.map((log, idx) => {
                                   const mentorObj = collegeMentors.find(m => m.id === log.mentor_id);
                                   const logSemester = getSemesterFromClassGroup(log.class_group || "");
                                   const rowNum = (camAcadPage - 1) * camAcadPageSize + idx + 1;
                                   return (
-                                    <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
-                                      <td className="p-3 text-center font-bold text-slate-400 text-[11px]">{rowNum}</td>
-                                      <td className="p-3 whitespace-nowrap">
+                                    <TableRow key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                                      <TableCell className="p-3 text-center font-bold text-slate-400 text-[11px]">{rowNum}</TableCell>
+                                      <TableCell className="p-3 whitespace-nowrap">
                                         <div className="font-extrabold text-slate-900">{log.date}</div>
                                         <div className="text-[10px] text-slate-500 font-semibold">{log.period_slot}</div>
-                                      </td>
-                                      <td className="p-3 font-bold text-slate-700 whitespace-nowrap">
+                                      </TableCell>
+                                      <TableCell className="p-3 font-bold text-slate-700 whitespace-nowrap">
                                         {log.class_group}
-                                      </td>
-                                      <td className="p-3 text-center whitespace-nowrap">
+                                      </TableCell>
+                                      <TableCell className="p-3 text-center whitespace-nowrap">
                                         <span className="px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase border bg-sky-50 text-sky-700 border-sky-200">
                                           {formatSemesterChip(logSemester)}
                                         </span>
-                                      </td>
-                                      <td className="p-3">
+                                      </TableCell>
+                                      <TableCell className="p-3">
                                         <div className="font-black text-slate-900">{log.subject}</div>
-                                      </td>
-                                      <td className="p-3 whitespace-nowrap">
+                                      </TableCell>
+                                      <TableCell className="p-3 whitespace-nowrap">
                                         <div className="font-bold text-slate-800">{log.mentor_name || mentorObj?.name || log.mentor_id}</div>
                                         <div className="text-[10px] text-slate-400 font-mono">{log.mentor_id}</div>
-                                      </td>
-                                      <td className="p-3 whitespace-nowrap">
+                                      </TableCell>
+                                      <TableCell className="p-3 whitespace-nowrap">
                                         <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
                                           {log.unit || "Unit 1"}
                                         </span>
-                                      </td>
-                                      <td className="p-3 max-w-xs">
+                                      </TableCell>
+                                      <TableCell className="p-3 max-w-xs">
                                         <div className="font-semibold text-slate-800 text-[11px] leading-relaxed">
                                           {log.topic}
                                         </div>
-                                      </td>
-                                      <td className="p-3 whitespace-nowrap">
+                                      </TableCell>
+                                      <TableCell className="p-3 whitespace-nowrap">
                                         {(() => {
                                           const isNotDelivered = (log.status || "").toLowerCase().includes("not") || (log.status || "").toLowerCase().includes("missed");
                                           return (
@@ -21133,15 +21165,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                             </span>
                                           );
                                         })()}
-                                      </td>
-                                      <td className="p-3 max-w-xs text-slate-500 italic text-[10.5px]">
+                                      </TableCell>
+                                      <TableCell className="p-3 max-w-xs text-slate-500 italic text-[10.5px]">
                                         {log.comments ? `"${log.comments}"` : "—"}
-                                      </td>
-                                    </tr>
+                                      </TableCell>
+                                    </TableRow>
                                   );
                                 })}
-                              </tbody>
-                            </table>
+                              </TableBody>
+                            </Table>
                           </div>
                         )}
 
@@ -21486,6 +21518,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
                     <select
+                      aria-label="Department"
                       value={activeDept}
                       onChange={(e) => {
                         setCamTrackerDept(e.target.value);
@@ -21503,6 +21536,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
                     <select
+                      aria-label="Semester"
                       value={activeSemester}
                       onChange={(e) => {
                         setCamTrackerSemester(e.target.value);
@@ -21518,6 +21552,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Skill Subject</label>
                     <select
+                      aria-label="Skill Subject"
                       value={activeSubject}
                       onChange={(e) => {
                         setCamTrackerSubject(e.target.value);
@@ -21533,6 +21568,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="space-y-1.5">
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week</label>
                     <select
+                      aria-label="Week"
                       value={activeWeek}
                       onChange={(e) => setCamTrackerWeek(parseInt(e.target.value, 10) || 1)}
                       className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
@@ -21547,6 +21583,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">From Date</label>
                     <input
                       type="date"
+                      aria-label="From Date"
                       value={camTrackerFromDate}
                       onChange={e => e.target.value && setCamTrackerFromDate(e.target.value)}
                       className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
@@ -21557,6 +21594,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">To Date</label>
                     <input
                       type="date"
+                      aria-label="To Date"
                       value={camTrackerToDate}
                       onChange={e => e.target.value && setCamTrackerToDate(e.target.value)}
                       className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
@@ -22054,16 +22092,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     return (
                       <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-sm">
-                        <table className="w-full border-collapse text-left text-xs min-w-[560px]">
-                          <thead>
-                            <tr className="bg-slate-55 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px]">
-                              <th className="p-3 w-[25%]">Student Info</th>
-                              <th className="p-3 w-[30%]">Submission Link</th>
-                              <th className="p-3 w-[35%]">VIVA Feedback / Assessment Comments</th>
-                              <th className="p-3 w-[10%] text-center">Marks (0-10)</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white">
+                        <Table className="w-full border-collapse text-left text-xs min-w-[560px]">
+                          <TableHeader>
+                            <TableRow className="bg-slate-55 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px]">
+                              <TableHead className="p-3 w-[25%]">Student Info</TableHead>
+                              <TableHead className="p-3 w-[30%]">Submission Link</TableHead>
+                              <TableHead className="p-3 w-[35%]">VIVA Feedback / Assessment Comments</TableHead>
+                              <TableHead className="p-3 w-[10%] text-center">Marks (0-10)</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-100 bg-white">
                             {classStudents.map(student => {
                               const entry = studentTracker.find(
                                 e => e.student_id === student.id &&
@@ -22083,13 +22121,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               }
 
                               return (
-                                <tr key={student.id} className="hover:bg-slate-50/40 transition-colors text-slate-700">
-                                  <td className="p-3">
+                                <TableRow key={student.id} className="hover:bg-slate-50/40 transition-colors text-slate-700">
+                                  <TableCell className="p-3">
                                     <div className="font-bold text-slate-800">{student.name}</div>
                                     <div className="text-[9px] text-slate-400 mt-0.5">{student.classGroup || "—"}</div>
                                     <div className="text-[9px] text-slate-400 font-mono">{student.id}</div>
-                                  </td>
-                                  <td className="p-3">
+                                  </TableCell>
+                                  <TableCell className="p-3">
                                     {submissionUrl ? (
                                       <a
                                         href={submissionUrl}
@@ -22104,11 +22142,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     ) : (
                                       <span className="text-[10px] text-slate-400 italic">No submission yet</span>
                                     )}
-                                  </td>
-                                  <td className="p-3 font-semibold text-slate-650">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-semibold text-slate-650">
                                     {feedback || <span className="text-[10px] text-slate-350 italic">No feedback entered</span>}
-                                  </td>
-                                  <td className="p-3 text-center">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-center">
                                     {marks !== null ? (
                                       <span className={`inline-flex items-center px-2 py-0.5 rounded-lg border text-xs font-black uppercase tracking-wider ${badgeBg}`}>
                                         {marks} / 10
@@ -22116,12 +22154,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     ) : (
                                       <span className="text-[10px] text-slate-400 italic">Pending</span>
                                     )}
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               );
                             })}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     );
                   })()}
@@ -22189,7 +22227,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
               {/* Metric Summary Cards */}
               {(() => {
-                const campusStudents = students.filter(s => s.college_id === activeCollegeId || (!s.college_id && activeCollegeId === "college_1"));
+                const campusStudents = students.filter(s => s.college_id === activeCollegeId || (!s.college_id && activeCollegeId === colleges[0]?.id));
                 const classGroupsCount = new Set(campusStudents.map(s => s.classGroup).filter(Boolean)).size;
                 const completeProfilesCount = campusStudents.filter(s => s.tenth_mark || s.twelfth_mark || s.phone || s.linkedin_link).length;
 
@@ -22245,7 +22283,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {/* Course / Department Filter */}
                   <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Course:</span>
-                    <select
+                    <select aria-label="Course filter"
                       value={studentDirDeptFilter}
                       onChange={(e) => setStudentDirDeptFilter(e.target.value)}
                       className="text-xs font-bold bg-transparent cursor-pointer outline-none text-slate-800"
@@ -22263,7 +22301,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {/* Semester Filter */}
                   <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Semester:</span>
-                    <select
+                    <select aria-label="Semester filter"
                       value={studentSemFilter}
                       onChange={(e) => setStudentSemFilter(e.target.value)}
                       className="text-xs font-bold bg-transparent cursor-pointer outline-none text-slate-800"
@@ -22279,7 +22317,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {isCampusShiftBased && (
                     <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
                       <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Shift:</span>
-                      <select
+                      <select aria-label="Shift filter"
                         value={studentShiftFilter}
                         onChange={(e) => setStudentShiftFilter(e.target.value)}
                         className="text-xs font-bold bg-transparent cursor-pointer outline-none text-slate-800"
@@ -22472,10 +22510,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </button>
                       </div>
                       <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
-                        <table className="w-full border-collapse text-left text-xs font-semibold min-w-[2100px]">
-                          <thead>
-                            <tr className="bg-gradient-to-r from-slate-50 to-indigo-50/40 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider whitespace-nowrap">
-                              <th className="p-3 w-10 text-center">
+                        <Table className="w-full border-collapse text-left text-xs font-semibold min-w-[2100px]">
+                          <TableHeader>
+                            <TableRow className="bg-gradient-to-r from-slate-50 to-indigo-50/40 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider whitespace-nowrap">
+                              <TableHead className="p-3 w-10 text-center">
                                 <input
                                   type="checkbox"
                                   checked={isAllFilteredSelected}
@@ -22483,36 +22521,36 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
                                   title="Select / Deselect all visible students"
                                 />
-                              </th>
-                              <th className="p-3">Roll No / ID</th>
-                              <th className="p-3">Student Name</th>
-                              <th className="p-3">Email ID</th>
-                              <th className="p-3">Dept &amp; Class</th>
-                              <th className="p-3">Hire Score</th>
-                              <th className="p-3">EFSET Score</th>
-                              <th className="p-3">Father Name</th>
-                              <th className="p-3">Mother Name</th>
-                              <th className="p-3">Parent Phone (WhatsApp)</th>
-                              <th className="p-3">Aadhar Number</th>
-                              <th className="p-3">PAN Number</th>
-                              <th className="p-3">10th Mark (%)</th>
-                              <th className="p-3">11th Mark (%)</th>
-                              <th className="p-3">12th Mark (%)</th>
-                              <th className="p-3">Group</th>
-                              <th className="p-3">Medium</th>
-                              <th className="p-3">Blood Group</th>
-                              <th className="p-3">DOB</th>
-                              <th className="p-3">Student Phone</th>
-                              <th className="p-3">Social &amp; Code Links</th>
-                              <th className="p-3 text-center">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                              </TableHead>
+                              <TableHead className="p-3">Roll No / ID</TableHead>
+                              <TableHead className="p-3">Student Name</TableHead>
+                              <TableHead className="p-3">Email ID</TableHead>
+                              <TableHead className="p-3">Dept &amp; Class</TableHead>
+                              <TableHead className="p-3">Hire Score</TableHead>
+                              <TableHead className="p-3">EFSET Score</TableHead>
+                              <TableHead className="p-3">Father Name</TableHead>
+                              <TableHead className="p-3">Mother Name</TableHead>
+                              <TableHead className="p-3">Parent Phone (WhatsApp)</TableHead>
+                              <TableHead className="p-3">Aadhar Number</TableHead>
+                              <TableHead className="p-3">PAN Number</TableHead>
+                              <TableHead className="p-3">10th Mark (%)</TableHead>
+                              <TableHead className="p-3">11th Mark (%)</TableHead>
+                              <TableHead className="p-3">12th Mark (%)</TableHead>
+                              <TableHead className="p-3">Group</TableHead>
+                              <TableHead className="p-3">Medium</TableHead>
+                              <TableHead className="p-3">Blood Group</TableHead>
+                              <TableHead className="p-3">DOB</TableHead>
+                              <TableHead className="p-3">Student Phone</TableHead>
+                              <TableHead className="p-3">Social &amp; Code Links</TableHead>
+                              <TableHead className="p-3 text-center">Action</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody className="divide-y divide-slate-100 bg-white text-slate-700">
                             {filtered.map(st => {
                               const isSelected = selectedStudentIds.includes(st.id);
                               return (
-                                <tr key={st.id} className={`transition-colors whitespace-nowrap ${isSelected ? "bg-rose-50/30 hover:bg-rose-50/50" : "hover:bg-indigo-50/20"}`}>
-                                  <td className="p-3 text-center">
+                                <TableRow key={st.id} className={`transition-colors whitespace-nowrap ${isSelected ? "bg-rose-50/30 hover:bg-rose-50/50" : "hover:bg-indigo-50/20"}`}>
+                                  <TableCell className="p-3 text-center">
                                     <input
                                       type="checkbox"
                                       checked={isSelected}
@@ -22525,21 +22563,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       }}
                                       className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
                                     />
-                                  </td>
-                                  <td className="p-3 font-mono font-bold text-indigo-700">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-mono font-bold text-indigo-700">
                                     {st.roll_number || st.id}
-                                  </td>
-                                  <td className="p-3 font-bold text-slate-900">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-bold text-slate-900">
                                     {st.name}
-                                  </td>
-                                  <td className="p-3 text-slate-600">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-slate-600">
                                     {st.email}
-                                  </td>
-                                  <td className="p-3">
+                                  </TableCell>
+                                  <TableCell className="p-3">
                                     <div className="font-bold text-slate-800">{st.department || "General"}</div>
                                     <div className="text-[10px] text-indigo-600 font-semibold">{st.classGroup}</div>
-                                  </td>
-                                  <td className="p-3">
+                                  </TableCell>
+                                  <TableCell className="p-3">
                                     {st.hire_score ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[11px]">
                                         <Sparkles className="h-3 w-3 text-indigo-500" />
@@ -22548,8 +22586,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     ) : (
                                       <span className="text-slate-300 font-bold">—</span>
                                     )}
-                                  </td>
-                                  <td className="p-3">
+                                  </TableCell>
+                                  <TableCell className="p-3">
                                     {st.efset_score ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-700 font-extrabold text-[11px]">
                                         {st.efset_score}
@@ -22557,48 +22595,48 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     ) : (
                                       <span className="text-slate-300 font-bold">—</span>
                                     )}
-                                  </td>
-                                  <td className="p-3 text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-slate-800">
                                     {st.father_name || "—"}
-                                  </td>
-                                  <td className="p-3 text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-slate-800">
                                     {st.mother_name || "—"}
-                                  </td>
-                                  <td className="p-3 font-semibold text-emerald-700">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-semibold text-emerald-700">
                                     {st.parent_phone || "—"}
-                                  </td>
-                                  <td className="p-3 font-mono text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-mono text-slate-800">
                                     {/* ROLE_UI_AUDIT M1 (P0): mask sensitive PII in list views */}
                                     {maskSensitiveId(st.aadhar_number)}
-                                  </td>
-                                  <td className="p-3 font-mono text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-mono text-slate-800">
                                     {maskPan(st.pan_number)}
-                                  </td>
-                                  <td className="p-3 font-bold text-indigo-600">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-bold text-indigo-600">
                                     {st.tenth_mark ? `${st.tenth_mark}%` : "—"}
-                                  </td>
-                                  <td className="p-3 font-bold text-indigo-600">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-bold text-indigo-600">
                                     {st.eleventh_mark ? `${st.eleventh_mark}%` : "—"}
-                                  </td>
-                                  <td className="p-3 font-bold text-indigo-600">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-bold text-indigo-600">
                                     {st.twelfth_mark ? `${st.twelfth_mark}%` : "—"}
-                                  </td>
-                                  <td className="p-3 text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-slate-800">
                                     {st.academic_group || "—"}
-                                  </td>
-                                  <td className="p-3 text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-slate-800">
                                     {st.medium || "—"}
-                                  </td>
-                                  <td className="p-3 font-bold text-rose-600">
+                                  </TableCell>
+                                  <TableCell className="p-3 font-bold text-rose-600">
                                     {st.blood_group || "—"}
-                                  </td>
-                                  <td className="p-3 text-slate-800">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-slate-800">
                                     {formatDisplayDob(st.dob) || "—"}
-                                  </td>
-                                  <td className="p-3 text-slate-800 font-semibold">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-slate-800 font-semibold">
                                     {st.phone || "—"}
-                                  </td>
-                                  <td className="p-3">
+                                  </TableCell>
+                                  <TableCell className="p-3">
                                     <div className="flex items-center gap-1.5">
                                       {st.linkedin_link && (
                                         <a href={st.linkedin_link} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 text-[9.5px] font-bold">LinkedIn</a>
@@ -22619,8 +22657,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         <span className="text-[10px] text-slate-350 italic">—</span>
                                       )}
                                     </div>
-                                  </td>
-                                  <td className="p-3 text-center">
+                                  </TableCell>
+                                  <TableCell className="p-3 text-center">
                                     <div className="flex items-center justify-center gap-1.5">
                                       <button
                                         type="button"
@@ -22645,12 +22683,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         </button>
                                       )}
                                     </div>
-                                  </td>
-                                </tr>
+                                  </TableCell>
+                                </TableRow>
                               );
                             })}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     </div>
                   );
@@ -22666,14 +22704,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             const disabledClassesCount = uniqueClasses.length - enabledClassesCount;
 
             const handleEnableAllClasses = () => {
-              setAllowedProfileEditClasses(uniqueClasses);
-              localStorage.setItem("fp_allowed_profile_edit_classes", JSON.stringify(uniqueClasses));
+              persistProfileEditClasses(uniqueClasses);
               toast("Profile editing enabled for all cohort classes.", "success");
             };
 
             const handleDisableAllClasses = () => {
-              setAllowedProfileEditClasses([]);
-              localStorage.setItem("fp_allowed_profile_edit_classes", JSON.stringify([]));
+              persistProfileEditClasses([]);
               toast("Profile editing locked for all cohort classes.", "info");
             };
 
@@ -22942,7 +22978,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
 
                   {/* Category Filter */}
-                  <select
+                  <select aria-label="Event category filter"
                     value={eventCategoryFilter}
                     onChange={e => setEventCategoryFilter(e.target.value)}
                     className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-bold text-slate-700 outline-none"
@@ -22959,7 +22995,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </select>
 
                   {/* Status Filter */}
-                  <select
+                  <select aria-label="Event status filter"
                     value={eventStatusFilter}
                     onChange={e => setEventStatusFilter(e.target.value)}
                     className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-bold text-slate-700 outline-none"
@@ -23226,7 +23262,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       <span>Updating...</span>
                                     </div>
                                   ) : (
-                                    <select
+                                    <select aria-label="Event status"
                                       disabled={statusUpdatingId === ev.id}
                                       value={ev.status || "Upcoming"}
                                       onChange={(e) => handleUpdateEventStatus(ev, e.target.value)}
@@ -23338,34 +23374,34 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               {/* VIEW 3: TABLE LIST VIEW */}
               {eventViewMode === "table" && (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-x-auto">
-                  <table className="w-full text-left text-xs font-semibold">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider">
-                        <th className="p-3">Event Title</th>
-                        <th className="p-3">Dates</th>
-                        <th className="p-3">Category</th>
-                        <th className="p-3">Department</th>
-                        <th className="p-3">Coordinator</th>
-                        <th className="p-3">Status</th>
-                        <th className="p-3">Venue</th>
-                        {!readOnly && <th className="p-3 text-center">Action</th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
+                  <Table className="w-full text-left text-xs font-semibold">
+                    <TableHeader>
+                      <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider">
+                        <TableHead className="p-3">Event Title</TableHead>
+                        <TableHead className="p-3">Dates</TableHead>
+                        <TableHead className="p-3">Category</TableHead>
+                        <TableHead className="p-3">Department</TableHead>
+                        <TableHead className="p-3">Coordinator</TableHead>
+                        <TableHead className="p-3">Status</TableHead>
+                        <TableHead className="p-3">Venue</TableHead>
+                        {!readOnly && <TableHead className="p-3 text-center">Action</TableHead>}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-slate-100">
                       {filteredEvents.map(ev => (
-                        <tr key={ev.id} className="hover:bg-indigo-50/20">
-                          <td className="p-3 font-bold text-slate-900">{ev.name}</td>
-                          <td className="p-3 font-mono font-bold text-indigo-700">{ev.date}{ev.end_date ? ` to ${ev.end_date}` : ""}</td>
-                          <td className="p-3 text-slate-700">{ev.category || "Coding Fest"}</td>
-                          <td className="p-3 text-slate-600">{ev.department || "All Departments"}</td>
-                          <td className="p-3 text-slate-700 font-semibold">{ev.coordinator || "—"}</td>
-                          <td className="p-3">
+                        <TableRow key={ev.id} className="hover:bg-indigo-50/20">
+                          <TableCell className="p-3 font-bold text-slate-900">{ev.name}</TableCell>
+                          <TableCell className="p-3 font-mono font-bold text-indigo-700">{ev.date}{ev.end_date ? ` to ${ev.end_date}` : ""}</TableCell>
+                          <TableCell className="p-3 text-slate-700">{ev.category || "Coding Fest"}</TableCell>
+                          <TableCell className="p-3 text-slate-600">{ev.department || "All Departments"}</TableCell>
+                          <TableCell className="p-3 text-slate-700 font-semibold">{ev.coordinator || "—"}</TableCell>
+                          <TableCell className="p-3">
                             {!readOnly ? (
                               <div className="flex items-center gap-1.5">
                                 {statusUpdatingId === ev.id ? (
                                   <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
                                 ) : (
-                                  <select
+                                  <select aria-label="Event status"
                                     disabled={statusUpdatingId === ev.id}
                                     value={ev.status || "Upcoming"}
                                     onChange={(e) => handleUpdateEventStatus(ev, e.target.value)}
@@ -23382,10 +23418,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">{ev.status || "Upcoming"}</span>
                             )}
-                          </td>
-                          <td className="p-3 text-slate-600">{ev.venue || "—"}</td>
+                          </TableCell>
+                          <TableCell className="p-3 text-slate-600">{ev.venue || "—"}</TableCell>
                           {!readOnly && (
-                            <td className="p-3 text-center">
+                            <TableCell className="p-3 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"
@@ -23402,12 +23438,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
-                            </td>
+                            </TableCell>
                           )}
-                        </tr>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </>
@@ -23452,7 +23488,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     />
                   </div>
 
-                  <select
+                  <select aria-label="Achievement category filter"
                     value={achCategoryFilter}
                     onChange={(e) => setAchCategoryFilter(e.target.value)}
                     className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-bold text-slate-700 outline-none"
@@ -23676,8 +23712,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
               {/* Create / Edit Campus Event Modal */}
               {showEventModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-fadeIn">
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <Dialog
+                  open={true}
+                  onOpenChange={(next) => { if (!next) setShowEventModal(false); }}
+                  ariaLabel={editingEventObj ? "Edit Campus Event" : "Create Campus Event"}
+                  overlayClassName="bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+                  panelClassName="rounded-2xl max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar"
+                >
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <div>
                         <h3 className="text-base font-black text-slate-900">
@@ -23685,7 +23726,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </h3>
                         <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Configure event schedule, chief guests, and upload post-event photo moments.</p>
                       </div>
-                      <button type="button" onClick={() => setShowEventModal(false)} className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer">×</button>
+                      <button type="button" onClick={() => setShowEventModal(false)} aria-label="Close event dialog" className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer">×</button>
                     </div>
 
                     <form onSubmit={handleSaveRichEventSubmit} className="space-y-4 text-xs">
@@ -23695,6 +23736,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <input
                           type="text"
                           required
+                          aria-label="Event Title"
                           placeholder="e.g. CodeCraft 2026 - 24hr Campus Hackathon"
                           value={evFormName}
                           onChange={e => setEvFormName(e.target.value)}
@@ -23709,6 +23751,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <input
                             type="date"
                             required
+                            aria-label="Start Date"
                             value={evFormDate}
                             onChange={e => setEvFormDate(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
@@ -23718,6 +23761,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <label className="text-[10px] font-bold text-slate-500 uppercase">End Date (Optional)</label>
                           <input
                             type="date"
+                            aria-label="End Date (Optional)"
                             value={evFormEndDate}
                             onChange={e => setEvFormEndDate(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
@@ -23730,6 +23774,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Event Category</label>
                           <select
+                            aria-label="Event Category"
                             value={evFormCategory}
                             onChange={e => setEvFormCategory(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
@@ -23748,6 +23793,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Event Status</label>
                           <select
+                            aria-label="Event Status"
                             value={evFormStatus}
                             onChange={e => setEvFormStatus(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
@@ -23766,6 +23812,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Department Scope</label>
                           <select
+                            aria-label="Department Scope"
                             value={evFormDept}
                             onChange={e => setEvFormDept(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
@@ -23780,6 +23827,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Target Audience</label>
                           <select
+                            aria-label="Target Audience"
                             value={evFormAudience}
                             onChange={e => setEvFormAudience(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-800 outline-none"
@@ -23799,6 +23847,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Venue / Location</label>
                           <input
                             type="text"
+                            aria-label="Venue / Location"
                             placeholder="e.g. Innovation Labs / Tech Arena"
                             value={evFormVenue}
                             onChange={e => setEvFormVenue(e.target.value)}
@@ -23810,6 +23859,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Lead Coordinator</label>
                           <input
                             type="text"
+                            aria-label="Lead Coordinator"
                             placeholder="e.g. Prof. Vignesh (HOD-CSE)"
                             value={evFormCoordinator}
                             onChange={e => setEvFormCoordinator(e.target.value)}
@@ -23824,6 +23874,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Chief Guest / Keynote Speaker</label>
                           <input
                             type="text"
+                            aria-label="Chief Guest / Keynote Speaker"
                             placeholder="e.g. Sundeep G. (Principal Architect)"
                             value={evFormChiefGuest}
                             onChange={e => setEvFormChiefGuest(e.target.value)}
@@ -23835,6 +23886,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Registration / Submission Link</label>
                           <input
                             type="url"
+                            aria-label="Registration / Submission Link"
                             placeholder="https://..."
                             value={evFormRegistrationLink}
                             onChange={e => setEvFormRegistrationLink(e.target.value)}
@@ -23847,6 +23899,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-slate-500 uppercase">Agendas, Rules &amp; Highlights</label>
                         <textarea
+                          aria-label="Agendas, Rules & Highlights"
                           rows={3}
                           placeholder="Hackathon problem statements, rules, round timings or function highlights..."
                           value={evFormDesc}
@@ -23908,14 +23961,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </LoadingButton>
                       </div>
                     </form>
-                  </div>
-                </div>
+                  </Dialog>
               )}
 
               {/* Record / Edit Student Achievement Modal */}
               {showAchievementModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-                  <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+                <Dialog
+                  open={true}
+                  onOpenChange={(next) => { if (!next) setShowAchievementModal(false); }}
+                  ariaLabel={editingAchievement ? "Edit Achievement" : "Record Achievement"}
+                  overlayClassName="bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto"
+                  panelClassName="rounded-2xl max-w-2xl p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto"
+                >
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <div>
                         <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
@@ -23929,6 +23986,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowAchievementModal(false)}
+                        aria-label="Close achievement form"
                         className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
                       >
                         ×
@@ -23975,6 +24033,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             </label>
                             <input
                               type="text"
+                              aria-label="Team / Group Name"
                               placeholder="e.g. Team ByteCrafters, RoboKnights, AgriTech Innovators"
                               value={achFormTeamName}
                               onChange={e => setAchFormTeamName(e.target.value)}
@@ -23993,6 +24052,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <input
                             type="text"
                             required
+                            aria-label="Award / Honors Title"
                             placeholder="e.g. 1st Place Winner - AI Track, Gold Medalist, Best Paper Award"
                             value={achFormTitle}
                             onChange={e => setAchFormTitle(e.target.value)}
@@ -24006,6 +24066,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </label>
                           <input
                             type="text"
+                            aria-label="Project / Research Paper / Topic Title"
                             placeholder="e.g. Autonomous Crop Health Drone with Edge AI, Quantum Encryption Protocol"
                             value={achFormTopic}
                             onChange={e => setAchFormTopic(e.target.value)}
@@ -24022,6 +24083,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </label>
                           <input
                             type="text"
+                            aria-label="Event / Competition Name"
                             placeholder="e.g. Smart India Hackathon 2026, State Athletics Meet"
                             value={achFormEventName}
                             onChange={e => setAchFormEventName(e.target.value)}
@@ -24035,6 +24097,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </label>
                           <input
                             type="text"
+                            aria-label="Organized By / Host Organization"
                             placeholder="e.g. Ministry of Education & AICTE, IIT Bombay, IEEE"
                             value={achFormOrganizer}
                             onChange={e => setAchFormOrganizer(e.target.value)}
@@ -24048,6 +24111,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Standing / Position</label>
                           <select
+                            aria-label="Standing / Position"
                             value={achFormBadge}
                             onChange={e => setAchFormBadge(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
@@ -24070,6 +24134,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Achievement Level</label>
                           <select
+                            aria-label="Achievement Level"
                             value={achFormLevel}
                             onChange={e => setAchFormLevel(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
@@ -24088,6 +24153,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Category</label>
                           <select
+                            aria-label="Category"
                             value={isCustomAchCategory ? "custom" : achFormCategory}
                             onChange={e => {
                               if (e.target.value === "custom") {
@@ -24111,6 +24177,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <label className="text-[10px] font-bold text-slate-500 uppercase">Date Achieved</label>
                           <input
                             type="date"
+                            aria-label="Date Achieved"
                             value={achFormDateStr}
                             onChange={e => setAchFormDateStr(e.target.value)}
                             className="w-full p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-[#D528A2]/20 focus:border-[#D528A2]"
@@ -24126,6 +24193,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </label>
                           <input
                             type="text"
+                            aria-label="Enter Custom Achievement Category"
                             placeholder="e.g. Patent Filing, Inter-College Debate Championship"
                             value={achFormCustomCategory}
                             onChange={e => setAchFormCustomCategory(e.target.value)}
@@ -24142,6 +24210,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </label>
                           <input
                             type="text"
+                            aria-label="Reward / Cash Prize / Trophy"
                             placeholder="e.g. ₹50,000 Cash Prize + Shield + Job Offer"
                             value={achFormRewardPrize}
                             onChange={e => setAchFormRewardPrize(e.target.value)}
@@ -24155,6 +24224,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           </label>
                           <input
                             type="url"
+                            aria-label="Proof / Certificate / News Link"
                             placeholder="https://drive.google.com/... or verification link"
                             value={achFormProofLink}
                             onChange={e => setAchFormProofLink(e.target.value)}
@@ -24216,7 +24286,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             />
                           </div>
 
-                          <select
+                          <select aria-label="Department filter"
                             value={achStudentDeptFilter}
                             onChange={e => setAchStudentDeptFilter(e.target.value)}
                             className="p-1.5 border border-slate-200 bg-slate-50/50 text-xs rounded-xl font-semibold text-slate-700 outline-none"
@@ -24283,6 +24353,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           Achievement Summary / Abstract
                         </label>
                         <textarea
+                          aria-label="Achievement Summary / Abstract"
                           rows={2}
                           placeholder="Brief description of how they achieved it, project problem solved, rounds cleared..."
                           value={achFormDescription}
@@ -24348,14 +24419,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </LoadingButton>
                       </div>
                     </form>
-                  </div>
-                </div>
+                  </Dialog>
               )}
 
               {/* READ / VIEW ACHIEVEMENT DETAILS MODAL */}
               {viewingAchievement && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
-                  <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+                <Dialog
+                  open={true}
+                  onOpenChange={(next) => { if (!next) setViewingAchievement(null); }}
+                  ariaLabel="Achievement Details"
+                  overlayClassName="bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto"
+                  panelClassName="rounded-2xl max-w-2xl p-6 space-y-4 my-8 max-h-[90vh] overflow-y-auto"
+                >
                     <div className="flex justify-between items-start border-b border-slate-100 pb-3">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -24391,6 +24466,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setViewingAchievement(null)}
+                        aria-label="Close achievement details"
                         className="text-slate-400 hover:text-slate-600 font-bold text-2xl cursor-pointer ml-2"
                       >
                         ×
@@ -24535,8 +24611,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </button>
                       )}
                     </div>
-                  </div>
-                </div>
+                </Dialog>
               )}
             </div>
           )}
@@ -24601,14 +24676,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1">
                         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Campus ID Reference</span>
                         <span className="text-sm font-extrabold text-slate-800 block">
-                          {activeCollegeId === "college_1" ? "college_1 (Aided)" : "college_2 (Self-Financed)"}
+                          {activeCollegeId || "Primary Campus"}
                         </span>
                         <span className="text-[10px] text-slate-455 font-semibold block">{activeCollegeName || "Campus"} Ecosystem</span>
                       </div>
 
                       <div className="space-y-1">
                         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Active Academic Session</span>
-                        <span className="text-sm font-extrabold text-slate-800 block">2025 - 2026 (Odd/Even Sem Cycle)</span>
+                        <span className="text-sm font-extrabold text-slate-800 block">{getCurrentAcademicYear()} (Odd/Even Sem Cycle)</span>
                         <span className="text-[10px] text-slate-455 font-semibold block">Timetable Generation Period</span>
                       </div>
 
@@ -24669,8 +24744,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       {editingFacultyId && (() => {
         const staff = collegeMentors.find(m => m.id === editingFacultyId);
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-            <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in duration-150">
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setEditingFacultyId(null); }}
+            ariaLabel="Configure Faculty Shift"
+            overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+            panelClassName="max-w-md p-6 space-y-4 animate-in fade-in duration-150"
+          >
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                 <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
                   Configure Faculty Shift
@@ -24678,6 +24758,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditingFacultyId(null)}
+                  aria-label="Close faculty shift dialog"
                   className="text-slate-400 hover:text-slate-655 font-black text-lg cursor-pointer transition-colors"
                 >
                   ×
@@ -24721,28 +24802,32 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </Button>
                 </div>
               </div>
-            </div>
-          </div>
+          </Dialog>
         );
       })()}
 
       {/* ── Mentor Details & Subject Mapping CRUD Modal ── */}
       {showMentorModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-205 shadow-xl max-w-lg w-full overflow-hidden animate-slideUp font-sans">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setShowMentorModal(false); }}
+          ariaLabel={editingMentor ? "Edit Faculty Mentor" : "Add Faculty Mentor"}
+          overlayClassName="bg-slate-900/50 backdrop-blur-sm"
+          panelClassName="max-w-lg overflow-hidden animate-slideUp p-0 space-y-0 max-h-[90vh]"
+        >
             <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50">
               <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
                 <Users className="h-5 w-5 text-indigo-650" />
                 {editingMentor ? "Edit Faculty Mentor" : "Add Faculty Mentor"}
               </h3>
-              <button onClick={() => setShowMentorModal(false)} className="p-1 hover:bg-slate-250 rounded-lg transition-colors cursor-pointer text-slate-500 hover:text-slate-800">
+              <button onClick={() => setShowMentorModal(false)} aria-label="Close mentor dialog" className="p-1 hover:bg-slate-250 rounded-lg transition-colors cursor-pointer text-slate-500 hover:text-slate-800">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <form onSubmit={handleMentorSubmit} className="p-6 space-y-3.5 text-xs font-semibold max-h-[80vh] overflow-y-auto">
               {modalError && (
-                <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
+                <div role="alert" className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-700 font-bold flex items-center gap-1.5">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   {modalError}
                 </div>
@@ -24754,6 +24839,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <input
                     type="text"
                     required
+                    aria-label="Mentor ID"
                     placeholder="e.g. m35"
                     disabled={editingMentor}
                     value={mentorForm.id}
@@ -24766,6 +24852,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Initials / Avatar</label>
                   <input
                     type="text"
+                    aria-label="Initials / Avatar"
                     placeholder="e.g. MS (Leave blank to auto-generate)"
                     value={mentorForm.avatar}
                     onChange={(e) => setMentorForm({ ...mentorForm, avatar: e.target.value })}
@@ -24779,6 +24866,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <input
                   type="text"
                   required
+                  aria-label="Full Name"
                   placeholder="e.g. Dr. Alice Smith"
                   value={mentorForm.name}
                   onChange={(e) => setMentorForm({ ...mentorForm, name: e.target.value })}
@@ -24791,7 +24879,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <input
                   type="email"
                   required
-                  placeholder="e.g. alice.smith@university.edu"
+                  aria-label="Email Address"
+                  placeholder="e.g. alice.smith@faceprep.in"
                   value={mentorForm.email}
                   onChange={(e) => setMentorForm({ ...mentorForm, email: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-650"
@@ -24801,6 +24890,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Department / Program</label>
                 <select
+                  aria-label="Department / Program"
                   required
                   value={mentorForm.department}
                   onChange={(e) => {
@@ -24818,6 +24908,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 uppercase tracking-wider block">Subject Group / Category</label>
                 <select
+                  aria-label="Subject Group / Category"
                   required
                   value={mentorForm.subject_group}
                   onChange={(e) => setMentorForm({ ...mentorForm, subject_group: e.target.value })}
@@ -24836,6 +24927,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <Search className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-slate-400" />
                   <input
                     type="text"
+                    aria-label="Search subjects"
                     placeholder="Search subject catalog..."
                     value={mentorSubjectSearch}
                     onChange={(e) => setMentorSubjectSearch(e.target.value)}
@@ -24939,14 +25031,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </LoadingButton>
               </div>
             </form>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/*  Emergency Substitution Modal */}
       {showSubstitutionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in duration-150">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setShowSubstitutionModal(false); }}
+          ariaLabel="Emergency Faculty Substitution"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-md p-6 space-y-4 animate-in fade-in duration-150"
+        >
             <div className="flex justify-between items-center border-b border-slate-105 pb-3">
               <h3 className="text-xs font-black text-slate-805 uppercase tracking-wider">
                 Emergency Faculty Substitution
@@ -24954,6 +25050,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setShowSubstitutionModal(false)}
+                aria-label="Close substitution dialog"
                 className="text-slate-400 hover:text-slate-655 font-bold text-lg cursor-pointer transition-colors"
               >
                 ×
@@ -24972,7 +25069,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
               <div className="space-y-1">
                 <label className="text-slate-455 text-[10px] uppercase font-bold block mb-1">Period Slot to Cover</label>
-                <select className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs cursor-pointer outline-none font-bold shadow-sm">
+                <select aria-label="Period Slot to Cover" className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs cursor-pointer outline-none font-bold shadow-sm">
                   {slots.filter(s => mentors.find(m => m.id === s.mentorId)?.college_id === activeCollegeId).slice(0, 10).map(s => (
                     <option key={s.id} value={s.id}>{s.day} • {s.time} ({s.course})</option>
                   ))}
@@ -24981,7 +25078,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
               <div className="space-y-1">
                 <label className="text-slate-455 text-[10px] uppercase font-bold block mb-1">Deploy Cover Instructor</label>
-                <select className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs cursor-pointer outline-none font-bold shadow-sm">
+                <select aria-label="Deploy Cover Instructor" className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs cursor-pointer outline-none font-bold shadow-sm">
                   {collegeMentors.map(m => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
@@ -25002,14 +25099,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/* Attendance Correction Modal */}
       {correctingStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full p-6 space-y-4 animate-in fade-in duration-150">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setCorrectingStudent(null); }}
+          ariaLabel="Correct Attendance Record"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-md p-6 space-y-4 animate-in fade-in duration-150"
+        >
             <div className="flex justify-between items-center border-b border-slate-105 pb-3">
               <div className="leading-tight">
                 <h3 className="text-xs font-black text-slate-805 uppercase tracking-wider">
@@ -25020,6 +25121,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setCorrectingStudent(null)}
+                aria-label="Close attendance correction dialog"
                 className="text-slate-405 hover:text-slate-655 font-bold text-lg cursor-pointer transition-colors"
               >
                 ×
@@ -25056,6 +25158,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </div>
                 ) : (
                   <select
+                    aria-label="Select Session to Correct"
                     required
                     value={correctionSlotId ? `${correctionSlotId}|${correctionDateStr}` : ""}
                     onChange={(e) => {
@@ -25116,6 +25219,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="space-y-1">
                     <label className="text-slate-455 text-[10px] uppercase font-bold block mb-1">Reason for Correction (Mandatory)</label>
                     <textarea
+                      aria-label="Reason for Correction (Mandatory)"
                       required
                       rows={3}
                       placeholder="Enter the justification (e.g. OD letter verified, biometric fallback, late check-in approved)..."
@@ -25154,14 +25258,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/* Excel Import Preview Modal */}
       {showImportModal && importPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) { setShowImportModal(false); setImportPreview(null); } }}
+          ariaLabel="Excel Timetable Import Preview"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-2xl p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col"
+        >
             <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
@@ -25177,6 +25285,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   setShowImportModal(false);
                   setImportPreview(null);
                 }}
+                aria-label="Close timetable import preview"
                 className="text-slate-405 hover:text-slate-655 font-bold text-lg cursor-pointer transition-colors"
               >
                 ×
@@ -25270,8 +25379,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 )}
               </button>
             </div>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/* Download Student Excel Template Selection Modal */}
@@ -25281,7 +25389,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
         const unmappedStudents = fromStudents.filter(d => !matchCanonicalCourse(d, allCourses));
         const deptOptions = Array.from(new Set([...fromCourses, ...unmappedStudents])).sort();
-        const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+        const semOptions = ALL_SEMESTERS;
         const filterMatched = studentDirDeptFilter && studentDirDeptFilter !== "all"
           ? matchCanonicalCourse(studentDirDeptFilter, allCourses)
           : null;
@@ -25301,8 +25409,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           : `${selectedDept} - ${templateSem || "Semester 1"}`;
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setShowTemplateModal(false); }}
+            ariaLabel="Download Excel Template"
+            overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+            panelClassName="rounded-2xl max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95"
+          >
               <div className="flex justify-between items-center border-b border-slate-150 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -25316,6 +25429,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowTemplateModal(false)}
+                  aria-label="Close template dialog"
                   className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
                 >
                   ×
@@ -25336,6 +25450,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     )}
                   </div>
                   <select
+                    aria-label="Course / Department"
                     value={selectedDept}
                     onChange={(e) => {
                       const newDept = e.target.value;
@@ -25356,6 +25471,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Shift Type</label>
                     <select
+                      aria-label="Shift Type"
                       value={selectedShift}
                       onChange={(e) => setTemplateShift(e.target.value)}
                       className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
@@ -25384,6 +25500,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Semester</label>
                   <select
+                    aria-label="Semester"
                     value={templateSem || "Semester 1"}
                     onChange={(e) => setTemplateSem(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
@@ -25418,15 +25535,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <span>Download Template (.xlsx)</span>
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         );
       })()}
 
       {/* Excel Student Import Preview Modal */}
       {showStudentImportModal && studentImportPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-4xl w-full p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) { setShowStudentImportModal(false); setStudentImportPreview(null); } }}
+          ariaLabel="Excel Student Import Preview"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-4xl p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col"
+        >
             <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider">
@@ -25442,6 +25563,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   setShowStudentImportModal(false);
                   setStudentImportPreview(null);
                 }}
+                aria-label="Close student import preview"
                 className="text-slate-400 hover:text-slate-600 font-bold text-lg cursor-pointer transition-colors"
               >
                 ×
@@ -25475,7 +25597,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     const fromStudents = collegeStudents.map(s => s.department?.trim()).filter(Boolean) as string[];
                     const unmappedStudents = fromStudents.filter(d => !matchCanonicalCourse(d, allCourses));
                     const deptOptions = Array.from(new Set([...fromCourses, ...unmappedStudents])).sort();
-                    const semOptions = ["Semester 1", "Semester 2", "Semester 3", "Semester 4", "Semester 5", "Semester 6", "Semester 7", "Semester 8"];
+                    const semOptions = ALL_SEMESTERS;
                     const current = studentImportPreview.targetClassGroup || "";
 
                     // Resolve current department cleanly against registered courses
@@ -25515,7 +25637,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     return (
                       <div className="flex flex-col gap-1">
-                        <select
+                        <select aria-label="Department"
                           value={currentDept}
                           onChange={(e) => handleDeptChange(e.target.value)}
                           className="w-full text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
@@ -25524,7 +25646,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </select>
                         <div className="flex gap-1">
                           {shiftOptions.length > 1 ? (
-                            <select
+                            <select aria-label="Shift"
                               value={currentShift}
                               onChange={(e) => updateCohort(currentDept, e.target.value, currentSem)}
                               className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
@@ -25536,7 +25658,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               {shiftOptions[0] || "General"}
                             </div>
                           )}
-                          <select
+                          <select aria-label="Semester"
                             value={currentSem}
                             onChange={(e) => updateCohort(currentDept, currentShift, e.target.value)}
                             className="flex-1 text-[11px] font-bold px-2 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none cursor-pointer"
@@ -25572,40 +25694,40 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   Mapped Student Records Preview
                 </h4>
                 <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs max-h-[35vh]">
-                  <table className="w-full border-collapse text-left text-xs font-semibold min-w-[850px]">
-                    <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9px] tracking-wider z-10">
-                      <tr>
-                        <th className="p-2.5">Roll No</th>
-                        <th className="p-2.5">Name</th>
-                        <th className="p-2.5">Dept</th>
-                        <th className="p-2.5">10th %</th>
-                        <th className="p-2.5">11th %</th>
-                        <th className="p-2.5">12th %</th>
-                        <th className="p-2.5">Group</th>
-                        <th className="p-2.5">Medium</th>
-                        <th className="p-2.5">Blood</th>
-                        <th className="p-2.5">Phone</th>
-                        <th className="p-2.5">Email</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
+                  <Table containerClassName="overflow-visible" className="w-full border-collapse text-left text-xs font-semibold min-w-[850px]">
+                    <TableHeader className="sticky top-0 bg-slate-100 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9px] tracking-wider z-10">
+                      <TableRow>
+                        <TableHead className="p-2.5">Roll No</TableHead>
+                        <TableHead className="p-2.5">Name</TableHead>
+                        <TableHead className="p-2.5">Dept</TableHead>
+                        <TableHead className="p-2.5">10th %</TableHead>
+                        <TableHead className="p-2.5">11th %</TableHead>
+                        <TableHead className="p-2.5">12th %</TableHead>
+                        <TableHead className="p-2.5">Group</TableHead>
+                        <TableHead className="p-2.5">Medium</TableHead>
+                        <TableHead className="p-2.5">Blood</TableHead>
+                        <TableHead className="p-2.5">Phone</TableHead>
+                        <TableHead className="p-2.5">Email</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-slate-100 bg-white">
                       {studentImportPreview.parsed.map((st, idx) => (
-                        <tr key={idx} className="hover:bg-indigo-50/20">
-                          <td className="p-2.5 font-mono font-bold text-indigo-700">{st.roll_number || "—"}</td>
-                          <td className="p-2.5 font-bold text-slate-900">{st.name || "—"}</td>
-                          <td className="p-2.5 text-slate-700">{st.department || "—"}</td>
-                          <td className="p-2.5">{st.tenth_mark ? `${st.tenth_mark}%` : "—"}</td>
-                          <td className="p-2.5">{st.eleventh_mark ? `${st.eleventh_mark}%` : "—"}</td>
-                          <td className="p-2.5">{st.twelfth_mark ? `${st.twelfth_mark}%` : "—"}</td>
-                          <td className="p-2.5 text-slate-800 font-bold">{st.academic_group || "—"}</td>
-                          <td className="p-2.5">{st.medium || "—"}</td>
-                          <td className="p-2.5">{st.blood_group || "—"}</td>
-                          <td className="p-2.5 font-mono text-[11px]">{st.phone || "—"}</td>
-                          <td className="p-2.5 text-[10px] text-slate-500 truncate max-w-[160px]">{st.email || "—"}</td>
-                        </tr>
+                        <TableRow key={idx} className="hover:bg-indigo-50/20">
+                          <TableCell className="p-2.5 font-mono font-bold text-indigo-700">{st.roll_number || "—"}</TableCell>
+                          <TableCell className="p-2.5 font-bold text-slate-900">{st.name || "—"}</TableCell>
+                          <TableCell className="p-2.5 text-slate-700">{st.department || "—"}</TableCell>
+                          <TableCell className="p-2.5">{st.tenth_mark ? `${st.tenth_mark}%` : "—"}</TableCell>
+                          <TableCell className="p-2.5">{st.eleventh_mark ? `${st.eleventh_mark}%` : "—"}</TableCell>
+                          <TableCell className="p-2.5">{st.twelfth_mark ? `${st.twelfth_mark}%` : "—"}</TableCell>
+                          <TableCell className="p-2.5 text-slate-800 font-bold">{st.academic_group || "—"}</TableCell>
+                          <TableCell className="p-2.5">{st.medium || "—"}</TableCell>
+                          <TableCell className="p-2.5">{st.blood_group || "—"}</TableCell>
+                          <TableCell className="p-2.5 font-mono text-[11px]">{st.phone || "—"}</TableCell>
+                          <TableCell className="p-2.5 text-[10px] text-slate-500 truncate max-w-[160px]">{st.email || "—"}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             </div>
@@ -25643,14 +25765,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 )}
               </button>
             </div>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/* Student Full Profile Detail Modal */}
       {selectedStudentForDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-5 animate-in fade-in duration-150 max-h-[90vh] overflow-y-auto">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setSelectedStudentForDetail(null); }}
+          ariaLabel="Student Profile Details"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="max-w-2xl p-6 space-y-5 animate-in fade-in duration-150 max-h-[90vh] overflow-y-auto"
+        >
             {/* Header */}
             <div className="flex justify-between items-start border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
@@ -25670,6 +25796,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedStudentForDetail(null)}
+                aria-label="Close student profile dialog"
                 className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
               >
                 ×
@@ -25858,14 +25985,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 Close Profile
               </button>
             </div>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/* ── Attendance Excel Import Preview Modal ── */}
       {showAttendanceImportModal && attendanceImportPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) { setShowAttendanceImportModal(false); setAttendanceImportPreview(null); } }}
+          ariaLabel="Attendance Excel Import Preview"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+          panelClassName="rounded-2xl max-w-4xl p-6 space-y-4 animate-in fade-in duration-150 max-h-[90vh] flex flex-col"
+        >
             <div className="flex justify-between items-center border-b border-slate-150 pb-3 shrink-0">
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
@@ -25916,34 +26047,34 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     : [];
 
                   return (
-                    <table className="w-full border-collapse text-left text-xs min-w-[700px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
-                          <th className="p-2.5 border-r border-slate-200">Roll No / ID</th>
-                          <th className="p-2.5 border-r border-slate-200">Student Name</th>
-                          <th className="p-2.5 border-r border-slate-200">Class</th>
+                    <Table className="w-full border-collapse text-left text-xs min-w-[700px]">
+                      <TableHeader>
+                        <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px]">
+                          <TableHead className="p-2.5 border-r border-slate-200">Roll No / ID</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200">Student Name</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200">Class</TableHead>
                           {hasDateMarks ? (
                             allImportDates.map(dStr => (
-                              <th key={dStr} className="p-2.5 border-r border-slate-200 text-center">{formatDateToDMY(dStr)}</th>
+                              <TableHead key={dStr} className="p-2.5 border-r border-slate-200 text-center">{formatDateToDMY(dStr)}</TableHead>
                             ))
                           ) : (
                             ["Period 1", "Period 2", "Period 3", "Period 4", "Period 5"].map(p => (
-                              <th key={p} className="p-2.5 border-r border-slate-200 text-center">{p}</th>
+                              <TableHead key={p} className="p-2.5 border-r border-slate-200 text-center">{p}</TableHead>
                             ))
                           )}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody className="divide-y divide-slate-100 bg-white">
                         {attendanceImportPreview.parsed.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/50">
-                            <td className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100">{item.rollNo}</td>
-                            <td className="p-2.5 font-bold text-slate-800 border-r border-slate-100">{item.studentName}</td>
-                            <td className="p-2.5 text-slate-500 border-r border-slate-100">{item.classGroup}</td>
+                          <TableRow key={idx} className="hover:bg-slate-50/50">
+                            <TableCell className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100">{item.rollNo}</TableCell>
+                            <TableCell className="p-2.5 font-bold text-slate-800 border-r border-slate-100">{item.studentName}</TableCell>
+                            <TableCell className="p-2.5 text-slate-500 border-r border-slate-100">{item.classGroup}</TableCell>
                             {hasDateMarks ? (
                               allImportDates.map(dStr => {
                                 const val = item.dateMarks?.[dStr] || "not_marked";
                                 return (
-                                  <td key={dStr} className="p-2.5 text-center border-r border-slate-100">
+                                  <TableCell key={dStr} className="p-2.5 text-center border-r border-slate-100">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${val === "present"
                                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                         : val === "absent"
@@ -25956,14 +26087,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       }`}>
                                       {val === "present" ? "P" : val === "absent" ? "A" : val === "od" ? "OD" : val === "late" ? "HD" : "—"}
                                     </span>
-                                  </td>
+                                  </TableCell>
                                 );
                               })
                             ) : (
                               ["p1", "p2", "p3", "p4", "p5"].map(pKey => {
                                 const val = item.periodMarks[pKey] || "present";
                                 return (
-                                  <td key={pKey} className="p-2.5 text-center border-r border-slate-100">
+                                  <TableCell key={pKey} className="p-2.5 text-center border-r border-slate-100">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${val === "present"
                                         ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                         : val === "absent"
@@ -25974,14 +26105,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       }`}>
                                       {val === "present" ? "P" : val === "absent" ? "A" : val === "late" ? "L" : "—"}
                                     </span>
-                                  </td>
+                                  </TableCell>
                                 );
                               })
                             )}
-                          </tr>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   );
                 })()}
               </div>
@@ -26017,8 +26148,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 )}
               </button>
             </div>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/* ── Student Period-Wise Attendance Marking Modal (With 2-Change Limit & Mandatory Reason) ── */}
@@ -26096,8 +26226,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         const remarks = customDayCfg?.notes || (holidayObj as any)?.notes || (holidayObj as any)?.name || (holidayObj as any)?.description || "";
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col">
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) { setMarkingStudentForDate(null); setActivePeriodChange(null); } }}
+            ariaLabel="Student Attendance Details"
+            overlayClassName="bg-slate-900/60 backdrop-blur-xs"
+            panelClassName="rounded-2xl max-w-xl p-6 space-y-4 animate-in fade-in zoom-in-95 max-h-[90vh] flex flex-col"
+          >
               {/* Header */}
               <div className="flex justify-between items-start border-b border-slate-150 pb-3 shrink-0">
                 <div className="flex items-center gap-3">
@@ -26160,6 +26295,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     setMarkingStudentForDate(null);
                     setActivePeriodChange(null);
                   }}
+                  aria-label="Close attendance details dialog"
                   className="text-slate-400 hover:text-slate-600 font-bold text-xl cursor-pointer"
                 >
                   ×
@@ -26398,8 +26534,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   Close
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         );
       })()}
 
@@ -26437,8 +26572,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         )).sort();
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans animate-in fade-in">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in zoom-in-95">
+          <Dialog
+            open={true}
+            onOpenChange={(next) => { if (!next) setShowClearAttendanceModal(false); }}
+            ariaLabel="Clear Attendance Data"
+            overlayClassName="bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+            panelClassName="rounded-2xl max-w-lg p-6 space-y-5 animate-in zoom-in-95 bg-white dark:bg-slate-900"
+          >
               <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-xl bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shadow-2xs">
@@ -26452,6 +26592,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowClearAttendanceModal(false)}
+                  aria-label="Close clear attendance dialog"
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold text-xl cursor-pointer"
                 >
                   ×
@@ -26465,6 +26606,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     Target Department:
                   </label>
                   <select
+                    aria-label="Target Department"
                     value={clearDeptFilter}
                     onChange={(e) => {
                       setClearDeptFilter(e.target.value);
@@ -26485,6 +26627,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     Target Batch / Class Group:
                   </label>
                   <select
+                    aria-label="Target Batch / Class Group"
                     value={clearBatchFilter}
                     onChange={(e) => setClearBatchFilter(e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:border-rose-500"
@@ -26579,15 +26722,19 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   )}
                 </button>
               </div>
-            </div>
-          </div>
+          </Dialog>
         );
       })()}
 
       {/* ── Add / Edit Subject Modal Popup (Structured Input Table & Quick Paste) ── */}
       {showSubjectModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className={`bg-white rounded-2xl border border-slate-200 shadow-2xl w-full overflow-hidden animate-slideUp transition-all ${editingSubject ? "max-w-md" : "max-w-4xl"}`}>
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setShowSubjectModal(false); }}
+          ariaLabel={editingSubject ? "Edit Subject Details" : "Add Subjects to Curriculum"}
+          overlayClassName="bg-slate-900/50 backdrop-blur-sm"
+          panelClassName={`rounded-2xl overflow-hidden animate-slideUp transition-all p-0 space-y-0 max-h-[90vh] ${editingSubject ? "max-w-md" : "max-w-4xl"}`}
+        >
             {/* Modal Header */}
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-3">
@@ -26657,6 +26804,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] text-slate-500 uppercase tracking-wider block font-bold">Course / Department *</label>
                           <select
+                            aria-label="Course / Department"
                             required
                             disabled={lockDeptAndYear}
                             value={subjectForm.department}
@@ -26673,6 +26821,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] text-slate-500 uppercase tracking-wider block font-bold">Target Campus</label>
                           <select
+                            aria-label="Target Campus"
                             disabled
                             value={subjectForm.college_id}
                             className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none text-slate-600 cursor-not-allowed"
@@ -26686,6 +26835,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] text-slate-500 uppercase tracking-wider block font-bold">Academic Year *</label>
                           <select
+                            aria-label="Academic Year"
                             required
                             disabled={lockDeptAndYear}
                             value={subjectForm.year}
@@ -26709,6 +26859,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <div className="space-y-1">
                           <label className="text-[10px] text-slate-500 uppercase tracking-wider block font-bold">Target Semester *</label>
                           <select
+                            aria-label="Target Semester"
                             required
                             value={subjectForm.semester}
                             onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
@@ -26756,7 +26907,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[10px] text-slate-500 font-bold">Default Domain:</span>
-                        <select
+                        <select aria-label="Default domain"
                           value={bulkDefaultType}
                           onChange={(e) => setBulkDefaultType(e.target.value)}
                           className="bg-white border border-indigo-200 rounded-lg px-2 py-1 font-bold text-[11px] text-indigo-900 focus:outline-none cursor-pointer"
@@ -26852,7 +27003,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                               {/* Subject Domain / Type Dropdown */}
                               <div className="col-span-3">
-                                <select
+                                <select aria-label="Subject domain"
                                   value={normalizeSubjectType(row.type)}
                                   onChange={(e) => handleUpdateDynamicSubject(row.id, "type", e.target.value)}
                                   className="w-full bg-slate-50/60 focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
@@ -26866,7 +27017,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                               {/* Weekly Hours Stepper Box */}
                               <div className="col-span-2">
-                                <input
+                                <input aria-label="Weekly hours"
                                   type="number"
                                   min={1}
                                   max={20}
@@ -26924,6 +27075,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <input
                         type="text"
                         required
+                        aria-label="Subject Name"
                         placeholder="e.g. Modern Natural Language Processing"
                         value={subjectForm.name}
                         onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
@@ -26935,6 +27087,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Course Name</label>
                         <select
+                          aria-label="Course Name"
                           required
                           disabled={lockDeptAndYear}
                           value={subjectForm.department}
@@ -26951,6 +27104,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Assigned Campus</label>
                         <select
+                          aria-label="Assigned Campus"
                           required
                           disabled
                           value={subjectForm.college_id}
@@ -26967,6 +27121,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Academic Year</label>
                         <select
+                          aria-label="Academic Year"
                           required
                           disabled={lockDeptAndYear}
                           value={subjectForm.year}
@@ -26990,6 +27145,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Semester</label>
                         <select
+                          aria-label="Semester"
                           required
                           value={subjectForm.semester}
                           onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
@@ -27027,6 +27183,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="space-y-1">
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Subject Type / Domain</label>
                         <select
+                          aria-label="Subject Type / Domain"
                           required
                           value={normalizeSubjectType(subjectForm.type)}
                           onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
@@ -27044,6 +27201,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <input
                           type="number"
                           required
+                          aria-label="Weekly Hours"
                           min={1}
                           max={20}
                           placeholder="e.g. 4"
@@ -27057,6 +27215,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="space-y-1">
                       <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Subject Group</label>
                       <select
+                        aria-label="Subject Group"
                         required
                         value={subjectForm.subject_group}
                         onChange={(e) => setSubjectForm({ ...subjectForm, subject_group: e.target.value })}
@@ -27179,8 +27338,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </div>
               </div>
             </form>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {showDeptModal && (
@@ -27198,8 +27356,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       )}
       {/* ── FACULTY BULK IMPORT PREVIEW MODAL ── */}
       {showFacultyImportModal && facultyImportPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-gray-100 dark:border-slate-800 max-h-[90vh] flex flex-col">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setShowFacultyImportModal(false); }}
+          ariaLabel="Faculty Bulk Import Preview"
+          overlayClassName="bg-slate-900/60 backdrop-blur-sm animate-fadeIn"
+          panelClassName="max-w-4xl p-6 space-y-5 max-h-[90vh] flex flex-col bg-white dark:bg-slate-900"
+        >
             <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-3">
                 <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-500/20">
@@ -27235,37 +27398,37 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             )}
 
             <div className="flex-1 overflow-y-auto border border-gray-200 dark:border-slate-800 rounded-xl">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
-                    <th className="p-3">#</th>
-                    <th className="p-3">Faculty Name</th>
-                    <th className="p-3">Email Address</th>
-                    <th className="p-3">Department</th>
-                    {isCampusShiftBased && <th className="p-3">Shift</th>}
-                    <th className="p-3">Subjects</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium text-gray-800 dark:text-slate-200">
+              <Table className="w-full text-left text-xs">
+                <TableHeader>
+                  <TableRow className="bg-gray-50 dark:bg-slate-800/60 border-b border-gray-200 dark:border-slate-700 text-gray-500 dark:text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
+                    <TableHead className="p-3">#</TableHead>
+                    <TableHead className="p-3">Faculty Name</TableHead>
+                    <TableHead className="p-3">Email Address</TableHead>
+                    <TableHead className="p-3">Department</TableHead>
+                    {isCampusShiftBased && <TableHead className="p-3">Shift</TableHead>}
+                    <TableHead className="p-3">Subjects</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="divide-y divide-gray-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium text-gray-800 dark:text-slate-200">
                   {facultyImportPreview.parsed.map((item, idx) => (
-                    <tr key={idx} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/5">
-                      <td className="p-3 text-gray-400 font-mono text-[10px]">{idx + 1}</td>
-                      <td className="p-3 font-bold text-gray-900 dark:text-white">{item.name || <span className="text-rose-500 italic">Missing</span>}</td>
-                      <td className="p-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">{item.email || <span className="text-rose-500 italic">Missing</span>}</td>
-                      <td className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-bold">{item.department}</span></td>
+                    <TableRow key={idx} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/5">
+                      <TableCell className="p-3 text-gray-400 font-mono text-[10px]">{idx + 1}</TableCell>
+                      <TableCell className="p-3 font-bold text-gray-900 dark:text-white">{item.name || <span className="text-rose-500 italic">Missing</span>}</TableCell>
+                      <TableCell className="p-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">{item.email || <span className="text-rose-500 italic">Missing</span>}</TableCell>
+                      <TableCell className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-bold">{item.department}</span></TableCell>
                       {isCampusShiftBased && (
-                        <td className="p-3"><span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold uppercase">{item.shift}</span></td>
+                        <TableCell className="p-3"><span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold uppercase">{item.shift}</span></TableCell>
                       )}
-                      <td className="p-3 text-gray-500 dark:text-slate-400 max-w-[180px] truncate" title={item.subjects}>{item.subjects || "—"}</td>
-                    </tr>
+                      <TableCell className="p-3 text-gray-500 dark:text-slate-400 max-w-[180px] truncate" title={item.subjects}>{item.subjects || "—"}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-slate-800">
               <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">
-                Initial default password for all imported faculty will be set to <code className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold">password123</code>
+                Initial default password for all imported faculty will be set to <code className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold">the institution default</code>
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -27285,14 +27448,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+          </Dialog>
       )}
 
       {/* Global Daily Day Order Configurator Modal */}
       {isDailyConfigModalOpen && (
-        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto border border-slate-200 relative my-auto">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) { setIsDailyConfigModalOpen(false); setEditingDailyId(null); } }}
+          ariaLabel="Daily Day Order and Schedule Configurator"
+          overlayClassName="z-[9999] bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200"
+          panelClassName="rounded-3xl max-w-4xl p-6 space-y-6 max-h-[90vh] overflow-y-auto my-auto"
+        >
             {/* Modal Header */}
             <div className="flex justify-between items-center pb-4 border-b border-slate-100 sticky top-0 bg-white z-10 pt-1">
               <div className="flex items-center gap-3">
@@ -27329,6 +27496,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">From Date</label>
                   <input
                     type="date"
+                    aria-label="From Date"
                     value={dailyStartDateStr}
                     onChange={e => handleStartDateChange(e.target.value)}
                     required
@@ -27341,6 +27509,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </label>
                   <input
                     type="date"
+                    aria-label="To Date"
                     value={dailyEndDateStr}
                     onChange={e => setDailyEndDateStr(e.target.value)}
                     required
@@ -27354,6 +27523,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Department</label>
                   <select
+                    aria-label="Department"
                     value={dailyDeptScope}
                     onChange={e => setDailyDeptScope(e.target.value)}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
@@ -27368,6 +27538,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Type</label>
                   <select
+                    aria-label="Day Type"
                     value={dailyDayType}
                     onChange={e => setDailyDayType(e.target.value)}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
@@ -27382,6 +27553,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Day Order</label>
                   <select
+                    aria-label="Day Order"
                     value={dailyDayType === "holiday" ? "None" : dailyDayOrder}
                     onChange={e => setDailyDayOrder(e.target.value)}
                     disabled={dailyDayType === "holiday"}
@@ -27400,6 +27572,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Session Mode</label>
                   <select
+                    aria-label="Session Mode"
                     value={dailySessionMode}
                     onChange={e => setDailySessionMode(e.target.value)}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-2 focus:ring-[#D528A2]/20 outline-none shadow-xs cursor-pointer text-slate-800"
@@ -27416,6 +27589,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Notes / Operational Instructions</label>
                 <input
                   type="text"
+                  aria-label="Notes / Operational Instructions"
                   placeholder="e.g. CIA Exam Session / Cultural Fest / Regular Timetable..."
                   value={dailyNotes}
                   onChange={e => setDailyNotes(e.target.value)}
@@ -27526,18 +27700,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               </div>
 
               <div className="overflow-x-auto max-h-[260px] overflow-y-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 bg-slate-100 z-10">
-                    <tr className="border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                      <th className="p-3">Date</th>
-                      <th className="p-3">Day Type</th>
-                      <th className="p-3">Day Order</th>
-                      <th className="p-3">Session Mode</th>
-                      <th className="p-3">Campus Notes</th>
-                      <th className="p-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+                <Table containerClassName="overflow-visible" className="w-full text-left text-xs border-collapse">
+                  <TableHeader className="sticky top-0 bg-slate-100 z-10">
+                    <TableRow className="border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <TableHead className="p-3">Date</TableHead>
+                      <TableHead className="p-3">Day Type</TableHead>
+                      <TableHead className="p-3">Day Order</TableHead>
+                      <TableHead className="p-3">Session Mode</TableHead>
+                      <TableHead className="p-3">Campus Notes</TableHead>
+                      <TableHead className="p-3 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-slate-100">
                     {dailyConfigsList.filter(cfg => {
                       if (!dailySearchFilter.trim()) return true;
                       const q = dailySearchFilter.toLowerCase();
@@ -27549,11 +27723,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         (cfg.notes || "").toLowerCase().includes(q)
                       );
                     }).length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="p-8 text-center text-slate-400 italic text-xs">
+                      <TableRow>
+                        <TableCell colSpan={6} className="p-8 text-center text-slate-400 italic text-xs">
                           {dailyConfigsList.length === 0 ? "No custom day order configurations saved yet. Use the form above to add date ranges." : "No matching day order records found for search filter."}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ) : (
                       dailyConfigsList
                         .filter(cfg => {
@@ -27568,9 +27742,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           );
                         })
                         .map(cfg => (
-                          <tr key={cfg.id || cfg.dateStr} className={`transition-colors ${editingDailyId === cfg.id ? "bg-[#D528A2]/10" : "hover:bg-slate-50/50"}`}>
-                            <td className="p-3 font-extrabold text-slate-800">{cfg.dateStr}</td>
-                            <td className="p-3">
+                          <TableRow key={cfg.id || cfg.dateStr} className={`transition-colors ${editingDailyId === cfg.id ? "bg-[#D528A2]/10" : "hover:bg-slate-50/50"}`}>
+                            <TableCell className="p-3 font-extrabold text-slate-800">{cfg.dateStr}</TableCell>
+                            <TableCell className="p-3">
                               <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase border ${cfg.day_type === "holiday" ? "bg-rose-50 text-rose-700 border-rose-200" :
                                   cfg.day_type === "event" ? "bg-amber-50 text-amber-700 border-amber-200" :
                                     cfg.day_type === "exam_day" ? "bg-purple-50 text-purple-700 border-purple-200" :
@@ -27578,11 +27752,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 }`}>
                                 {cfg.day_type ? cfg.day_type.replace("_", " ") : "Working"}
                               </span>
-                            </td>
-                            <td className="p-3 font-bold text-slate-900">{cfg.day_order || "None"}</td>
-                            <td className="p-3 font-semibold text-slate-600">{cfg.session_mode || "Offline"}</td>
-                            <td className="p-3 text-slate-500 max-w-[200px] truncate" title={cfg.notes}>{cfg.notes || "-"}</td>
-                            <td className="p-3 text-right flex justify-end gap-1">
+                            </TableCell>
+                            <TableCell className="p-3 font-bold text-slate-900">{cfg.day_order || "None"}</TableCell>
+                            <TableCell className="p-3 font-semibold text-slate-600">{cfg.session_mode || "Offline"}</TableCell>
+                            <TableCell className="p-3 text-slate-500 max-w-[200px] truncate" title={cfg.notes}>{cfg.notes || "-"}</TableCell>
+                            <TableCell className="p-3 text-right flex justify-end gap-1">
                               <button
                                 type="button"
                                 onClick={() => handleStartEditDailyConfig(cfg)}
@@ -27599,22 +27773,26 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))
                     )}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* ── Attendance Template Download Modal (College-Wise & Clean Format) ── */}
       {showAttendanceTemplateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-scaleUp">
+        <Dialog
+          open={true}
+          onOpenChange={(next) => { if (!next) setShowAttendanceTemplateModal(false); }}
+          ariaLabel="Download Attendance Template"
+          overlayClassName="bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+          panelClassName="rounded-2xl max-w-lg p-6 space-y-5 animate-scaleUp"
+        >
             <div className="flex items-center justify-between border-b border-slate-150 pb-3.5">
               <div className="flex items-center gap-2.5">
                 <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
@@ -27643,6 +27821,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <select
                   value={activeCollegeId}
                   disabled
+                  aria-label="Select College / Campus"
                   className="w-full text-xs font-bold px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 cursor-not-allowed opacity-90"
                 >
                   <option value={activeCollegeId}>{activeCollegeName || colleges.find(c => c.id === activeCollegeId)?.name || "Current Campus"}</option>
@@ -27656,6 +27835,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 </label>
                 <select
                   value={templateModalCohort}
+                  aria-label="Target Class Group / Cohort"
                   onChange={(e) => setTemplateModalCohort(e.target.value)}
                   className="w-full text-xs font-semibold px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                 >
@@ -27685,6 +27865,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </label>
                   <input
                     type="date"
+                    aria-label="Start Date"
                     value={templateModalStartDate}
                     onChange={(e) => setTemplateModalStartDate(e.target.value)}
                     className="w-full text-xs font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
@@ -27696,6 +27877,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </label>
                   <input
                     type="date"
+                    aria-label="End Date"
                     value={templateModalEndDate}
                     onChange={(e) => setTemplateModalEndDate(e.target.value)}
                     className="w-full text-xs font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
@@ -27740,8 +27922,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <span>Download Template (.xlsx)</span>
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
     </div>

@@ -1,12 +1,15 @@
-// Pin to Mumbai (bom1) — co-located with Turso DB (aws-ap-south-1)
-export const preferredRegion = "bom1";
 export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/authGuard";
+import { generateId } from "@/lib/id";
+import { ensureMigration } from "@/lib/migrations";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request);
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const tasks = await db.all("SELECT * FROM kam_tasks ORDER BY created_at DESC");
     return NextResponse.json({ success: true, tasks });
@@ -17,7 +20,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
+    await ensureMigration("schema_alignment_2026_10");
     const body = await request.json();
     const { id, title, collegeId, assigned_cam_id, description, priority, status, dueDate } = body;
 
@@ -25,7 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    const taskId = id || "t_" + Date.now();
+    const taskId = id || generateId("t");
     await db.run(
       `INSERT INTO kam_tasks (id, title, collegeId, assigned_cam_id, description, priority, status, dueDate) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -48,7 +54,10 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
+    await ensureMigration("schema_alignment_2026_10");
     const body = await request.json();
     const { id, status, title, priority, dueDate, assigned_cam_id, description } = body;
 
@@ -84,6 +93,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { errorResponse } = await requireAuth(request, { allowedRoles: ["kam", "admin"] });
+    if (errorResponse) return errorResponse;
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

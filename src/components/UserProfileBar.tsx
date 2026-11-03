@@ -39,6 +39,8 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -52,6 +54,47 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
     }
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Keyboard support: Escape closes and restores trigger focus; arrows move
+  // through the menu items without tabbing out of the header.
+  useEffect(() => {
+    if (!isOpen) return;
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    const getItems = () =>
+      Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])'));
+
+    const focusTimer = window.setTimeout(() => getItems()[0]?.focus(), 0);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+
+      const items = getItems();
+      if (items.length === 0) return;
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      let nextIndex = 0;
+
+      if (event.key === "ArrowDown") nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+      else if (event.key === "ArrowUp") nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+      else if (event.key === "End") nextIndex = items.length - 1;
+
+      event.preventDefault();
+      items[nextIndex].focus();
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", onKeyDown);
     };
   }, [isOpen]);
 
@@ -178,14 +221,16 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
     <div className="relative" ref={dropdownRef}>
       {/* Profile Trigger Button */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={handleToggle}
-        className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-gray-50 dark:bg-slate-800/90 border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-700/80 transition-all cursor-pointer shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-        aria-haspopup="true"
+        className="flex h-9 items-center gap-2 px-2.5 sm:px-3 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-all cursor-pointer shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+        aria-haspopup="menu"
         aria-expanded={isOpen}
+        aria-controls="profile-menu"
       >
         {/* Avatar / Initials Pill */}
-        <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-white text-[10px] shadow-xs shrink-0 overflow-hidden">
+        <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-white text-[9px] shadow-xs shrink-0 overflow-hidden">
           {userInfo.avatarUrl ? (
             <img src={userInfo.avatarUrl} alt={userInfo.name} className="h-full w-full object-cover" />
           ) : (
@@ -195,22 +240,28 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
 
         {/* User Name & Role Pill */}
         <div className="text-left leading-none hidden sm:block">
-          <span className="text-xs font-bold text-gray-900 dark:text-white block leading-tight max-w-[150px] truncate">
+          <span className="text-xs font-bold text-slate-900 dark:text-white block leading-tight max-w-[150px] truncate">
             {userInfo.name}
           </span>
-          <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider block mt-0.5">
+          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block mt-0.5">
             {userInfo.shortRole}
           </span>
         </div>
 
         <ChevronDown
-          className={`h-3.5 w-3.5 text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+          className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
 
       {/* Profile Dropdown Panel */}
       {isOpen && (
-        <div className="absolute right-0 mt-2.5 w-64 bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div
+          ref={menuRef}
+          id="profile-menu"
+          role="menu"
+          aria-label="Account menu"
+          className="absolute right-0 mt-2.5 w-64 bg-white dark:bg-slate-800 border border-slate-200/90 dark:border-slate-700 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        >
           {/* User Info Header */}
           <div className="px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60">
             <div className="flex items-center gap-3">
@@ -242,8 +293,8 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
           {/* Actions List */}
           <div className="p-1.5 space-y-0.5">
             {isSuperAdmin && (
-              <div className="pb-1 mb-1 border-b border-slate-100 dark:border-slate-700">
-                <span className="px-3 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 block">
+              <div className="pb-1 mb-1 border-b border-slate-100 dark:border-slate-700" role="group" aria-label="Switch workspace">
+                <span role="presentation" className="px-3 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 block">
                   Switch Workspace
                 </span>
                 <div className="grid grid-cols-2 gap-1 px-1">
@@ -254,13 +305,13 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
                     { label: "Faculty", role: "mentor", path: "/mentor" },
                     { label: "KAM", role: "kam", path: "/kam" },
                     { label: "Student", role: "student", path: "/student" },
-                    { label: "HR", role: "hr", path: "/hr" },
                     { label: "Fee Mgr", role: "fee_manager", path: "/fee-manager" },
                     { label: "SME", role: "sme", path: "/sme" },
                   ].map(w => (
                     <button
                       key={w.path}
                       type="button"
+                      role="menuitem"
                       onClick={() => {
                         setRole(w.role as any, undefined, { isSuperAdmin: true });
                         router.push(w.path);
@@ -281,6 +332,7 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
 
             <button
               type="button"
+              role="menuitem"
               onClick={handleOpenPasswordModal}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer"
             >
@@ -291,6 +343,7 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
             <button
               id="logout-btn"
               type="button"
+              role="menuitem"
               onClick={handleLogoutClick}
               disabled={isLoggingOut}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50/60 dark:hover:bg-rose-950/20 transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait"
