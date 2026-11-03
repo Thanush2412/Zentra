@@ -133,7 +133,7 @@ function parseNps(v: any): number | null {
   return isNaN(n) ? null : Math.round(n);
 }
 
-export function normMonthKey(m: string): string {
+function normMonthKey(m: string): string {
   const s = String(m || "").trim().toLowerCase();
   const ymMatch = s.match(/^(\d{4})-(\d{1,2})$/);
   if (ymMatch) {

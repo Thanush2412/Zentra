@@ -11,7 +11,7 @@ const StudentDashboard = dynamic(() => import("@/components/StudentDashboard").t
   loading: () => <TabPageLoader message="Loading Student Portal…" />
 });
 
-export const VALID_STUDENT_TABS = [
+const VALID_STUDENT_TABS = [
   "dashboard",
   "schedule",
   "interviews",
@@ -24,7 +24,7 @@ export const VALID_STUDENT_TABS = [
   "more_menu"
 ] as const;
 
-export type StudentTab = (typeof VALID_STUDENT_TABS)[number];
+type StudentTab = (typeof VALID_STUDENT_TABS)[number];
 
 export default function StudentTabPage() {
   const params = useParams();
