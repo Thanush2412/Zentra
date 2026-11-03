@@ -23,6 +23,16 @@ import { useApp, College, SHIFT_TIME_SLOTS } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { getCurrentAcademicYear, getAcademicYearOptions } from "@/lib/academicYear";
 import { DEFAULT_SHIFT_CONFIGS } from "@/lib/shiftDefaults";
+import { ALL_SEMESTERS, getSemestersForCourse } from "@/lib/semesters";
+import {
+  ALL_SEMESTERS_KEY,
+  cloneShiftParams,
+  compileShiftConfigs,
+  semesterParamsMapFromShiftConfigs,
+  type ShiftParamsTriple,
+  type SemesterParamsMap,
+  type ShiftKey
+} from "@/lib/shiftConfigCompiler";
 import {
   generateCampusCode,
   generateCodeFromName,
@@ -96,12 +106,18 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
   const [newCourseShift, setNewCourseShift] = useState("general");
 
   // Step 3 Shifts
-  const [shiftParams, setShiftParams] = useState<Record<"shift_1" | "shift_2" | "general", ShiftParams>>({
-    shift_1: { ...DEFAULT_SHIFT_CONFIGS.shift_1 },
-    shift_2: { ...DEFAULT_SHIFT_CONFIGS.shift_2 },
-    general: { ...DEFAULT_SHIFT_CONFIGS.general }
-  });
+  const [shiftParams, setShiftParams] = useState<ShiftParamsTriple>(
+    () => cloneShiftParams(DEFAULT_SHIFT_CONFIGS)
+  );
   const [activeShiftTab, setActiveShiftTab] = useState<"shift_1" | "shift_2" | "general">("general");
+
+  // Step 3 semester overrides: `shiftParams` always holds the *active* semester's
+  // triple; every other semester keeps its own copy in `semesterParamsMap`.
+  const [semesterParamsMap, setSemesterParamsMap] = useState<SemesterParamsMap>({});
+  const [activeConfigSemester, setActiveConfigSemester] = useState<string>(ALL_SEMESTERS_KEY);
+  const [newBreakName, setNewBreakName] = useState("Lunch Break");
+  const [newBreakDuration, setNewBreakDuration] = useState(30);
+  const [newBreakAfterPeriod, setNewBreakAfterPeriod] = useState(3);
 
   // Initialize or reset form when dialog opens
   useEffect(() => {
@@ -142,14 +158,18 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
       if (collegeToEdit.shift_configs) {
         try {
           const parsed = JSON.parse(collegeToEdit.shift_configs);
-          if (parsed.custom_shift_params) {
-            setShiftParams(prev => ({
-              ...prev,
-              ...parsed.custom_shift_params
+          const stored = parsed.custom_shift_params as Partial<ShiftParamsTriple> | undefined;
+          if (stored) {
+            setShiftParams(prev => cloneShiftParams({
+              shift_1: { ...prev.shift_1, ...stored.shift_1 },
+              shift_2: { ...prev.shift_2, ...stored.shift_2 },
+              general: { ...prev.general, ...stored.general }
             }));
           }
         } catch (_) {}
       }
+      setSemesterParamsMap(semesterParamsMapFromShiftConfigs(collegeToEdit.shift_configs));
+      setActiveConfigSemester(ALL_SEMESTERS_KEY);
     } else {
       // New campus mode
       setStep(1);
@@ -168,15 +188,79 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
         manager: "",
         working_days: 5
       });
-      setShiftParams({
-        shift_1: { ...DEFAULT_SHIFT_CONFIGS.shift_1 },
-        shift_2: { ...DEFAULT_SHIFT_CONFIGS.shift_2 },
-        general: { ...DEFAULT_SHIFT_CONFIGS.general }
-      });
+      setShiftParams(cloneShiftParams(DEFAULT_SHIFT_CONFIGS));
+      setSemesterParamsMap({});
+      setActiveConfigSemester(ALL_SEMESTERS_KEY);
     }
   }, [open, collegeToEdit, coursesList, colleges, kamList]);
 
   if (!open) return null;
+
+  // Semesters actually taught here, plus any stored override, so a schedule
+  // that exists in the data is always reachable in the picker.
+  const semestersInScope = (() => {
+    const inScope = new Set<string>();
+    wizardCourses.forEach(c => {
+      getSemestersForCourse(c.years).forEach(s => inScope.add(s));
+    });
+    Object.keys(semesterParamsMap).forEach(s => inScope.add(s));
+    if (activeConfigSemester !== ALL_SEMESTERS_KEY) inScope.add(activeConfigSemester);
+    return inScope.size > 0 ? Array.from(inScope) : ALL_SEMESTERS;
+  })();
+
+  const hasSemesterOverride = (semester: string) =>
+    semester !== ALL_SEMESTERS_KEY && Boolean(semesterParamsMap[semester]);
+
+  const handleSemesterChange = (nextSemester: string) => {
+    if (nextSemester === activeConfigSemester) return;
+    const updatedMap: SemesterParamsMap = {
+      ...semesterParamsMap,
+      [activeConfigSemester]: cloneShiftParams(shiftParams)
+    };
+    setSemesterParamsMap(updatedMap);
+    const target = updatedMap[nextSemester] || updatedMap[ALL_SEMESTERS_KEY] || shiftParams;
+    setShiftParams(cloneShiftParams(target));
+    setActiveConfigSemester(nextSemester);
+  };
+
+  const patchShift = (key: ShiftKey, patch: Partial<ShiftParams>) => {
+    setShiftParams(prev => ({
+      ...prev,
+      [key]: { ...prev[key], ...patch }
+    }));
+  };
+
+  const patchShiftBreaks = (
+    key: ShiftKey,
+    updater: (existing: ShiftParams["breaks"]) => ShiftParams["breaks"]
+  ) => {
+    setShiftParams(prev => ({
+      ...prev,
+      [key]: { ...prev[key], breaks: updater(prev[key].breaks) }
+    }));
+  };
+
+  const handleAddBreak = (key: ShiftKey) => {
+    const name = newBreakName.trim();
+    if (!name) {
+      setModalError("Break name is required.");
+      return;
+    }
+    if (shiftParams[key].breaks.some(b => b.afterPeriod === newBreakAfterPeriod)) {
+      setModalError(`A break is already configured after Period ${newBreakAfterPeriod}.`);
+      return;
+    }
+    patchShiftBreaks(key, existing => [
+      ...existing,
+      {
+        id: `brk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        duration: Number(newBreakDuration) || 0,
+        afterPeriod: Number(newBreakAfterPeriod) || 1
+      }
+    ]);
+    setModalError(null);
+  };
 
   const handleAddCourseToWizard = () => {
     if (!newCourseName.trim()) return;
@@ -226,6 +310,25 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
+
+    const finalMap: SemesterParamsMap = {
+      ...semesterParamsMap,
+      [activeConfigSemester]: cloneShiftParams(shiftParams)
+    };
+    const compiled = compileShiftConfigs(
+      finalMap[ALL_SEMESTERS_KEY] || shiftParams,
+      finalMap,
+      form.has_shifts === 1
+    );
+    if (!compiled.ok) {
+      setModalError(
+        compiled.errors.length === 1
+          ? compiled.errors[0]
+          : `${compiled.errors[0]} (+${compiled.errors.length - 1} more)`
+      );
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -238,7 +341,7 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
       const updatedForm = {
         ...form,
         id: collegeId,
-        shift_configs: JSON.stringify({ custom_shift_params: shiftParams })
+        shift_configs: JSON.stringify(compiled.configs)
       };
 
       let res;
@@ -661,7 +764,7 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
                       type="button"
                       onClick={() => setActiveShiftTab(sh)}
                       className={`pb-2 px-1 text-xs font-black transition-all cursor-pointer ${
-                        activeShiftTab === sh
+                        (form.has_shifts === 1 ? activeShiftTab : "general") === sh
                           ? "border-b-2 border-indigo-600 text-indigo-600"
                           : "text-gray-400 hover:text-gray-600"
                       }`}
@@ -671,8 +774,42 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
                   ))}
                 </div>
 
+                {/* Semester scope — same period editor, values kept per semester */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-100/50">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">
+                    Configure semester
+                  </span>
+                  <Select
+                    aria-label="Configure semester"
+                    value={activeConfigSemester}
+                    onChange={e => handleSemesterChange(e.target.value)}
+                    className="flex-1 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer"
+                  >
+                    <option value={ALL_SEMESTERS_KEY}>All Semesters (default fallback)</option>
+                    {semestersInScope.map(sem => (
+                      <option key={sem} value={sem}>
+                        {sem}
+                        {hasSemesterOverride(sem) ? " · custom" : ""}
+                      </option>
+                    ))}
+                  </Select>
+                  <span
+                    role="status"
+                    className="text-[10px] font-bold text-slate-400 sm:max-w-[46%]"
+                  >
+                    {activeConfigSemester === ALL_SEMESTERS_KEY
+                      ? "Fallback for every semester"
+                      : hasSemesterOverride(activeConfigSemester)
+                        ? "Custom for this semester"
+                        : "Inherits All Semesters until edited"}
+                  </span>
+                </div>
+
                 {(() => {
-                  const p = shiftParams[activeShiftTab];
+                  // A campus without shifts only runs the general schedule, so
+                  // never edit a tab that is not shown.
+                  const editTab: ShiftKey = form.has_shifts === 1 ? activeShiftTab : "general";
+                  const p = shiftParams[editTab];
                   const schedule = calculateShiftSchedule(p);
 
                   return (
@@ -683,12 +820,7 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
                           <Input
                             type="time"
                             value={p.startTime}
-                            onChange={e =>
-                              setShiftParams(prev => ({
-                                ...prev,
-                                [activeShiftTab]: { ...prev[activeShiftTab], startTime: e.target.value }
-                              }))
-                            }
+                            onChange={e => patchShift(editTab, { startTime: e.target.value })}
                             className="bg-white text-xs font-bold"
                           />
                         </div>
@@ -699,12 +831,7 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
                             min={20}
                             max={120}
                             value={p.periodDuration}
-                            onChange={e =>
-                              setShiftParams(prev => ({
-                                ...prev,
-                                [activeShiftTab]: { ...prev[activeShiftTab], periodDuration: Number(e.target.value) || 50 }
-                              }))
-                            }
+                            onChange={e => patchShift(editTab, { periodDuration: Number(e.target.value) || 50 })}
                             className="bg-white text-xs font-bold"
                           />
                         </div>
@@ -715,21 +842,100 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
                             min={1}
                             max={12}
                             value={p.periodsCount}
-                            onChange={e =>
-                              setShiftParams(prev => ({
-                                ...prev,
-                                [activeShiftTab]: { ...prev[activeShiftTab], periodsCount: Number(e.target.value) || 5 }
-                              }))
-                            }
+                            onChange={e => patchShift(editTab, { periodsCount: Number(e.target.value) || 5 })}
                             className="bg-white text-xs font-bold"
                           />
                         </div>
                       </div>
 
+                      {/* Breaks for this semester + shift */}
+                      <div className="bg-white border border-gray-200 rounded-xl p-3.5 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            Breaks · {p.label}
+                          </span>
+                          <span className="text-[9px] font-bold text-gray-400">
+                            {p.breaks.length === 0
+                              ? "None — periods run back to back"
+                              : `${p.breaks.length} configured`}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Name</label>
+                            <Input
+                              type="text"
+                              value={newBreakName}
+                              onChange={e => setNewBreakName(e.target.value)}
+                              placeholder="e.g. Lunch Break"
+                              className="bg-white text-xs font-bold"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">After period</label>
+                            <Select
+                              aria-label="Break after period"
+                              value={Math.min(newBreakAfterPeriod, p.periodsCount)}
+                              onChange={e => setNewBreakAfterPeriod(Number(e.target.value) || 1)}
+                              className="bg-white text-xs font-bold cursor-pointer"
+                            >
+                              {Array.from({ length: p.periodsCount }, (_, i) => i + 1).map(n => (
+                                <option key={n} value={n}>
+                                  Period {n}
+                                </option>
+                              ))}
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Minutes</label>
+                            <Input
+                              type="number"
+                              min={5}
+                              max={120}
+                              value={newBreakDuration}
+                              onChange={e => setNewBreakDuration(Number(e.target.value) || 5)}
+                              className="bg-white text-xs font-bold"
+                            />
+                          </div>
+                          <Button type="button" variant="outline" onClick={() => handleAddBreak(editTab)} className="w-full">
+                            <Plus className="h-3.5 w-3.5" /> Add break
+                          </Button>
+                        </div>
+
+                        {p.breaks.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {p.breaks
+                              .slice()
+                              .sort((a, b) => a.afterPeriod - b.afterPeriod)
+                              .map(br => (
+                                <span
+                                  key={br.id}
+                                  className="flex items-center gap-1.5 pl-2.5 pr-1 py-1 bg-amber-50 border border-amber-200 rounded-lg text-[10px] font-bold text-amber-800"
+                                >
+                                  {br.name} · {br.duration} min after Period {br.afterPeriod}
+                                  <button
+                                    type="button"
+                                    aria-label={`Remove ${br.name}`}
+                                    onClick={() =>
+                                      patchShiftBreaks(editTab, list => list.filter(b => b.id !== br.id))
+                                    }
+                                    className="p-0.5 rounded hover:bg-amber-200/70 text-amber-600 cursor-pointer"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+
                       {/* Timetable Schedule Preview */}
                       <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-2">
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                          Generated Timetable Grid ({schedule.items.length} periods, ends {schedule.overallEndTime})
+                          {schedule.error
+                            ? schedule.error
+                            : `${p.label} · ${activeConfigSemester} — ${p.periodsCount} periods, ends ${schedule.overallEndTime}`}
                         </span>
                         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                           {schedule.items.map((item, i) => (
@@ -779,6 +985,49 @@ export const CampusWizardDialog: React.FC<CampusWizardDialogProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {(() => {
+                  const finalMap: SemesterParamsMap = {
+                    ...semesterParamsMap,
+                    [activeConfigSemester]: cloneShiftParams(shiftParams)
+                  };
+                  const preview = compileShiftConfigs(
+                    finalMap[ALL_SEMESTERS_KEY] || shiftParams,
+                    finalMap,
+                    form.has_shifts === 1
+                  );
+                  if (!preview.ok) {
+                    return (
+                      <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-[11px] font-bold text-rose-700">
+                        {preview.errors[0]}
+                      </div>
+                    );
+                  }
+                  const overrides = Object.keys(preview.configs.semester_configs);
+                  const keys = form.has_shifts === 1
+                    ? (["shift_1", "shift_2", "general"] as const)
+                    : (["general"] as const);
+                  return (
+                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+                      <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider block">Period Schedule</span>
+                      <div className="flex flex-wrap gap-2">
+                        {keys.map(k => (
+                          <span
+                            key={k}
+                            className="px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-[10px] font-bold text-gray-700"
+                          >
+                            {shiftParams[k].label}: {preview.configs[k].length} periods
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[10px] font-bold text-gray-500">
+                        {overrides.length > 0
+                          ? `Semester overrides: ${overrides.join(", ")}`
+                          : "Same periods for every semester."}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
