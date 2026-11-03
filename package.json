@@ -6,7 +6,6 @@
     "predev": "node scripts/generate-pg-column-case.mjs",
     "dev": "next dev -H 0.0.0.0 --webpack",
     "dev:turbo": "next dev -H 0.0.0.0",
-    "prebuild": "node scripts/generate-pg-column-case.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
