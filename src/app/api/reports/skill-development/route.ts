@@ -20,6 +20,7 @@ import {
 import fs from "fs";
 import path from "path";
 import { fetchWithTimeout } from "@/lib/net";
+import { readLcSolvedTotals, type LcSolvedRow } from "@/lib/leetcodeMirror";
 
 /**
  * Monthly Skill Development Report (PPTX) — CM dashboard feature.
@@ -50,6 +51,13 @@ const BATCH_SLOTS = [
 ];
 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+/** Carries the status the handlers should answer with, so an unconfigured mirror is a 503 not a 500. */
+function httpError(status: number, message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number };
+  err.status = status;
+  return err;
+}
 
 function xmlEsc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -169,11 +177,11 @@ async function computeAllBatches(collegeId: string, month: number, year: number,
   const db = await getDb();
   const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
 
-  // Roster, month attendance and the LeetCode mirror are independent, so one round trip
-  // feeds the whole report. Each read used to end in .catch(() => []), so a slice that
-  // failed produced a zero-metric deck that looked exactly like a measured result.
+  // Roster and month attendance are independent, so one round trip feeds the whole report.
+  // Each read used to end in .catch(() => []), so a slice that failed produced a zero-metric
+  // deck that looked exactly like a measured result.
   const reportFailures: QueryFailure[] = [];
-  const [studentRows, attendance, lcRows] = await db.multiQuery(
+  const [studentRows, attendance] = await db.multiQuery(
     [
       {
         sql: "SELECT id, name, classGroup, classgroup, department, efset_score, hire_score, leetcode_link, email, register_number, roll_number FROM students WHERE college_id = ?",
@@ -185,12 +193,23 @@ async function computeAllBatches(collegeId: string, month: number, year: number,
               WHERE sa.dateStr LIKE ? AND sa.studentId IN (SELECT id FROM students WHERE college_id = ?)`,
         params: [`${monthPrefix}%`, collegeId],
       },
-      { sql: "SELECT email, register_number, solved_total FROM lc_students" },
     ],
     reportFailures
   );
   if (reportFailures.length > 0) {
-    throw new Error(`Skill-development report inputs could not be read: ${reportFailures[0].error}`);
+    throw httpError(500, `Skill-development report inputs could not be read: ${reportFailures[0].error}`);
+  }
+
+  // lc_students lives in the external HackerRank/LeetCode project, never in this app's
+  // database, and an empty mirror would print "solved 0" as if it were measured.
+  let lcRows: LcSolvedRow[];
+  try {
+    lcRows = await readLcSolvedTotals();
+  } catch (err: any) {
+    throw httpError(
+      503,
+      `Skill-development report needs the LeetCode mirror (lc_students). Set HACKERRANK_LEETCODE_DB_URL. Reason: ${err?.message || err}`
+    );
   }
 
   const students: StudentRow[] = studentRows;
@@ -198,7 +217,7 @@ async function computeAllBatches(collegeId: string, month: number, year: number,
   const cleanReg = (r: any) => String(r || "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const lcByEmail = new Map<string, number>();
   const lcByReg = new Map<string, number>();
-  lcRows.forEach((r: any) => {
+  lcRows.forEach(r => {
     const solved = Number(r.solved_total || 0);
     if (r.email) lcByEmail.set(String(r.email).toLowerCase().trim(), solved);
     if (r.register_number) lcByReg.set(cleanReg(r.register_number), solved);
@@ -373,7 +392,7 @@ export async function GET(request: Request) {
     });
   } catch (err: any) {
     console.error("GET /api/reports/skill-development error:", err);
-    return NextResponse.json({ success: false, message: err?.message || "Failed to compute report data" }, { status: 500 });
+    return NextResponse.json({ success: false, message: err?.message || "Failed to compute report data" }, { status: err?.status || 500 });
   }
 }
 
@@ -608,6 +627,6 @@ export async function POST(request: Request) {
     });
   } catch (err: any) {
     console.error("POST /api/reports/skill-development error:", err);
-    return NextResponse.json({ success: false, message: err?.message || "Failed to generate report" }, { status: 500 });
+    return NextResponse.json({ success: false, message: err?.message || "Failed to generate report" }, { status: err?.status || 500 });
   }
 }

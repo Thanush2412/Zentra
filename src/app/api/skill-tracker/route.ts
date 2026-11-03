@@ -81,7 +81,9 @@ export async function GET(request: Request) {
     demoQuery += " ORDER BY dateStr DESC LIMIT 200";
 
     // ── 4. Conducted topics (academic_tracker) ─────────────────────────
-    let trackerQuery = "SELECT id, date, period_slot, class_group, subject, unit, topic, comments, status, mentor_id, week_number, weekly_plan_week FROM academic_tracker WHERE 1=1";
+    // academic_tracker carries the plan week as weekly_plan_week; a week_number column has
+    // never existed on it, and naming one here fails the whole read.
+    let trackerQuery = "SELECT id, date, period_slot, class_group, subject, unit, topic, comments, status, mentor_id, weekly_plan_week FROM academic_tracker WHERE 1=1";
     const trackerParams: any[] = [];
     if (mentorId) {
       trackerQuery += " AND mentor_id = ?";

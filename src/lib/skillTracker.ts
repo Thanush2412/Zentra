@@ -101,7 +101,6 @@ export interface DemoRow {
 }
 
 export interface TrackerRow {
-  week_number?: number | string | null;
   topic?: string | null;
   weekly_plan_week?: number | string | null;
 }
@@ -145,10 +144,11 @@ export function buildWeekRollup(
     .map((t: any) => (t?.topic || "").trim())
     .filter(Boolean);
 
-  // 2. Conducted topics: matched from academic_tracker rows for this week
+  // 2. Conducted topics: matched from academic_tracker rows for this week.
+  // Rows with no weekly_plan_week are undated as to week, so they count for every week.
   const conductedSet = new Set<string>();
   trackerRows.forEach(r => {
-    const wk = parseInt(String(r.week_number ?? r.weekly_plan_week ?? ""), 10);
+    const wk = parseInt(String(r.weekly_plan_week ?? ""), 10);
     if (!isNaN(wk) && wk !== weekNumber) return;
     const topic = normalizeTopic(r.topic);
     if (topic) conductedSet.add(topic);

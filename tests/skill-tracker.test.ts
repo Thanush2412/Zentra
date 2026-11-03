@@ -69,8 +69,8 @@ describe("buildWeekRollup", () => {
 
   it("counts planned topics and matches conducted ones from the tracker", () => {
     const tracker = [
-      { week_number: 3, topic: "arrays & strings" },
-      { week_number: 3, topic: " Recursion Basics " }
+      { weekly_plan_week: 3, topic: "arrays & strings" },
+      { weekly_plan_week: 3, topic: " Recursion Basics " }
     ];
     const r = buildWeekRollup(plan, [], [], tracker, 3);
     expect(r.topics_planned).toBe(2);
@@ -79,7 +79,7 @@ describe("buildWeekRollup", () => {
   });
 
   it("ignores tracker rows from other weeks", () => {
-    const tracker = [{ week_number: 2, topic: "arrays & strings" }];
+    const tracker = [{ weekly_plan_week: 2, topic: "arrays & strings" }];
     const r = buildWeekRollup(plan, [], [], tracker, 3);
     expect(r.topics_conducted).toBe(0);
   });
