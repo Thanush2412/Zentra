@@ -73,8 +73,12 @@ run-schema-migrations.*
 *.sh
 launch_*
 launch_all_cams.*
-/scripts/
-scripts/
+scripts/*
+!scripts/generate-pg-column-case.mjs
+!scripts/apply_schema.mjs
+!scripts/sync_db.mjs
+!scripts/migrate_sqlite_to_postgres.mjs
+!scripts/performance-indexes.sql
 
 # Python Cache & Environments
 __pycache__/
