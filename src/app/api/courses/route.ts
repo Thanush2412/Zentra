@@ -208,19 +208,24 @@ export async function POST(request: Request) {
       );
     } catch (insertErr: any) {
       if (insertErr.message && (insertErr.message.includes("UNIQUE constraint failed") || insertErr.message.includes("duplicate key"))) {
-        // Fallback: If a course with this name already exists, update it instead of crashing with 500.
-        // The scoped probe and the global fallback key off the same name, so one round trip answers
-        // both; the fallback still only applies where the scoped probe misses.
+        // Only a course in this campus (or a shared college_id IS NULL row) may be
+        // adopted here. The old global fallback picked whichever row held the name,
+        // which moved another campus's course onto this one.
         const conflictFailures: QueryFailure[] = [];
-        const [scopedConflicts, globalConflicts] = await db.multiQuery([
+        const [scopedConflicts] = await db.multiQuery([
           {
             sql: "SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)",
             params: [cleanName, targetCollegeId],
           },
-          { sql: "SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", params: [cleanName] },
         ], conflictFailures);
         if (conflictFailures.length > 0) throw insertErr;
-        const conflictCourse = scopedConflicts[0] || globalConflicts[0];
+        const conflictCourse = scopedConflicts[0];
+        if (!conflictCourse) {
+          return NextResponse.json({
+            success: false,
+            message: `A course named "${cleanName}" already exists in another campus.`
+          }, { status: 409 });
+        }
 
         if (conflictCourse) {
           await db.run(
@@ -361,9 +366,6 @@ export async function PUT(request: Request) {
     let currentCourse = await db.get("SELECT * FROM courses WHERE id = ?", id);
     if (!currentCourse) {
       currentCourse = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND (college_id = ? OR college_id IS NULL)", cleanName, college_id || null);
-    }
-    if (!currentCourse) {
-      currentCourse = await db.get("SELECT * FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", cleanName);
     }
     if (!currentCourse) {
       return NextResponse.json({ success: false, message: "Course not found." }, { status: 404 });

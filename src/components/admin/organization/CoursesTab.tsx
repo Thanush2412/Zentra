@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useApp, Department, Subject } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import {
   Layers,
@@ -16,11 +18,21 @@ import {
   ChevronRight,
   Plus,
   Edit,
-  Trash2
+  Trash2,
+  Copy,
+  MoreVertical
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import { CourseInfoButton } from "@/components/CourseInfoModal";
 import { CourseModal } from "@/components/CourseModal";
 import { SubjectDialog, type SubjectFormState, type DynamicSubjectRow } from "@/components/admin/dialogs/SubjectDialog";
+import { AdminTabSkeleton } from "@/components/admin/AdminTabSkeleton";
 import {
   formatYearWiseRooms,
   isMentorInProgram,
@@ -38,17 +50,30 @@ export const CoursesTab: React.FC = () => {
     slots,
     subjectsList,
     subjectGroups,
+    createCourse,
     deleteCourse,
     createSubject,
     updateSubject,
-    refreshData
+    refreshData,
+    isDataLoading
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
+  const searchParams = useSearchParams();
+  const campusParam = searchParams?.get("campus") || null;
+
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedColleges, setExpandedColleges] = useState<Record<string, boolean>>({});
+  const [expandedColleges, setExpandedColleges] = useState<Record<string, boolean>>(() => {
+    return campusParam ? { [campusParam]: true } : {};
+  });
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
   const [expandedDeptYears, setExpandedDeptYears] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (campusParam) {
+      setExpandedColleges(prev => ({ ...prev, [campusParam]: true }));
+    }
+  }, [campusParam]);
 
   // CourseModal state
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
@@ -70,13 +95,23 @@ export const CoursesTab: React.FC = () => {
     mentorIds: []
   });
   const [dynamicSubjects, setDynamicSubjects] = useState<DynamicSubjectRow[]>([
-    { id: "row_1", name: "", type: "SKILL", weekly_hours: 4 },
-    { id: "row_2", name: "", type: "ACADEMIC", weekly_hours: 4 },
-    { id: "row_3", name: "", type: "LAB", weekly_hours: 2 }
+    { id: "row_1", name: "", type: "SKILL", weekly_hours: 4, mentor_group: "" },
+    { id: "row_2", name: "", type: "ACADEMIC", weekly_hours: 4, mentor_group: "" },
+    { id: "row_3", name: "", type: "LAB", weekly_hours: 2, mentor_group: "" }
   ]);
   const [lockDeptAndYear, setLockDeptAndYear] = useState(false);
   const [subjectModalError, setSubjectModalError] = useState<string | null>(null);
   const [isSubmittingSubject, setIsSubmittingSubject] = useState(false);
+  const [campusFilter, setCampusFilter] = useState("all");
+
+  const toggleExpandAll = () => {
+    const allExpanded = colleges.every(c => expandedColleges[c.id] !== false);
+    const nextState: Record<string, boolean> = {};
+    colleges.forEach(c => {
+      nextState[c.id] = !allExpanded;
+    });
+    setExpandedColleges(nextState);
+  };
 
   const toggleDeptYear = (deptId: string, yr: string) => {
     const key = `${deptId}_${yr}`;
@@ -124,7 +159,37 @@ export const CoursesTab: React.FC = () => {
     }
   };
 
-  const handleOpenSubjectModal = (sub?: Subject, defaultDept?: string, defaultYear?: string) => {
+  const handleDuplicateCourse = async (dept: Department, collegeId: string) => {
+    try {
+      const dupName = `${dept.name} (Copy)`;
+      const dupCode = dept.code ? `${dept.code}_COPY` : "";
+      const payload: Omit<Department, "id"> = {
+        name: dupName,
+        code: dupCode,
+        college_id: collegeId,
+        years: dept.years || 4,
+        start_year: dept.start_year || "",
+        end_year: dept.end_year || "",
+        start_date: dept.start_date || "",
+        end_date: dept.end_date || "",
+        description: dept.description || "",
+        default_room: dept.default_room || "",
+        default_shift: dept.default_shift || "general",
+        status: "Active"
+      };
+      const res = await createCourse(payload as any);
+      if (res.success) {
+        toast(`Course "${dept.name}" duplicated successfully!`, "success");
+        await refreshData(true);
+      } else {
+        toast(res.message || "Failed to duplicate course.", "error");
+      }
+    } catch (err: any) {
+      toast(err.message || "An unexpected error occurred while duplicating.", "error");
+    }
+  };
+
+  const handleOpenSubjectModal = (sub?: Subject, defaultDept?: string, defaultYear?: string, defaultColId?: string) => {
     setSubjectModalError(null);
     if (sub) {
       setSubjectForm({
@@ -141,6 +206,11 @@ export const CoursesTab: React.FC = () => {
       setEditingSubject(sub);
       setLockDeptAndYear(false);
     } else {
+      setDynamicSubjects([
+        { id: "row_1", name: "", type: "SKILL", weekly_hours: 4, mentor_group: "" },
+        { id: "row_2", name: "", type: "ACADEMIC", weekly_hours: 4, mentor_group: "" },
+        { id: "row_3", name: "", type: "LAB", weekly_hours: 2, mentor_group: "" }
+      ]);
       setSubjectForm({
         name: "",
         department: defaultDept || (coursesList[0]?.name || ""),
@@ -153,7 +223,7 @@ export const CoursesTab: React.FC = () => {
             ? "Semester 7"
             : "Semester 1",
         type: "SKILL",
-        college_id: colleges[0]?.id || "",
+        college_id: defaultColId || colleges[0]?.id || "",
         year: defaultYear || "Year 1",
         weekly_hours: 4,
         mentor_group: "",
@@ -207,17 +277,22 @@ export const CoursesTab: React.FC = () => {
       } else {
         const validSubjects = dynamicSubjects.filter(s => s.name && s.name.trim() !== "");
         if (validSubjects.length > 0) {
-          const payload = validSubjects.map(p => ({
-            name: p.name.trim(),
-            department: subjectForm.department.trim(),
-            semester: subjectForm.semester,
-            type: p.type || "SKILL",
-            college_id: subjectForm.college_id || undefined,
-            year: subjectForm.year,
-            weekly_hours: Number(p.weekly_hours) || 4,
-            subject_group: subjectForm.mentor_group,
-            mentor_group: subjectForm.mentor_group
-          }));
+          const payload = validSubjects.map(p => {
+            const group = (p.mentor_group && p.mentor_group.trim() !== "")
+              ? p.mentor_group.trim()
+              : (subjectForm.mentor_group || "General");
+            return {
+              name: p.name.trim(),
+              department: subjectForm.department.trim(),
+              semester: subjectForm.semester,
+              type: p.type || "SKILL",
+              college_id: subjectForm.college_id || undefined,
+              year: subjectForm.year,
+              weekly_hours: Number(p.weekly_hours) || 4,
+              subject_group: group,
+              mentor_group: group
+            };
+          });
 
           const res = await createSubject(payload as any);
           if (res.success) {
@@ -260,6 +335,10 @@ export const CoursesTab: React.FC = () => {
     }
   };
 
+  if (isDataLoading && (!colleges || colleges.length === 0)) {
+    return <AdminTabSkeleton message="Loading courses and curriculum…" />;
+  }
+
   return (
     <div className="space-y-4 animate-fadeIn font-sans text-xs">
       <PageHeader
@@ -267,40 +346,76 @@ export const CoursesTab: React.FC = () => {
         title="Courses & Curriculum"
         subtitle="Manage courses and their academic year curricula grouped by campus."
         actions={
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input
-              type="text"
-              aria-label="Search courses"
-              placeholder="Search name, subjects..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-56 pl-9"
-            />
+          <div className="flex items-center gap-2">
+            <Select
+              aria-label="Campus filter"
+              value={campusFilter}
+              onChange={e => setCampusFilter(e.target.value)}
+              className="w-auto min-w-[150px] h-8 text-xs cursor-pointer font-semibold"
+            >
+              <option value="all">🏢 All Campuses</option>
+              {colleges.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <Input
+                type="text"
+                aria-label="Search courses"
+                placeholder="Search courses, subjects..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-48 pl-8 h-8 text-xs font-semibold"
+              />
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleExpandAll}
+              className="h-8 text-xs font-bold whitespace-nowrap"
+            >
+              {colleges.every(c => expandedColleges[c.id] !== false) ? "Collapse All" : "Expand All"}
+            </Button>
           </div>
         }
       />
 
       <div className="space-y-6">
-        {colleges.map(col => {
+        {colleges
+          .filter(col => campusFilter === "all" || col.id === campusFilter)
+          .map(col => {
           const isColExpanded = expandedColleges[col.id] !== false; // defaults to true
           const collegeDepts = coursesList.filter(
             d => d.college_id === col.id || (col.id === colleges[0]?.id && !d.college_id)
+          );
+          // Subjects hang off a course by its name, so two campuses that run the same
+          // course ("BCA") would render each other's subject list. Keep only this
+          // campus's subjects — rows with no campus stay shared, as everywhere else.
+          const campusSubjects = (subjectsList || []).filter(
+            s => !s.college_id || s.college_id === col.id
+          );
+          const campusSlots = (slots || []).filter(
+            s => !s.college_id || s.college_id === col.id
           );
           const filteredDepts = collegeDepts.filter(dept => {
             const matchesDept =
               dept.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
               dept.id.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesSubjects = (subjectsList || []).some(
+            const matchesSubjects = campusSubjects.some(
               s => s.department === dept.name && s.name.toLowerCase().includes(searchQuery.toLowerCase())
             );
             return matchesDept || matchesSubjects;
           });
 
           return (
-            <div key={col.id} className="border border-slate-200/80 rounded-xl bg-white shadow-sm overflow-hidden">
+            <div key={col.id} className="border border-slate-100 rounded-2xl bg-white shadow-card overflow-hidden">
               {/* College section header */}
-              <div className="p-4 bg-slate-50 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="p-4 bg-slate-50/70 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <button
                   onClick={() => setExpandedColleges(prev => ({ ...prev, [col.id]: !prev[col.id] }))}
                   className="flex flex-wrap items-center gap-x-2 gap-y-1 hover:text-indigo-600 transition-all text-left font-extrabold cursor-pointer border-none bg-transparent p-0 max-w-full"
@@ -343,20 +458,20 @@ export const CoursesTab: React.FC = () => {
                     <div className="space-y-3">
                       {filteredDepts.map(dept => {
                         const facultyCount = mentors.filter(m =>
-                          isMentorInProgram(m, dept.name, slots, subjectsList)
+                          isMentorInProgram(m, dept.name, campusSlots, campusSubjects)
                         ).length;
-                        const deptSubjects = (subjectsList || []).filter(s =>
+                        const deptSubjects = campusSubjects.filter(s =>
                           isDeptSubjectMatch(s.department, dept.name, dept.code)
                         );
                         const isDeptExpanded = expandedDepts[dept.id];
-                        const deptSlots = slots.filter(
+                        const deptSlots = campusSlots.filter(
                           s => (s.department || getDeptFromClassGroup(s.classGroup)) === dept.name
                         );
 
                         return (
-                          <div key={dept.id} className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50/20">
+                          <div key={dept.id} className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50/40">
                             {/* Department row */}
-                            <div className="p-3 bg-white border-b border-gray-200 flex items-center justify-between gap-4 flex-wrap">
+                            <div className="p-3.5 bg-white border-b border-slate-100 flex items-center justify-between gap-4 flex-wrap">
                               <div
                                 role="button"
                                 tabIndex={0}
@@ -437,25 +552,37 @@ export const CoursesTab: React.FC = () => {
                                   Subjects: <span className="text-gray-900">{deptSubjects.length}</span>
                                 </span>
 
-                                <div className="flex items-center gap-1.5 ml-2 border-l border-gray-200 pl-3">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleOpenCourseModal(dept, col.id)}
-                                    className="h-auto w-auto p-1 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 text-gray-500 hover:text-indigo-600 rounded transition-all cursor-pointer bg-transparent"
-                                    title="Edit Course"
-                                  >
-                                    <Edit className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => handleDeleteDept(dept.id, dept.name)}
-                                    className="h-auto w-auto p-1 hover:bg-rose-50 border border-transparent hover:border-rose-200 text-gray-500 hover:text-rose-600 rounded transition-all cursor-pointer bg-transparent"
-                                    title="Delete Course"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
+                                <div className="flex items-center ml-2 border-l border-gray-200 pl-3">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer"
+                                        title="Course Actions"
+                                      >
+                                        <MoreVertical className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-44">
+                                      <DropdownMenuItem onClick={() => handleOpenCourseModal(dept, col.id)}>
+                                        <Edit className="h-3.5 w-3.5 mr-2 text-indigo-600" />
+                                        Edit Course
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleDuplicateCourse(dept, col.id)}>
+                                        <Copy className="h-3.5 w-3.5 mr-2 text-emerald-600" />
+                                        Duplicate Course
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onClick={() => handleDeleteDept(dept.id, dept.name)}
+                                        className="text-rose-600 focus:bg-rose-50"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5 mr-2 text-rose-600" />
+                                        Delete Course
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 </div>
                               </div>
                             </div>
@@ -464,7 +591,7 @@ export const CoursesTab: React.FC = () => {
                             {isDeptExpanded && (
                               <div className="p-3 bg-gray-50/50 space-y-4">
                                 {/* Course Overview Details Card */}
-                                <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card flex flex-col md:flex-row justify-between gap-4">
                                   <div className="space-y-2 flex-1">
                                     <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
                                       Course Details
@@ -556,10 +683,10 @@ export const CoursesTab: React.FC = () => {
                                     return (
                                       <div
                                         key={yr}
-                                        className="border border-slate-200/80 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col"
+                                        className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-card flex flex-col"
                                       >
                                         {/* Year card header */}
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-50 border-b border-slate-200/80 font-bold text-gray-800 text-xs gap-2">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-50 border-b border-slate-100 font-bold text-gray-800 text-xs gap-2">
                                           <button
                                             onClick={() => toggleDeptYear(dept.id, yr)}
                                             className="flex flex-wrap items-center gap-x-2 gap-y-1 hover:text-indigo-600 transition-all text-left font-extrabold cursor-pointer border-none bg-transparent p-0 max-w-full"
@@ -587,7 +714,7 @@ export const CoursesTab: React.FC = () => {
 
                                           <Button
                                             variant="ghost"
-                                            onClick={() => handleOpenSubjectModal(undefined, dept.name, yr)}
+                                            onClick={() => handleOpenSubjectModal(undefined, dept.name, yr, col.id)}
                                             className="h-auto flex items-center justify-center gap-1 text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 px-2 py-1 rounded-lg transition-all font-bold cursor-pointer w-full sm:w-auto shrink-0"
                                           >
                                             <Plus className="h-3 w-3" />

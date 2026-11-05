@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS mentors (
 
 CREATE TABLE IF NOT EXISTS departments (
     id VARCHAR(255) PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
     college_id VARCHAR(255),
     code VARCHAR(100),
     description TEXT,
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS departments (
 
 CREATE TABLE IF NOT EXISTS courses (
     id VARCHAR(255) PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
     college_id VARCHAR(255),
     code VARCHAR(100),
     description TEXT,
@@ -142,11 +142,18 @@ CREATE TABLE IF NOT EXISTS courses (
     end_date VARCHAR(50),
     start_year VARCHAR(50),
     end_year VARCHAR(50),
-    default_room VARCHAR(100),
+    default_room TEXT,
     default_shift VARCHAR(50),
     shift_based INTEGER DEFAULT 0,
     sections TEXT
 );
+
+-- Course names are unique per campus, not globally: two colleges commonly run the
+-- same course ("BCA"). A global UNIQUE on courses.name would block the second
+-- campus, so uniqueness is scoped. departments deliberately stays unindexed — one
+-- campus can hold several rows for the same programme (legacy duplicates exist).
+CREATE UNIQUE INDEX IF NOT EXISTS courses_college_name_uniq
+    ON courses (COALESCE(college_id, ''), LOWER(TRIM(name)));
 
 CREATE TABLE IF NOT EXISTS subjects (
     id VARCHAR(255) PRIMARY KEY,
@@ -1261,6 +1268,28 @@ CREATE TABLE IF NOT EXISTS student_mentor_feedback (
     submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Monthly student sentiment survey (Reports & Insight → Student NPS). One row per
+-- student per month; re-answering edits that month instead of adding a second vote.
+CREATE TABLE IF NOT EXISTS student_nps_responses (
+    id TEXT PRIMARY KEY,
+    month_key TEXT NOT NULL,
+    student_id TEXT NOT NULL,
+    student_name TEXT,
+    college_id TEXT,
+    college_name TEXT,
+    department TEXT,
+    class_group TEXT,
+    score INTEGER NOT NULL,
+    likes TEXT,
+    improve TEXT,
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_student_nps_month       ON student_nps_responses(month_key, student_id);
+CREATE INDEX IF NOT EXISTS idx_student_nps_college_month     ON student_nps_responses(college_id, month_key);
+CREATE INDEX IF NOT EXISTS idx_student_nps_month             ON student_nps_responses(month_key DESC);
 
 -- Hot-path indexes (auth fallbacks, attendance windows, feeds).
 CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email));
