@@ -44,7 +44,7 @@ export function FilterBar({
   return (
     <div
       className={cn(
-        "p-3 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#131317] shadow-xs flex flex-wrap items-center justify-between gap-3",
+        "p-3 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white dark:bg-[#131317] shadow-card flex flex-wrap items-center justify-between gap-3",
         className
       )}
     >

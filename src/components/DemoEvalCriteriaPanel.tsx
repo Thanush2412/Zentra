@@ -130,7 +130,7 @@ export function EvaluationChecklist({
 
   if (loading) {
     return (
-      <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800 text-[10px] font-bold text-slate-400 text-center">
+      <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 text-center">
         Loading compliance criteria for {department}…
       </div>
     );
@@ -248,7 +248,7 @@ export function DemoEvalCriteriaPanel({
         </div>
 
         {/* Add criterion */}
-        <div className="p-4 bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 rounded-2xl flex flex-wrap items-end gap-3 shadow-xs">
+        <div className="p-4 bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl flex flex-wrap items-end gap-3 shadow-xs">
           <div className="flex-1 min-w-[200px]">
             <label className="text-[9.5px] font-black uppercase text-slate-400 block mb-1">New criterion</label>
             <input
@@ -314,7 +314,7 @@ export function DemoEvalCriteriaPanel({
         </div>
 
         {/* Fixed system criteria note */}
-        <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 rounded-xl text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 flex items-start gap-2.5">
+        <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 flex items-start gap-2.5">
           <Lock className="h-4 w-4 shrink-0 mt-0.5 text-slate-400" />
           <span>
             The four mandatory compliance checks (tracker sheet, weekly plan, demo-per-plan, mark threshold) are fixed system criteria — every department always has them and they cannot be edited or deleted. Add your own department-specific criteria below.
@@ -325,7 +325,7 @@ export function DemoEvalCriteriaPanel({
         {loading ? (
           <div className="py-8 text-center text-xs font-bold text-slate-400 italic">Loading criteria…</div>
         ) : criteria.length === 0 ? (
-          <div className="py-8 text-center text-xs font-bold text-slate-400 italic bg-white dark:bg-[#131317] border border-slate-200/80 dark:border-slate-800 rounded-2xl">
+          <div className="py-8 text-center text-xs font-bold text-slate-400 italic bg-white dark:bg-[#131317] border border-slate-100 dark:border-slate-800 rounded-2xl">
             No criteria configured for {selectedDept} yet.
           </div>
         ) : (

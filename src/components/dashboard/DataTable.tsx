@@ -113,7 +113,7 @@ export function DataTable<T extends Record<string, any>>({
       )}
 
       {/* Table Surface */}
-      <div className="rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#131317] shadow-xs overflow-hidden">
+      <div className="rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white dark:bg-[#131317] shadow-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

@@ -1,18 +1,29 @@
 "use client";
 
 import React, { useState } from "react";
-import { Calendar, Plus, Trash2 } from "lucide-react";
+import { Calendar, Plus, Trash2, MoreVertical } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { FilterBar } from "@/components/ui/FilterBar";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { TableSurface } from "@/components/dashboard/TableSurface";
 import { TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagination } from "@/hooks/usePagination";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { College, useApp } from "@/context/AppContext";
 import { HolidayDialog } from "@/components/admin/dialogs/HolidayDialog";
 import { HolidayFormState } from "@/components/admin/types";
 import { useToast } from "@/context/ToastContext";
+import { useAdminCampusScope } from "@/components/admin/useAdminCampusScope";
+import { SundayScheduleCard } from "@/components/admin/operations/SundayScheduleCard";
 
 export interface Holiday {
   id: string;
@@ -38,7 +49,7 @@ export const HolidaysTab: React.FC<HolidaysTabProps> = ({
   loadingActions: propLoadingActions
 }) => {
   const app = useApp();
-  const { toast } = useToast();
+  const { toast, confirm: showConfirm } = useToast();
   const holidays = propHolidays ?? app.holidays ?? [];
   const colleges = propColleges ?? app.colleges ?? [];
 
@@ -46,6 +57,7 @@ export const HolidaysTab: React.FC<HolidaysTabProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localLoading, setLocalLoading] = useState<Record<string, boolean>>({});
   const loadingActions = propLoadingActions ?? localLoading;
+  const { collegeId: scopeCollegeId, selectCollege } = useAdminCampusScope();
 
   const [form, setForm] = useState<HolidayFormState>({
     title: "",
@@ -86,6 +98,7 @@ export const HolidaysTab: React.FC<HolidaysTabProps> = ({
         toast("Holiday added successfully.", "success");
         setDialogOpen(false);
         app.refreshData();
+        app.notifyDataChanged("holidays");
       } else {
         toast(data.message || "Failed to add holiday.", "error");
       }
@@ -98,7 +111,12 @@ export const HolidaysTab: React.FC<HolidaysTabProps> = ({
 
   const handleDeleteHoliday = async (id: string) => {
     if (propOnDeleteHoliday) return propOnDeleteHoliday(id);
-    if (!window.confirm("Are you sure you want to delete this holiday?")) return;
+    const ok = await showConfirm({
+      message: "Delete this holiday? Schedules and attendance for that date may need to be corrected.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
     setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`holiday_${id}`]: true }));
     try {
       const res = await fetch(`/api/holidays?id=${id}`, { method: "DELETE" });
@@ -106,6 +124,7 @@ export const HolidaysTab: React.FC<HolidaysTabProps> = ({
       if (data.success) {
         toast("Holiday deleted successfully.", "success");
         app.refreshData();
+        app.notifyDataChanged("holidays");
       } else {
         toast(data.message || "Failed to delete holiday.", "error");
       }
@@ -138,10 +157,38 @@ export const HolidaysTab: React.FC<HolidaysTabProps> = ({
         }
       />
 
+      <FilterBar
+        aside={
+          <span className="text-[11px] font-semibold text-slate-500">
+            Applies to Sunday working days only
+          </span>
+        }
+      >
+        <label htmlFor="holiday-scope-campus" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          Campus
+        </label>
+        <Select
+          id="holiday-scope-campus"
+          aria-label="Campus for Sunday working days"
+          value={scopeCollegeId}
+          onChange={(e) => selectCollege(e.target.value)}
+          className="w-full min-w-[200px] cursor-pointer sm:w-72"
+        >
+          {colleges.length === 0 ? <option value="">No campuses configured</option> : null}
+          {colleges.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
+      </FilterBar>
+
+      <SundayScheduleCard collegeId={scopeCollegeId} />
+
       {holidays.length === 0 ? (
-        <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
-          <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 font-semibold">No holidays scheduled.</p>
+        <div className="text-center py-16 border border-slate-100 rounded-2xl bg-white shadow-card">
+          <Calendar className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 font-semibold">No holidays scheduled.</p>
         </div>
       ) : (
         <TableSurface
@@ -177,15 +224,28 @@ export const HolidaysTab: React.FC<HolidaysTabProps> = ({
                   </TableCell>
                   <TableCell className="font-bold">{targetCampus}</TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() => handleDeleteHoliday(hol.id)}
-                      isLoading={loadingActions[`holiday_${hol.id}`]}
-                      title="Delete Holiday"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 cursor-pointer"
+                          title="Holiday Options"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Holiday Options</DropdownMenuLabel>
+                        <DropdownMenuItem
+                          className="text-rose-600 focus:text-rose-700 focus:bg-rose-50"
+                          onClick={() => handleDeleteHoliday(hol.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-2" />
+                          Delete Holiday
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );

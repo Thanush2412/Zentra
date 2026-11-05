@@ -104,7 +104,7 @@ export const ClearAttendanceSection: React.FC<ClearAttendanceSectionProps> = ({
     : Array.from(new Set(campusStudents.map((s: any) => s.classGroup).filter(Boolean)))) as string[];
 
   return (
-    <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-5">
+    <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-card space-y-5">
       <div className="flex items-start gap-3 pb-4 border-b border-rose-100">
         <div className="h-10 w-10 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
           <ShieldAlert className="h-5 w-5" />

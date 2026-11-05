@@ -22,8 +22,16 @@ import {
   Plus,
   Eye,
   Edit,
-  Trash2
+  Trash2,
+  MoreVertical
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import { MentorDialog, type MentorFormState } from "@/components/admin/dialogs/MentorDialog";
 import { FacultyImportDialog } from "@/components/admin/dialogs/FacultyImportDialog";
 import { MentorProfileModal } from "@/components/MentorProfileModal";
@@ -566,35 +574,42 @@ export const MentorsTab: React.FC = () => {
                     </div>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setSelectedProfileMentor(m);
-                          setIsProfileOpen(true);
-                        }}
-                        title="View Workload Profile"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => handleOpenMentorModal(m)}
-                        title="Edit Mentor"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => handleDeleteMentor(m.id)}
-                        isLoading={actionLoading[`mentor_${m.id}`]}
-                        title="Delete Mentor"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <div className="flex items-center justify-end">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer"
+                            title="Mentor Actions"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedProfileMentor(m);
+                              setIsProfileOpen(true);
+                            }}
+                          >
+                            <Eye className="h-3.5 w-3.5 mr-2 text-indigo-600" />
+                            Workload Profile
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleOpenMentorModal(m)}>
+                            <Edit className="h-3.5 w-3.5 mr-2 text-slate-600" />
+                            Edit Mentor
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleDeleteMentor(m.id)}
+                            className="text-rose-600 focus:bg-rose-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-2 text-rose-600" />
+                            Delete Mentor
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </TableCell>
                 </TableRow>

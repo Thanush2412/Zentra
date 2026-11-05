@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/apiFetch";
+import { announceDataChanged } from "@/lib/dataSync";
+import { getLocalDateStr } from "@/lib/localDate";
 import { qk } from "@/lib/queryKeys";
 import { getSemestersForCourse } from "@/lib/semesters";
 import { generateId } from "@/lib/id";
@@ -26,7 +28,11 @@ import {
   Sparkles,
   Printer,
   CalendarRange,
-  RefreshCw
+  RefreshCw,
+  Building2,
+  TrendingUp,
+  AlertTriangle,
+  RotateCcw
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
@@ -82,7 +88,14 @@ const PRESET_EXAM_SUGGESTIONS = [
   "End Semester Final"
 ];
 
-export const ExamScheduleManager: React.FC = () => {
+export const ExamScheduleManager: React.FC<{
+  /** Admin passes the campus it is inspecting; CMs fall back to their own college. */
+  overrideCollegeId?: string;
+  /** Who the schedule is attributed to when there is no signed-in Campus Manager. */
+  actorName?: string;
+  /** When rendered within an existing tab container with its own PageHeader (e.g. ExaminationsTab) */
+  embedded?: boolean;
+}> = ({ overrideCollegeId, actorName, embedded = false }) => {
   const { currentCAM, departmentsList, coursesList, subjectsList, colleges, slots } = useApp();
   const { toast, confirm: showConfirm } = useToast();
   const queryClient = useQueryClient();
@@ -106,7 +119,7 @@ export const ExamScheduleManager: React.FC = () => {
   const [batchExamName, setBatchExamName] = useState("CIA 1");
   const [batchDept, setBatchDept] = useState("");
   const [batchSem, setBatchSem] = useState("Semester 1");
-  const [batchStartDate, setBatchStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [batchStartDate, setBatchStartDate] = useState(getLocalDateStr());
   const [batchDefaultHall, setBatchDefaultHall] = useState("");
   const [batchDefaultDayOrder, setBatchDefaultDayOrder] = useState("Day 1");
   const [batchCustomStartTime, setBatchCustomStartTime] = useState("10:00 AM");
@@ -116,7 +129,7 @@ export const ExamScheduleManager: React.FC = () => {
   const [subjectRows, setSubjectRows] = useState<SubjectFormRow[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const collegeId = currentCAM?.college_id || colleges[0]?.id || "";
+  const collegeId = overrideCollegeId || currentCAM?.college_id || colleges[0]?.id || "";
 
   // Helper to format 12-hour time string
   const formatTimeLabel = (totalMinutes: number): string => {
@@ -322,7 +335,8 @@ export const ExamScheduleManager: React.FC = () => {
     },
   });
   const exams = examsQuery.data || [];
-  const loading = examsQuery.isFetching;
+  const isInitialLoading = examsQuery.isPending && exams.length === 0;
+  const isSyncing = examsQuery.isFetching && exams.length > 0;
 
   useEffect(() => {
     if (exams.length > 0) {
@@ -613,7 +627,7 @@ export const ExamScheduleManager: React.FC = () => {
           end_time: row.end_time,
           session_time: sessionTimeStr,
           hall_room: row.hall_room || "",
-          created_by: currentCAM?.name || "Campus Manager"
+          created_by: currentCAM?.name || actorName || "Campus Manager"
         };
       });
 
@@ -633,6 +647,7 @@ export const ExamScheduleManager: React.FC = () => {
           window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
           window.dispatchEvent(new CustomEvent("fp_schedule_updated", { detail: { college_id: collegeId } }));
         }
+        announceDataChanged("exams");
         // Open the newly created group accordion
         const newKey = `${batchExamName.trim()}_${batchDept}_${batchSem}`;
         setOpenAccordions((prev) => ({ ...prev, [newKey]: true }));
@@ -699,6 +714,7 @@ export const ExamScheduleManager: React.FC = () => {
           window.dispatchEvent(new CustomEvent("fp_exams_updated", { detail: { college_id: collegeId } }));
           window.dispatchEvent(new CustomEvent("fp_schedule_updated", { detail: { college_id: collegeId } }));
         }
+        announceDataChanged("exams");
       } else {
         toast(data.message || "Failed to delete exam", "error");
       }
@@ -916,133 +932,252 @@ export const ExamScheduleManager: React.FC = () => {
   return (
     <div className="space-y-6 animate-fadeIn pb-16 font-sans">
       {/* Header Banner */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md">
-            <Award className="h-6 w-6" />
+      {!embedded ? (
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 md:p-6 shadow-card flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-purple-600 flex items-center justify-center text-white shadow-md shrink-0">
+              <Award className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-base font-extrabold text-slate-900 tracking-tight">
+                  Exam Timetable &amp; Performance Studio
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider">
+                  Internal Assessments &amp; Semester
+                </span>
+                {isSyncing && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 animate-pulse bg-indigo-50/60 px-2 py-0.5 rounded-md">
+                    <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Syncing...
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                Publish complete department assessment timetables, track faculty marks evaluation, and monitor campus pass rates.
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              Exam Timetable & Performance Studio
-              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider">
-                Internal Assessments & Semester
+
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+            {/* Main Sub-Tab Pill Switcher */}
+            <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/50">
+              <button
+                type="button"
+                onClick={() => setActiveMainTab("schedules")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeMainTab === "schedules"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Timetables ({exams.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveMainTab("marks_registry")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeMainTab === "marks_registry"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Mark Submissions ({campusMarksList.length})
+              </button>
+            </div>
+
+            {/* Action Buttons Group */}
+            <div className="flex items-center gap-2 shrink-0">
+              {activeMainTab === "schedules" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs transition-all cursor-pointer"
+                  >
+                    <Download className="h-4 w-4 text-emerald-600" />
+                    <span>Export CSV</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsPopupOpen(true)}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 btn-gradient text-white rounded-xl text-xs font-extrabold shadow-sm hover:shadow-md transition-all cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Schedule Timetable</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => marksQuery.refetch()}
+                    disabled={loadingCampusMarks}
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-all cursor-pointer"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loadingCampusMarks ? "animate-spin text-indigo-600" : ""}`} />
+                    <span>Refresh</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportMarksCSV}
+                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  >
+                    <Download className="h-4 w-4 text-emerald-600" />
+                    <span>Export Marksheet CSV</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Embedded Toolbar Mode */
+        <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-4 shadow-card flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/50">
+              <button
+                type="button"
+                onClick={() => setActiveMainTab("schedules")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeMainTab === "schedules"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Timetables ({exams.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveMainTab("marks_registry")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  activeMainTab === "marks_registry"
+                    ? "bg-white text-indigo-700 shadow-xs"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                Mark Submissions ({campusMarksList.length})
+              </button>
+            </div>
+            {isSyncing && (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 animate-pulse bg-indigo-50/60 px-2 py-0.5 rounded-md">
+                <RefreshCw className="h-2.5 w-2.5 animate-spin" /> Syncing...
               </span>
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Publish complete department assessment timetables, track faculty marks evaluation, and monitor campus pass rates.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-          {/* Main Sub-Tab Pill Switcher */}
-          <div className="flex items-center p-1 bg-slate-100 rounded-xl">
-            <button
-              type="button"
-              onClick={() => setActiveMainTab("schedules")}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                activeMainTab === "schedules"
-                  ? "bg-white text-indigo-700 shadow-xs"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Timetables ({exams.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveMainTab("marks_registry")}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                activeMainTab === "marks_registry"
-                  ? "bg-white text-indigo-700 shadow-xs"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              Mark Submissions ({campusMarksList.length})
-            </button>
+            )}
           </div>
 
-          {activeMainTab === "schedules" ? (
-            <>
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs transition-all cursor-pointer"
-              >
-                <Download className="h-4 w-4 text-emerald-600" />
-                <span>Export CSV</span>
-              </button>
+          <div className="flex items-center gap-2 shrink-0 justify-end">
+            {activeMainTab === "schedules" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-2xs transition-all cursor-pointer"
+                >
+                  <Download className="h-4 w-4 text-emerald-600" />
+                  <span>Export CSV</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setIsPopupOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 btn-gradient text-white rounded-xl text-xs font-extrabold shadow-sm hover:shadow-md transition-all cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Schedule Timetable</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => marksQuery.refetch()}
-                disabled={loadingCampusMarks}
-                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-all cursor-pointer"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loadingCampusMarks ? "animate-spin text-indigo-600" : ""}`} />
-                <span>Refresh</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPopupOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 btn-gradient text-white rounded-xl text-xs font-extrabold shadow-sm hover:shadow-md transition-all cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Schedule Timetable</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => marksQuery.refetch()}
+                  disabled={loadingCampusMarks}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 transition-all cursor-pointer"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${loadingCampusMarks ? "animate-spin text-indigo-600" : ""}`} />
+                  <span>Refresh</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={handleExportMarksCSV}
-                className="inline-flex items-center justify-center gap-2 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-              >
-                <Download className="h-4 w-4 text-emerald-600" />
-                <span>Export Marksheet CSV</span>
-              </button>
-            </>
-          )}
+                <button
+                  type="button"
+                  onClick={handleExportMarksCSV}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                >
+                  <Download className="h-4 w-4 text-emerald-600" />
+                  <span>Export Marksheet CSV</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {activeMainTab === "schedules" ? (
         <>
           {/* KPI Stats Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Timetable Batches</p>
-              <p className="text-xl font-extrabold text-slate-900 mt-1">{groupedExamBatches.length}</p>
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-slate-300/80 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Timetable Batches</p>
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                  <CalendarRange className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-slate-900 mt-1">{groupedExamBatches.length}</p>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">Active scheduled batches</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Exam Slots</p>
-              <p className="text-xl font-extrabold text-indigo-600 mt-1">{exams.length}</p>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-indigo-200 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Total Exam Slots</p>
+                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                  <Clock className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-indigo-600 mt-1">{exams.length}</p>
+              <p className="text-[11px] text-indigo-400/90 font-medium mt-0.5">Subject time slots</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Departments Active</p>
-              <p className="text-xl font-extrabold text-slate-900 mt-1">
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-teal-200 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Departments Active</p>
+                <div className="p-2 rounded-xl bg-teal-50 text-teal-600">
+                  <Building2 className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-slate-900 mt-1">
                 {Array.from(new Set(exams.map((e) => e.department))).length}
               </p>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">Academic departments</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Assessment Types</p>
-              <p className="text-xl font-extrabold text-purple-600 mt-1">
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-purple-200 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-500">Assessment Types</p>
+                <div className="p-2 rounded-xl bg-purple-50 text-purple-600">
+                  <Award className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-purple-600 mt-1">
                 {Array.from(new Set(exams.map((e) => e.exam_type))).length}
               </p>
+              <p className="text-[11px] text-purple-400/90 font-medium mt-0.5">CIA &amp; Semester finals</p>
             </div>
           </div>
 
           {/* Filters & Search */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-4 shadow-card flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               {/* Department Filter */}
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
-                <span className="text-slate-400 text-[10px] uppercase">Dept:</span>
+              <div className="relative inline-flex items-center">
+                <span className="absolute left-3 text-slate-400 text-[10px] font-bold uppercase pointer-events-none">Dept:</span>
                 <select
                   aria-label="Department"
                   value={selectedDeptFilter}
                   onChange={(e) => setSelectedDeptFilter(e.target.value)}
-                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+                  className="h-10 pl-14 pr-8 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer appearance-none transition-all focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="all">All Departments</option>
                   {availableDepartments.map((d) => (
@@ -1051,16 +1186,17 @@ export const ExamScheduleManager: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <ChevronDown className="absolute right-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
               </div>
 
               {/* Semester Filter */}
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
-                <span className="text-slate-400 text-[10px] uppercase">Sem:</span>
+              <div className="relative inline-flex items-center">
+                <span className="absolute left-3 text-slate-400 text-[10px] font-bold uppercase pointer-events-none">Sem:</span>
                 <select
                   aria-label="Semester"
                   value={selectedSemFilter}
                   onChange={(e) => setSelectedSemFilter(e.target.value)}
-                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+                  className="h-10 pl-13 pr-8 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer appearance-none transition-all focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="all">All Semesters</option>
                   {allAvailableSemesters.map((s) => (
@@ -1069,36 +1205,76 @@ export const ExamScheduleManager: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <ChevronDown className="absolute right-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
               </div>
+
+              {(selectedDeptFilter !== "all" || selectedSemFilter !== "all" || searchQuery) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDeptFilter("all");
+                    setSelectedSemFilter("all");
+                    setSearchQuery("");
+                  }}
+                  className="h-10 px-3 inline-flex items-center gap-1 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100/80 hover:bg-slate-200/80 transition-all cursor-pointer"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Reset</span>
+                </button>
+              )}
             </div>
 
             {/* Search */}
             <div className="relative w-full md:w-72">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <input
                 type="text"
                 aria-label="Search exam, subject, hall"
                 placeholder="Search exam, subject, hall..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="h-10 w-full pl-9 pr-8 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
 
           {/* Main Accordion View: Grouped by Exam Batches */}
           <div className="space-y-4">
-            {loading ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 font-bold shadow-sm">
-                Loading exam timetables...
+            {isInitialLoading ? (
+              <div className="space-y-3">
+                {[1, 2].map((idx) => (
+                  <div key={idx} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card animate-pulse">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl bg-slate-200" />
+                        <div className="space-y-2">
+                          <div className="h-4 w-48 bg-slate-200 rounded-md" />
+                          <div className="h-3 w-32 bg-slate-100 rounded-md" />
+                        </div>
+                      </div>
+                      <div className="h-8 w-20 bg-slate-100 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : groupedExamBatches.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 shadow-sm">
+              <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center text-slate-400 shadow-card">
                 <div className="flex flex-col items-center justify-center gap-2">
-                  <Award className="h-9 w-9 text-slate-300" />
+                  <div className="h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-500 mb-1">
+                    <Award className="h-6 w-6" />
+                  </div>
                   <p className="font-extrabold text-slate-700 text-sm">No Exam Timetables Published</p>
-                  <p className="text-xs text-slate-450 max-w-md">
-                    Click <strong>"Schedule Exam Timetable"</strong> above to select a department and schedule assessment dates for all subjects.
+                  <p className="text-xs text-slate-400 max-w-md">
+                    Click <strong>&quot;Schedule Timetable&quot;</strong> above to select a department and schedule assessment dates for all subjects.
                   </p>
                 </div>
               </div>
@@ -1111,12 +1287,12 @@ export const ExamScheduleManager: React.FC = () => {
                 return (
                   <div
                     key={batch.key}
-                    className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden transition-all duration-200"
+                    className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden transition-all duration-200"
                   >
                     {/* Accordion Header */}
                     <div
                       onClick={() => toggleAccordion(batch.key)}
-                      className="p-4.5 sm:p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none bg-slate-50/50 hover:bg-slate-50 transition-colors border-b border-slate-150"
+                      className="p-4.5 sm:p-5 flex flex-wrap items-center justify-between gap-3 cursor-pointer select-none bg-slate-50/50 hover:bg-slate-50 transition-colors border-b border-slate-100"
                     >
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-extrabold text-xs">
@@ -1130,7 +1306,7 @@ export const ExamScheduleManager: React.FC = () => {
                             </span>
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1">
-                            <span className="flex items-center gap-1 font-semibold text-slate-650">
+                            <span className="flex items-center gap-1 font-semibold text-slate-600">
                               <Calendar className="h-3 w-3 text-indigo-500 shrink-0" />
                               {batch.minDate} {batch.minDate !== batch.maxDate ? `to ${batch.maxDate}` : ""}
                             </span>
@@ -1243,33 +1419,67 @@ export const ExamScheduleManager: React.FC = () => {
         <div className="space-y-5">
           {/* Performance Summary KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Records</p>
-              <p className="text-xl font-extrabold text-slate-900 mt-1">{campusMarksStats.total}</p>
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-slate-300/80 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Records</p>
+                <div className="p-2 rounded-xl bg-slate-100 text-slate-600">
+                  <FileSpreadsheet className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-slate-900 mt-1">{campusMarksStats.total}</p>
+              <p className="text-[11px] text-slate-400 font-medium mt-0.5">Submitted grades</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Passed Records</p>
-              <p className="text-xl font-extrabold text-emerald-700 mt-1">{campusMarksStats.passed}</p>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-emerald-200 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Passed Records</p>
+                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-emerald-700 mt-1">{campusMarksStats.passed}</p>
+              <p className="text-[11px] text-emerald-600/80 font-medium mt-0.5">Scored ≥ passing</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-rose-600">Arrears / Failures</p>
-              <p className="text-xl font-extrabold text-rose-700 mt-1">{campusMarksStats.arrears}</p>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-rose-200 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-rose-600">Arrears / Fail</p>
+                <div className="p-2 rounded-xl bg-rose-50 text-rose-600">
+                  <AlertTriangle className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-rose-700 mt-1">{campusMarksStats.arrears}</p>
+              <p className="text-[11px] text-rose-600/80 font-medium mt-0.5">Need re-appearance</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Absentees</p>
-              <p className="text-xl font-extrabold text-amber-700 mt-1">{campusMarksStats.absent}</p>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-amber-200 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Absentees</p>
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
+                  <Clock className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-amber-700 mt-1">{campusMarksStats.absent}</p>
+              <p className="text-[11px] text-amber-600/80 font-medium mt-0.5">Missed assessments</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Campus Pass Rate</p>
-              <p className="text-xl font-extrabold text-indigo-700 mt-1">{campusMarksStats.passRate}%</p>
+
+            <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card hover:border-indigo-200 transition-all">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Campus Pass Rate</p>
+                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                  <TrendingUp className="h-4 w-4" />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-indigo-700 mt-1">{campusMarksStats.passRate}%</p>
+              <p className="text-[11px] text-indigo-600/80 font-medium mt-0.5">Overall qualification</p>
             </div>
           </div>
 
           {/* Marks Filter & Search Bar */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-4 shadow-card flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               {/* Exam Type Pill Tabs */}
-              <div className="flex items-center p-1 bg-slate-100 rounded-xl flex-wrap gap-1">
+              <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/50 flex-wrap gap-1">
                 <button
                   type="button"
                   onClick={() => setMarksExamTypeFilter("all")}
@@ -1303,23 +1513,24 @@ export const ExamScheduleManager: React.FC = () => {
               </div>
 
               {/* Department Filter */}
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold">
-                <span className="text-slate-400 text-[10px] uppercase">Dept:</span>
+              <div className="relative inline-flex items-center">
+                <span className="absolute left-3 text-slate-400 text-[10px] font-bold uppercase pointer-events-none">Dept:</span>
                 <select
                   aria-label="Department"
                   value={marksDeptFilter}
                   onChange={(e) => setMarksDeptFilter(e.target.value)}
-                  className="bg-transparent text-slate-700 outline-none cursor-pointer font-bold"
+                  className="h-10 pl-14 pr-8 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none cursor-pointer appearance-none transition-all focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 >
                   <option value="all">All Departments</option>
                   {availableDepartments.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
+                <ChevronDown className="absolute right-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
               </div>
 
               {/* Status Tabs */}
-              <div className="flex items-center p-1 bg-slate-100 rounded-xl">
+              <div className="flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/50">
                 {(["all", "passed", "arrears", "absent"] as const).map(tab => (
                   <button
                     key={tab}
@@ -1335,25 +1546,50 @@ export const ExamScheduleManager: React.FC = () => {
                   </button>
                 ))}
               </div>
+
+              {(marksExamTypeFilter !== "all" || marksDeptFilter !== "all" || marksStatusFilter !== "all" || marksSearchQuery) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMarksExamTypeFilter("all");
+                    setMarksDeptFilter("all");
+                    setMarksStatusFilter("all");
+                    setMarksSearchQuery("");
+                  }}
+                  className="h-10 px-3 inline-flex items-center gap-1 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100/80 hover:bg-slate-200/80 transition-all cursor-pointer"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Reset</span>
+                </button>
+              )}
             </div>
 
             {/* Search Input */}
             <div className="relative w-full md:w-72">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <input
                 type="text"
                 aria-label="Search student, roll no, subject"
                 placeholder="Search student, roll no, subject..."
                 value={marksSearchQuery}
                 onChange={(e) => setMarksSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="h-10 w-full pl-9 pr-8 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
               />
+              {marksSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setMarksSearchQuery("")}
+                  className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
 
           {/* Student Exam Mark Submissions Table */}
           <div className="space-y-3">
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
               <div className="overflow-x-auto max-h-[600px] scroll-touch">
                 <Table className="w-full text-left text-xs border-collapse min-w-[850px]">
                   <TableHeader className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10 hover:bg-slate-50">
@@ -1369,7 +1605,7 @@ export const ExamScheduleManager: React.FC = () => {
                       <TableHead className="p-3.5">Evaluator Mentor</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody className="divide-y divide-slate-150 bg-white font-medium">
+                  <TableBody className="divide-y divide-slate-100 bg-white font-medium">
                     {loadingCampusMarks ? (
                       <TableRow>
                         <TableCell colSpan={9} className="p-12 text-center text-slate-400 font-bold">
@@ -1467,7 +1703,7 @@ export const ExamScheduleManager: React.FC = () => {
             </div>
 
             {filteredCampusMarks.length > 0 && (
-              <div className="bg-white p-3 rounded-xl border border-slate-200">
+              <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-card">
                 <Pagination
                   currentPage={marksPage}
                   totalItems={filteredCampusMarks.length}
@@ -1491,12 +1727,12 @@ export const ExamScheduleManager: React.FC = () => {
           onOpenChange={(next) => { if (!next) setIsPopupOpen(false); }}
           ariaLabel="Schedule Exam Timetable"
           overlayClassName="bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto"
-          panelClassName="max-w-3xl overflow-hidden animate-scaleUp my-8 max-h-[90vh] flex flex-col p-0 space-y-0 rounded-3xl"
+          panelClassName="max-w-3xl overflow-hidden animate-scaleUp my-8 max-h-[90vh] flex flex-col p-0 space-y-0 rounded-2xl"
         >
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-150 flex items-center justify-between bg-slate-50/60 shrink-0">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-650">
+                <div className="h-10 w-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
                   <CalendarRange className="h-5 w-5" />
                 </div>
                 <div>
@@ -1559,7 +1795,7 @@ export const ExamScheduleManager: React.FC = () => {
                 </div>
 
                 {/* 2. Department & Semester Selection */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 p-4 rounded-2xl border border-slate-150">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
                       Department <span className="text-rose-500">*</span>
@@ -1600,7 +1836,7 @@ export const ExamScheduleManager: React.FC = () => {
                 </div>
 
                 {/* 3. Global Batch Settings (Start Date, Day Order, Timings) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-150">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-100">
                   <div className="space-y-1.5">
                     <label className="block text-[10.5px] font-extrabold text-slate-700 uppercase tracking-wider">
                       Starting Exam Date
@@ -1694,7 +1930,7 @@ export const ExamScheduleManager: React.FC = () => {
                       <button
                         type="button"
                         onClick={handleAutoSequenceDates}
-                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 rounded-lg text-[10.5px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 text-indigo-700 rounded-lg text-[10.5px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         <span>Auto-Sequence Consecutive Dates &amp; Day Orders</span>
@@ -1703,7 +1939,7 @@ export const ExamScheduleManager: React.FC = () => {
                   </div>
 
                   {subjectRows.length === 0 ? (
-                    <div className="p-8 text-center bg-slate-50 border border-slate-150 rounded-2xl text-slate-400 font-medium space-y-3">
+                    <div className="p-8 text-center bg-slate-50 border border-slate-100 rounded-2xl text-slate-400 font-medium space-y-3">
                       <p>No subjects found for <strong>{batchDept}</strong>.</p>
                       <button
                         type="button"
@@ -1722,7 +1958,7 @@ export const ExamScheduleManager: React.FC = () => {
                           className={`p-3.5 rounded-xl border transition-all ${
                             row.included
                               ? "bg-white border-slate-200 shadow-2xs"
-                              : "bg-slate-50 border-slate-150 opacity-60"
+                              : "bg-slate-50 border-slate-100 opacity-60"
                           }`}
                         >
                           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
@@ -1817,7 +2053,7 @@ export const ExamScheduleManager: React.FC = () => {
                                   placeholder="Hall (optional)"
                                   value={row.hall_room}
                                   onChange={(e) => updateSubjectRow(idx, { hall_room: e.target.value })}
-                                  className="w-28 px-2.5 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium bg-slate-50/60 text-slate-600 placeholder:text-slate-350 focus:border-slate-400 outline-none"
+                                  className="w-28 px-2.5 py-1.5 border border-dashed border-slate-300 rounded-lg text-xs font-medium bg-slate-50/60 text-slate-600 placeholder:text-slate-300 focus:border-slate-400 outline-none"
                                   title="Hall / Room (optional)"
                                 />
 
@@ -1843,7 +2079,7 @@ export const ExamScheduleManager: React.FC = () => {
               </div>
 
               {/* Modal Footer */}
-              <div className="p-4 border-t border-slate-150 flex items-center justify-between bg-slate-50/60 shrink-0">
+              <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/60 shrink-0">
                 <p className="text-[11px] text-slate-500 font-medium">
                   {subjectRows.filter((r) => r.included).length} of {subjectRows.length} subjects will be published.
                 </p>
@@ -1852,7 +2088,7 @@ export const ExamScheduleManager: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsPopupOpen(false)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-650 cursor-pointer"
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-600 cursor-pointer"
                   >
                     Cancel
                   </button>

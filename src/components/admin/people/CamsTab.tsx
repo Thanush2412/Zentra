@@ -1,18 +1,28 @@
 "use client";
 
-import React, { useState } from "react";
-import { Users, Plus, Edit, Trash2, AlertTriangle, Loader2, ShieldAlert, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { Users, Plus, Edit, Trash2, AlertTriangle, Loader2, ShieldAlert, X, MoreVertical, ExternalLink, Building2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { TableSurface } from "@/components/dashboard/TableSurface";
 import { TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagination } from "@/hooks/usePagination";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { LoadingButton } from "@/components/ui/LoadingButton";
 import { College, Mentor, Slot, useApp } from "@/context/AppContext";
+import { useToast } from "@/context/ToastContext";
 import { CAMUserFromDB, KAMUserFromDB } from "@/components/admin/types";
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/queryKeys";
@@ -32,6 +42,7 @@ export interface CamsTabProps {
   onUpdateCam?: (id: string, name: string, email: string, collegeId: string, kamId: string) => Promise<any>;
   onDeleteCam?: (id: string) => Promise<void>;
   loadingActions?: Record<string, boolean>;
+  onDrillDownCampus?: (collegeId: string) => void;
 }
 
 export const CamsTab: React.FC<CamsTabProps> = ({
@@ -46,9 +57,11 @@ export const CamsTab: React.FC<CamsTabProps> = ({
   onCreateCam: propOnCreateCam,
   onUpdateCam: propOnUpdateCam,
   onDeleteCam: propOnDeleteCam,
-  loadingActions: propLoadingActions
+  loadingActions: propLoadingActions,
+  onDrillDownCampus
 }) => {
   const app = useApp();
+  const { toast, confirm: showConfirm } = useToast();
   const colleges = propColleges ?? app.colleges ?? [];
   const mentors = propMentors ?? app.mentors ?? [];
   const slots = propSlots ?? app.slots ?? [];
@@ -94,16 +107,29 @@ export const CamsTab: React.FC<CamsTabProps> = ({
   const isError = propIsError ?? (kamQuery.isError || usersQuery.isError);
   const onRefetch = propOnRefetch ?? (() => { kamQuery.refetch(); usersQuery.refetch(); });
 
+  const searchParams = useSearchParams();
+  const campusParam = searchParams?.get("campus") || null;
+  const actionParam = searchParams?.get("action") || null;
+
   const [localLoading, setLocalLoading] = useState<Record<string, boolean>>({});
   const loadingActions = propLoadingActions ?? localLoading;
 
   const handleDeleteCam = async (id: string) => {
     if (propOnDeleteCam) return propOnDeleteCam(id);
-    if (!window.confirm("Are you sure you want to delete this Campus Manager?")) return;
+    const ok = await showConfirm({
+      message: "Delete this Campus Manager? Their login and campus access are removed.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
     setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`cam_${id}`]: true }));
     try {
-      await app.deleteCAM(id);
-      app.refreshData();
+      const result = await app.deleteCAM(id);
+      if (!result.success) {
+        toast(result.message || "Failed to delete Campus Manager.", "error");
+        return;
+      }
+      toast("Campus Manager deleted.", "success");
     } finally {
       setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`cam_${id}`]: false }));
     }
@@ -117,8 +143,26 @@ export const CamsTab: React.FC<CamsTabProps> = ({
     name: "",
     email: "",
     college_id: "",
-    kam_id: ""
+    kam_id: "",
+    password: ""
   });
+
+  useEffect(() => {
+    if (campusParam && (actionParam === "new" || actionParam === "add")) {
+      setEditingCam(false);
+      setModalError(null);
+      const targetCol = colleges.find(c => c.id === campusParam);
+      setForm({
+        id: `cam_${Date.now()}`,
+        name: "",
+        email: "",
+        college_id: campusParam,
+        kam_id: targetCol?.kam_id || kamList[0]?.id || "",
+        password: ""
+      });
+      setShowModal(true);
+    }
+  }, [campusParam, actionParam, colleges, kamList]);
 
   const pagination = usePagination<CAMUserFromDB>(camList, {
     pageSize: 10,
@@ -132,12 +176,15 @@ export const CamsTab: React.FC<CamsTabProps> = ({
       const num = parseInt(curr.id.replace("cam_", ""), 10);
       return isNaN(num) ? acc : Math.max(acc, num);
     }, 0);
+    const targetColId = campusParam || colleges[0]?.id || "";
+    const targetCol = colleges.find(c => c.id === targetColId);
     setForm({
       id: `cam_${maxNum + 1}`,
       name: "",
       email: "",
-      college_id: colleges[0]?.id || "",
-      kam_id: kamList[0]?.id || ""
+      college_id: targetColId,
+      kam_id: targetCol?.kam_id || kamList[0]?.id || "",
+      password: ""
     });
     setShowModal(true);
   };
@@ -150,7 +197,8 @@ export const CamsTab: React.FC<CamsTabProps> = ({
       name: cam.name,
       email: cam.email,
       college_id: cam.college_id,
-      kam_id: cam.kam_id
+      kam_id: cam.kam_id,
+      password: ""
     });
     setShowModal(true);
   };
@@ -161,6 +209,11 @@ export const CamsTab: React.FC<CamsTabProps> = ({
       setModalError("Please fill in all required fields.");
       return;
     }
+    const initialPassword = form.password.trim();
+    if (initialPassword && initialPassword.length < 6) {
+      setModalError("Initial password must be at least 6 characters.");
+      return;
+    }
     setIsSaving(true);
     setModalError(null);
     try {
@@ -168,15 +221,28 @@ export const CamsTab: React.FC<CamsTabProps> = ({
         if (propOnUpdateCam) {
           await propOnUpdateCam(form.id, form.name, form.email, form.college_id, form.kam_id);
         } else {
-          await app.updateCAM({ id: form.id, name: form.name, email: form.email, college_id: form.college_id, kam_id: form.kam_id });
-          app.refreshData();
+          const result = await app.updateCAM({ id: form.id, name: form.name, email: form.email, college_id: form.college_id, kam_id: form.kam_id });
+          if (!result.success) {
+            setModalError(result.message || "Failed to save Campus Manager.");
+            return;
+          }
         }
       } else {
         if (propOnCreateCam) {
           await propOnCreateCam(form.id, form.name, form.email, form.college_id, form.kam_id);
         } else {
-          await app.createCAM({ id: form.id, name: form.name, email: form.email, college_id: form.college_id, kam_id: form.kam_id });
-          app.refreshData();
+          const result = await app.createCAM({
+            id: form.id,
+            name: form.name,
+            email: form.email,
+            college_id: form.college_id,
+            kam_id: form.kam_id,
+            password: initialPassword || undefined
+          });
+          if (!result.success) {
+            setModalError(result.message || "Failed to save Campus Manager.");
+            return;
+          }
         }
       }
       setShowModal(false);
@@ -293,20 +359,39 @@ export const CamsTab: React.FC<CamsTabProps> = ({
                     {camSlots.length}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1.5">
-                      <Button variant="outline" size="icon" onClick={() => handleOpenEdit(cam)} title="Edit CM">
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => handleDeleteCam(cam.id)}
-                        isLoading={loadingActions[`cam_${cam.id}`]}
-                        title="Delete CM"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 cursor-pointer"
+                          title="CM Options"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Manager Options</DropdownMenuLabel>
+                        {cam.college_id && onDrillDownCampus && (
+                          <DropdownMenuItem onClick={() => onDrillDownCampus(cam.college_id)}>
+                            <Building2 className="h-3.5 w-3.5 mr-2 text-indigo-600" />
+                            Manage Campus Console
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => handleOpenEdit(cam)}>
+                          <Edit className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                          Edit Details
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-rose-600 focus:text-rose-700 focus:bg-rose-50"
+                          onClick={() => handleDeleteCam(cam.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-2" />
+                          Delete CM
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );
@@ -428,6 +513,24 @@ export const CamsTab: React.FC<CamsTabProps> = ({
                 ))}
               </Select>
             </div>
+
+            {!editingCam && (
+              <div className="space-y-1">
+                <label className="text-[10px] text-gray-400 uppercase tracking-wider block">Initial Login Password</label>
+                <Input
+                  aria-label="Initial Login Password"
+                  type="text"
+                  autoComplete="new-password"
+                  placeholder="Leave blank to use the institution default"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                />
+                <p className="text-[10px] text-gray-400 font-medium">
+                  The login is created with the campus manager profile in one step. The manager must set their own password on first sign-in.
+                </p>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-4 border-t border-gray-100">
               <Button

@@ -82,24 +82,24 @@ export const HierarchyTab: React.FC<HierarchyTabProps> = ({
         subtitle="Explore the chain of command, from Super Admin down to Faculty Mentors. Click a caret to expand or collapse a node."
       />
 
-      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 shadow-inner space-y-4 text-xs select-none">
+      <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-4 text-xs select-none">
         {/* Level 0: Super Admin */}
         <div className="space-y-2">
           <div
             onClick={() => toggleNode("admin")}
-            className="flex items-center gap-2 p-3 bg-white border border-indigo-200 rounded-xl max-w-md shadow-sm cursor-pointer hover:border-indigo-400 transition-all"
+            className="flex items-center gap-2.5 p-3.5 bg-white border border-indigo-100 rounded-2xl max-w-md shadow-card cursor-pointer hover:border-indigo-300 transition-all"
           >
             {expandedNodes["admin"] ? (
               <ChevronDown className="h-4 w-4 text-indigo-600" />
             ) : (
               <ChevronRight className="h-4 w-4 text-indigo-600" />
             )}
-            <div className="h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black">
+            <div className="h-8 w-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
               SU
             </div>
             <div>
-              <div className="font-extrabold text-gray-900 text-sm">Super Admin</div>
-              <div className="text-[10px] text-gray-400">
+              <div className="font-bold text-slate-900 text-sm">Super Admin</div>
+              <div className="text-[11px] text-slate-500 font-medium">
                 {currentAdmin?.name || "System Admin"} ({currentAdmin?.email || "admin@faceprep.in"})
               </div>
             </div>
@@ -109,7 +109,7 @@ export const HierarchyTab: React.FC<HierarchyTabProps> = ({
           {expandedNodes["admin"] && (
             <div className="pl-8 border-l border-dashed border-gray-300 ml-5 space-y-3 pt-2">
               {kamQuery.isLoading && kamList.length === 0 ? (
-                <div className="flex items-center gap-2 p-3 bg-white border border-gray-200 rounded-xl max-w-sm animate-pulse">
+                <div className="flex items-center gap-2 p-3 bg-white border border-slate-100 rounded-2xl max-w-sm animate-pulse shadow-card">
                   <div className="h-6 w-6 rounded-full bg-slate-200" />
                   <div className="space-y-1">
                     <div className="h-3 w-28 bg-slate-200 rounded" />
@@ -125,7 +125,7 @@ export const HierarchyTab: React.FC<HierarchyTabProps> = ({
                   <div key={kam.id} className="space-y-2">
                     <div
                       onClick={() => toggleNode(kamNodeId)}
-                      className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-sm shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
+                      className="flex items-center gap-2.5 p-3 bg-white border border-slate-100 rounded-2xl max-w-sm shadow-card cursor-pointer hover:border-indigo-300 transition-all"
                     >
                       {expandedNodes[kamNodeId] ? (
                         <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
@@ -155,7 +155,7 @@ export const HierarchyTab: React.FC<HierarchyTabProps> = ({
                             <div key={col.id} className="space-y-2">
                               <div
                                 onClick={() => toggleNode(colNodeId)}
-                                className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-xs shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
+                                className="flex items-center gap-2.5 p-3 bg-white border border-slate-100 rounded-2xl max-w-xs shadow-card cursor-pointer hover:border-indigo-300 transition-all"
                               >
                                 {expandedNodes[colNodeId] ? (
                                   <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
@@ -179,7 +179,7 @@ export const HierarchyTab: React.FC<HierarchyTabProps> = ({
                                   {colMentors.map((mentor) => (
                                     <div
                                       key={mentor.id}
-                                      className="flex items-center gap-1.5 p-1.5 bg-white border border-gray-200 rounded-xl max-w-[240px] shadow-sm animate-fadeIn"
+                                      className="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-xl max-w-[240px] shadow-card animate-fadeIn"
                                     >
                                       <div className="h-6 w-6 rounded-full btn-gradient text-white flex items-center justify-center font-extrabold text-[9px] shrink-0">
                                         {mentor.avatar}

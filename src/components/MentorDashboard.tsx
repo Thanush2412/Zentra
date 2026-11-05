@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp, Slot, Mentor, ApprovedHandover, Holiday } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { apiFetch } from "@/lib/apiFetch";
+import { announceDataChanged } from "@/lib/dataSync";
+import { getLocalDateStr, getInstitutionDateStr } from "@/lib/localDate";
 import { ALL_SEMESTERS, DEFAULT_SEMESTERS, getSemestersForCourse } from "@/lib/semesters";
 import { qk } from "@/lib/queryKeys";
 import { prefetchRoleTab } from "@/lib/prefetch";
@@ -255,7 +257,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
   };
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-xs space-y-3">
+    <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
@@ -455,6 +457,7 @@ const MentorPunchWidget: React.FC<{ mentor: Mentor }> = ({ mentor }) => {
 /* ─── Faculty Leave & Permission Request Panel ─── */
 const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSessions?: any[] }> = ({ mentor, slots = [], demoSessions = [] }) => {
   const { toast } = useToast();
+  const { refreshData } = useApp();
   const queryClient = useQueryClient();
   const [panelTab, setPanelTab] = useState<"leave_apps" | "incoming_covers" | "punch_history">("leave_apps");
 
@@ -713,6 +716,10 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
       if (json.success) {
         toast(`Alternative period reserved for ${demo.subject}. Awaiting L&D approval.`, "success");
         setReallocSubmittedIds(prev => new Set(prev).add(demo.id));
+        // The reservation blocks that period for every portal until it is approved
+        // or withdrawn, so re-read demos instead of trusting the local snapshot.
+        await refreshData();
+        announceDataChanged("demos");
       } else {
         toast(json.message || "Failed to propose reallocation", "error");
       }
@@ -829,7 +836,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
   return (
     <div className="space-y-6">
       {/* Top Banner & Sub-View Switcher matching CM Dashboard soft slate background */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/70 border border-slate-100 rounded-xl p-5 shadow-xs">
         <div className="flex items-center gap-3.5">
           <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
             <CalendarCheck2 className="h-5 w-5" />
@@ -896,7 +903,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
 
       {panelTab === "incoming_covers" ? (
         /* Incoming Cover Requests Table View */
-        <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
+        <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-amber-600" />
@@ -987,7 +994,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
         </div>
       ) : panelTab === "punch_history" ? (
         /* Historical Attendance Logs View */
-        <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
+        <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-emerald-600" />
@@ -1045,7 +1052,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
         </div>
       ) : (
         /* Leave Applications Table View */
-        <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-5 shadow-xs space-y-4">
+        <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-indigo-600" />
@@ -1200,7 +1207,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
           <form onSubmit={handleSubmit} className="w-full space-y-0">
 
             {/* Modal Header with 2-Step Wizard Indicator */}
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 border border-indigo-100">
                   <CalendarCheck2 className="h-4.5 w-4.5" />
@@ -1413,7 +1420,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                                 {alts.map(day => {
                                   const freeCount = day.periods.filter((p: any) => p.mutuallyFree).length;
                                   return (
-                                    <div key={day.dateStr} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                                    <div key={day.dateStr} className="rounded-2xl border border-slate-100 bg-white overflow-hidden shadow-card">
                                       <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                                         <span className="text-[10.5px] font-black text-slate-700">{day.label}</span>
                                         <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${freeCount > 0 ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"}`}>
@@ -1540,7 +1547,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
                     const selectedCover = coverSelections[key] || "";
 
                     return (
-                      <div key={idx} className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs space-y-2.5">
+                      <div key={idx} className="bg-white rounded-2xl border border-slate-100 p-3.5 shadow-card space-y-2.5">
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <div className="font-black text-slate-900 text-xs">{item.slot.course}</div>
@@ -1602,7 +1609,7 @@ const MentorFacultyLeavePanel: React.FC<{ mentor: Mentor; slots?: Slot[]; demoSe
             )}
 
             {/* Modal Action Buttons Footer */}
-            <div className="bg-slate-50 p-4 px-5 border-t border-slate-200 flex items-center justify-between gap-2.5">
+            <div className="bg-slate-50 p-4 px-5 border-t border-slate-100 flex items-center justify-between gap-2.5">
               {formStep === 2 ? (
                 <button
                   type="button"
@@ -1658,7 +1665,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
   mentorClasses = [],
   subjectsList = []
 }) => {
-  const { toast } = useToast();
+  const { toast, confirm: showConfirm } = useToast();
   const queryClient = useQueryClient();
   const [selectedSubject, setSelectedSubject] = useState<string>(mentorSubjects[0] || "");
   const [selectedUnit, setSelectedUnit] = useState<number | "all">("all");
@@ -1772,6 +1779,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
         setShowModal(false);
         setEditingItem(null);
         await queryClient.invalidateQueries({ queryKey: ["materials"] });
+        announceDataChanged("materials");
       } else {
         toast(data.message || "Failed to save study material", "error");
       }
@@ -1783,9 +1791,12 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this study material? Students will no longer see it.")) {
-      return;
-    }
+    const ok = await showConfirm({
+      message: "Delete this study material? Students will no longer see it.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       const res = await fetch(`/api/materials?id=${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -1795,6 +1806,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
         queryClient.setQueryData(qk.materials(`mentor:${mentor.id}:${selectedSubject || "all"}`), (prev: any[] | undefined) =>
           (prev || []).filter((m) => m.id !== id)
         );
+        announceDataChanged("materials");
       } else {
         toast(data.message || "Failed to delete material", "error");
       }
@@ -1834,7 +1846,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
       {/* ── Top Header Banner & Stats Bar ── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+      <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
           <div className="flex items-center gap-3.5">
             <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
@@ -1877,7 +1889,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
 
         {/* Quick Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-          <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-150">
+          <div className="p-3 bg-slate-50/70 rounded-xl border border-slate-100">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Materials</span>
             <span className="text-lg font-black text-slate-800 mt-0.5 block">{materials.length}</span>
           </div>
@@ -1939,7 +1951,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
       </div>
 
       {/* ── Filter Toolbar: Units & Types ── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Unit Filter Pills */}
           <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
@@ -2012,7 +2024,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
 
       {/* ── Materials Grid List ── */}
       {loading ? (
-        <div className="py-20 text-center text-sm font-bold text-slate-400 flex flex-col items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl">
+        <div className="py-20 text-center text-sm font-bold text-slate-400 flex flex-col items-center justify-center gap-3 bg-white border border-slate-100 rounded-2xl">
           <Loader2 className="h-7 w-7 text-indigo-600 animate-spin" />
           <span>Loading study materials...</span>
         </div>
@@ -2051,7 +2063,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
             return (
               <div
                 key={mat.id}
-                className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs hover:shadow-md hover:border-indigo-200 transition-all flex flex-col justify-between space-y-4 group"
+                className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card hover:shadow-card-lg hover:border-indigo-200 transition-all flex flex-col justify-between space-y-4 group"
               >
                 <div className="space-y-3">
                   {/* Card Header Badges */}
@@ -2424,7 +2436,7 @@ const MentorStudyMaterialsStudio: React.FC<MentorStudyMaterialsStudioProps> = ({
             </div>
 
             {previewItem.description && (
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-150 text-xs text-slate-600 font-medium">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 font-medium">
                 {previewItem.description}
               </div>
             )}
@@ -2762,6 +2774,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [demoSwapStep, setDemoSwapStep] = useState<number>(1);
   const [selectedProposedPeer, setSelectedProposedPeer] = useState<any | null>(null);
   const [demoSwapSubmitting, setDemoSwapSubmitting] = useState<boolean>(false);
+  const [resolvingDemoSwapId, setResolvingDemoSwapId] = useState<string | null>(null);
+  const [resolvingHandoverReqId, setResolvingHandoverReqId] = useState<string | null>(null);
+  const [deletingWeeklyTask, setDeletingWeeklyTask] = useState(false);
+  const [deletingAcadWeeklyTask, setDeletingAcadWeeklyTask] = useState(false);
 
   // Mentor Trigger-Based Demo Reschedule State (No SME replacement, mentor sets date & slot)
   const [rescheduleModalSession, setRescheduleModalSession] = useState<any | null>(null);
@@ -2819,7 +2835,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
   const [acadWeeklyPage, setAcadWeeklyPage] = useState<number>(1);
   const [acadWeeklyPageSize, setAcadWeeklyPageSize] = useState<number>(25);
   const [acadTaskName, setAcadTaskName] = useState<string>("");
-  const [acadTaskDate, setAcadTaskDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [acadTaskDate, setAcadTaskDate] = useState<string>(() => getLocalDateStr());
   const [acadTaskPdf, setAcadTaskPdf] = useState<string>("");
   const [acadIncludeQuiz, setAcadIncludeQuiz] = useState<boolean>(true);
   const [acadQuizUrl, setAcadQuizUrl] = useState<string>("");
@@ -4497,7 +4513,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     selectedClassFilter, selectedStatusFilter, selectedLocationFilter]);
 
   // Pre-computed today string (avoid re-creating every render)
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayStr = useMemo(() => getLocalDateStr(), []);
 
   const isFilterActive = selectedClassFilter !== null || selectedStatusFilter !== null || selectedLocationFilter !== null;
   const filteredSlotsList = useMemo(() => isFilterActive ? getFilteredSlotsList() : [], [
@@ -4622,7 +4638,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
     }
 
     // Determine default tab based on whether class has already started or is in the future
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getLocalDateStr();
     const isFuture = dateStr > todayStr || (dateStr === todayStr && (() => {
       const periodStart = parseSlotStartTime(time);
       return periodStart ? new Date() < periodStart : false;
@@ -5059,11 +5075,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       className={`w-full flex items-center rounded-md text-xs font-bold tracking-tight transition-all duration-200 cursor-pointer ${isCollapsed ? "justify-center px-0 py-3" : "justify-start gap-3 px-4 py-3 text-left"
                         } ${isActive
                           ? "sidebar-active-item"
-                          : "text-slate-500 hover:text-slate-855 hover:bg-slate-50"
+                          : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
                         }`}
                     >
                       <div className="relative flex items-center justify-center">
-                        <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-650"}`} />
+                        <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-600"}`} />
                         {isCollapsed && count > 0 && (
                           <span className="absolute -top-1.5 -right-1.5 block h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />
                         )}
@@ -5090,7 +5106,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     localStorage.setItem("fp_sidebar_collapsed", String(next));
                     return next;
                   })}
-                  className="h-8.5 w-8.5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
+                  className="h-8.5 w-8.5 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
                   title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
                 >
                   {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
@@ -5163,7 +5179,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("interviews")}
-                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 group-hover:scale-105 transition-transform">
                   <Award className="h-5 w-5" />
@@ -5177,7 +5193,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("handovers")}
-                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
                   <Clock className="h-5 w-5" />
@@ -5191,7 +5207,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("demo_evaluations")}
-                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-pink-50 flex items-center justify-center text-pink-500 shrink-0 group-hover:scale-105 transition-transform">
                   <Sparkles className="h-5 w-5" />
@@ -5205,7 +5221,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("materials")}
-                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
                   <Book className="h-5 w-5" />
@@ -5219,9 +5235,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("profile")}
-                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
+                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group sm:col-span-2"
               >
-                <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-650 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 shrink-0 group-hover:scale-105 transition-transform">
                   <User className="h-5 w-5" />
                 </div>
                 <div>
@@ -5242,7 +5258,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             {/*  Dedicated Metrics Grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Card 1: Timetable Target */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex items-center gap-3.5 hover:shadow-md transition-all">
                 <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
                   <Calendar className="h-5 w-5" />
                 </div>
@@ -5253,7 +5269,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               </div>
 
               {/* Card 2: Coverages Received */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex items-center gap-3.5 hover:shadow-md transition-all">
                 <div className="h-10 w-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
                   <PlusCircle className="h-5 w-5" />
                 </div>
@@ -5266,7 +5282,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               </div>
 
               {/* Card 3: Handovers Given */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3.5 hover:shadow-sm transition-all">
+              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex items-center gap-3.5 hover:shadow-md transition-all">
                 <div className="h-10 w-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 shrink-0">
                   <MinusCircle className="h-5 w-5" />
                 </div>
@@ -5285,7 +5301,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <Clock className="h-5 w-5" />
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-555 font-extrabold uppercase tracking-wider block">Net Workload</span>
+                  <span className="text-[10px] text-slate-600 font-extrabold uppercase tracking-wider block">Net Workload</span>
                   <span className="text-lg font-black text-gradient">{toHrs(totalMinutes)} hrs</span>
                 </div>
               </div>
@@ -5295,7 +5311,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left: Today's Agenda (Col-span 2) */}
               <div className="lg:col-span-2 space-y-6">
-                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs flex flex-col space-y-5 h-auto lg:h-full">
+                <div className="bg-white border border-slate-100 rounded-xl p-6 shadow-card flex flex-col space-y-5 h-auto lg:h-full">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4">
                     <div className="flex items-center gap-2">
                       <CalendarCheck2 className="h-5 w-5 text-indigo-500 shrink-0" />
@@ -5338,7 +5354,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <Calendar className="h-5 w-5" />
                           </div>
                           <div>
-                            <p className="text-xs font-bold text-slate-750">No classes or interviews scheduled</p>
+                            <p className="text-xs font-bold text-slate-700">No classes or interviews scheduled</p>
                             <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{agendaDay}, {dateFormatted || "This week"}</p>
                           </div>
                         </div>
@@ -5435,7 +5451,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 }`}
                             >
                               <div className="flex gap-3 items-start w-full">
-                                <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100/50 flex items-center justify-center text-indigo-650 shrink-0 mt-0.5">
+                                <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100/50 flex items-center justify-center text-indigo-600 shrink-0 mt-0.5">
                                   <Clock className="h-4.5 w-4.5" />
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -5451,14 +5467,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     </span>
                                   </div>
                                   <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                                    {formatTimeLabel(item.slot.time)} • Room: <span className="font-bold text-slate-655">{item.slot.location}</span>
+                                    {formatTimeLabel(item.slot.time)} • Room: <span className="font-bold text-slate-700">{item.slot.location}</span>
                                   </p>
                                   <div className="flex items-center gap-1.5 mt-1.5">
-                                    <span className="text-[9px] font-extrabold text-slate-500 bg-slate-50 border border-slate-205 px-1.5 py-0.5 rounded">
+                                    <span className="text-[9px] font-extrabold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
                                       {getShortClassGroup(item.slot.classGroup).name}
                                     </span>
                                     {getShortClassGroup(item.slot.classGroup).sem && (
-                                      <span className="text-[9px] font-extrabold text-slate-500 bg-slate-50 border border-slate-205 px-1.5 py-0.5 rounded">
+                                      <span className="text-[9px] font-extrabold text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
                                         {getShortClassGroup(item.slot.classGroup).sem}
                                       </span>
                                     )}
@@ -5468,7 +5484,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                               <div className="shrink-0 flex items-center w-full sm:w-auto mt-1 sm:mt-0">
                                 {isHandedOver ? (
-                                  <span className="text-[9.5px] font-black text-slate-455 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200/80 w-full sm:w-auto text-center">
+                                  <span className="text-[9.5px] font-black text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200/80 w-full sm:w-auto text-center">
                                     Covered by Colleague
                                   </span>
                                 ) : item.hasAttendance ? (
@@ -5551,7 +5567,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {/*  Compensation & Workload Balance Ledger */}
-                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-xs space-y-4">
+                <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-2">
                       <BookOpen className="h-5 w-5 text-indigo-500" />
@@ -5634,8 +5650,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                     if (ledgerList.length === 0) {
                       return (
-                        <div className="text-center py-6 border border-slate-150 rounded-xl bg-slate-50/30">
-                          <p className="text-xs text-slate-455 italic">No approved handover history to calculate balance.</p>
+                        <div className="text-center py-6 border border-slate-100 rounded-xl bg-slate-50/30">
+                          <p className="text-xs text-slate-500 italic">No approved handover history to calculate balance.</p>
                         </div>
                       );
                     }
@@ -5644,7 +5660,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs scroll-touch">
                         <table className="w-full border-collapse text-left text-xs min-w-[700px]">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px] whitespace-nowrap">
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px] whitespace-nowrap">
                               <th className="p-3">Month</th>
                               <th className="p-3">Subject</th>
                               <th className="p-3">Faculty Member</th>
@@ -5755,29 +5771,29 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <div className="flex items-center justify-between border-b border-pink-100/50 pb-2">
                         <div className="flex items-center gap-2">
                           <Sparkles className="h-4.5 w-4.5 text-pink-500" />
-                          <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest">Upcoming L&D Reviews</h3>
+                          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Upcoming L&D Reviews</h3>
                         </div>
-                        <span className="px-2 py-0.5 bg-pink-50 border border-pink-150 text-pink-600 text-[8px] font-black uppercase rounded-lg">
+                        <span className="px-2 py-0.5 bg-pink-50 border border-pink-100 text-pink-600 text-[8px] font-black uppercase rounded-lg">
                           {upcomingDemos.length} Scheduled
                         </span>
                       </div>
 
                       <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                         {upcomingDemos.slice(0, 2).map((demo) => (
-                          <div key={demo.id} className="p-3 rounded-xl bg-slate-50/30 border border-slate-150 flex flex-col gap-1">
+                          <div key={demo.id} className="p-3 rounded-xl bg-slate-50/30 border border-slate-100 flex flex-col gap-1">
                             <div className="flex justify-between items-center">
-                              <span className="text-[9px] font-black text-slate-450">{demo.dateStr}</span>
+                              <span className="text-[9px] font-black text-slate-400">{demo.dateStr}</span>
                               <span className="text-[9px] font-bold text-slate-500">{demo.timeSlot}</span>
                             </div>
                             <div className="text-xs font-black text-slate-800">{demo.subject}</div>
-                            <div className="text-[9.5px] text-slate-550 font-semibold">SME Evaluator: {demo.smeName}</div>
+                            <div className="text-[9.5px] text-slate-500 font-semibold">SME Evaluator: {demo.smeName}</div>
                           </div>
                         ))}
                       </div>
 
                       <button
                         onClick={() => setActiveTab("demo_evaluations")}
-                        className="w-full py-2 bg-pink-50 hover:bg-pink-100/80 text-pink-700 font-bold border border-pink-150 rounded-xl text-[10.5px] transition-colors cursor-pointer text-center"
+                        className="w-full py-2 bg-pink-50 hover:bg-pink-100/80 text-pink-700 font-bold border border-pink-100 rounded-xl text-[10.5px] transition-colors cursor-pointer text-center"
                       >
                         Open Evaluations Hub
                       </button>
@@ -5785,8 +5801,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   );
                 })()}
                 {/* Quick Action Center */}
-                <div className="hidden md:block bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-4">
-                  <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest border-b border-slate-100 pb-2">Quick Actions</h3>
+                <div className="hidden md:block bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">Quick Actions</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
@@ -5798,9 +5814,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           setActiveTab("timetable");
                         }
                       }}
-                      className="flex flex-col items-center justify-center p-3.5 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white"
+                      className="flex flex-col items-center justify-center p-3.5 rounded-2xl border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white shadow-card"
                     >
-                      <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-650 shrink-0">
+                      <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
                         <Calendar className="h-4.5 w-4.5" />
                       </div>
                       <div>
@@ -5812,9 +5828,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setActiveTab("handovers")}
-                      className="flex flex-col items-center justify-center p-3.5 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white"
+                      className="flex flex-col items-center justify-center p-3.5 rounded-2xl border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50/10 text-center gap-2 transition-all cursor-pointer bg-white shadow-card"
                     >
-                      <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-655 shrink-0">
+                      <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-700 shrink-0">
                         <Clock className="h-4.5 w-4.5" />
                       </div>
                       <div>
@@ -5827,7 +5843,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                 {/* Assigned Subjects breakdown */}
                 {allMentorSubjects.length > 0 && (
-                  <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-3">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">My Subjects</h3>
                     <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                       {allMentorSubjects.map((sub, idx) => {
@@ -5835,7 +5851,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         const coveredMins = subjectCoveredMinutesMap[sub] || 0;
 
                         return (
-                          <div key={idx} className="p-3 rounded-xl bg-slate-50/50 border border-slate-200/80 flex flex-col gap-1.5">
+                          <div key={idx} className="p-3 rounded-xl bg-slate-50/50 border border-slate-100 flex flex-col gap-1.5">
                             <div className="flex justify-between items-start gap-2">
                               <span className="text-xs font-bold text-slate-800 line-clamp-1">{sub}</span>
                             </div>
@@ -5859,7 +5875,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 )}
 
                 {/* Recent Handover Activity */}
-                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-3">
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">Recent Handovers</h3>
                   {myRequests.length === 0 && myCoverageRequests.length === 0 ? (
                     <p className="text-[11px] text-slate-400 italic text-center py-4">No recent handover activity</p>
@@ -5874,13 +5890,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           const isAppr = req.status === "approved";
 
                           return (
-                            <div key={idx} className="p-3 rounded-xl bg-slate-50/50 border border-slate-200/80 space-y-1.5 text-[11px]">
+                            <div key={idx} className="p-3 rounded-xl bg-slate-50/50 border border-slate-100 space-y-1.5 text-[11px]">
                               <div className="flex justify-between items-center gap-2">
                                 <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${isSent ? "bg-purple-50 text-purple-700 border border-purple-100" : "bg-blue-50 text-blue-700 border border-blue-100"
                                   }`}>
                                   {isSent ? "Sent Request" : "Incoming Cover"}
                                 </span>
-                                <span className={`text-[8.5px] font-black uppercase ${isAppr ? "text-emerald-650" : isPending ? "text-amber-600" : "text-rose-505"
+                                <span className={`text-[8.5px] font-black uppercase ${isAppr ? "text-emerald-600" : isPending ? "text-amber-600" : "text-rose-500"
                                   }`}>
                                   {req.status}
                                 </span>
@@ -5888,7 +5904,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <p className="text-slate-700 font-medium">
                                 {isSent ? `For: ${req.targetStaffName}` : `From: ${req.requestorName}`}
                               </p>
-                              <p className="text-slate-455 text-[10px]">
+                              <p className="text-slate-500 text-[10px]">
                                 {req.course} • {req.dateFormatted}
                               </p>
                             </div>
@@ -5907,11 +5923,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
         {/* Main Timetable Interface */}
         {activeTab === "timetable" && (
-          <div id="timetable-grid" className="bg-white border border-gray-200/80 rounded-xl p-6 space-y-6 backdrop-blur-md shadow-sm">
+          <div id="timetable-grid" className="bg-white border border-slate-100 rounded-2xl p-6 space-y-6 backdrop-blur-md shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-indigo-650" />
+                  <Calendar className="h-5 w-5 text-indigo-600" />
                   <h2 className="text-lg font-bold text-gray-900">My Schedule</h2>
                 </div>
 
@@ -5920,18 +5936,18 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setWeekOffset(weekOffset - 1)}
-                    className="p-1.5 hover:bg-white rounded-lg text-gray-600 hover:text-indigo-650 transition-all cursor-pointer"
+                    className="p-1.5 hover:bg-white rounded-lg text-gray-600 hover:text-indigo-600 transition-all cursor-pointer"
                     title="Previous Week"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
-                  <span className="text-[10px] font-bold text-gray-755 px-2 min-w-[130px] text-center select-none">
-                    {effectiveWeekDates.some(d => d.dateStr === new Date().toISOString().slice(0, 10)) ? "Current Week" : `${effectiveWeekDates[0]?.formatted} – ${effectiveWeekDates[effectiveWeekDates.length - 1]?.formatted}`}
+                  <span className="text-[10px] font-bold text-gray-800 px-2 min-w-[130px] text-center select-none">
+                    {effectiveWeekDates.some(d => d.dateStr === todayStr) ? "Current Week" : `${effectiveWeekDates[0]?.formatted} – ${effectiveWeekDates[effectiveWeekDates.length - 1]?.formatted}`}
                   </span>
                   <button
                     type="button"
                     onClick={() => setWeekOffset(weekOffset + 1)}
-                    className="p-1.5 hover:bg-white rounded-lg text-gray-600 hover:text-indigo-650 transition-all cursor-pointer"
+                    className="p-1.5 hover:bg-white rounded-lg text-gray-600 hover:text-indigo-600 transition-all cursor-pointer"
                     title="Next Week"
                   >
                     <ChevronRight className="h-3.5 w-3.5" />
@@ -5941,13 +5957,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               <div className="flex flex-wrap items-center gap-3">
                 {/* Shift Selector - always shown, shift derived from slots */}
-                <div className="flex bg-gray-55 p-1 rounded-xl border border-gray-200 shadow-inner">
+                <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 shadow-inner">
                   <button
                     type="button"
                     onClick={() => setCurrentShift("shift_1")}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${currentShift === "shift_1"
                         ? "btn-gradient shadow-sm text-white"
-                        : "text-gray-550 hover:text-gray-900"
+                        : "text-gray-500 hover:text-gray-900"
                       }`}
                   >
                     Shift 1
@@ -5957,7 +5973,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     onClick={() => setCurrentShift("shift_2")}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${currentShift === "shift_2"
                         ? "btn-gradient shadow-sm text-white"
-                        : "text-gray-550 hover:text-gray-900"
+                        : "text-gray-500 hover:text-gray-900"
                       }`}
                   >
                     Shift 2
@@ -5967,7 +5983,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     onClick={() => setCurrentShift("general")}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${currentShift === "general"
                         ? "btn-gradient shadow-sm text-white"
-                        : "text-gray-550 hover:text-gray-900"
+                        : "text-gray-500 hover:text-gray-900"
                       }`}
                   >
                     General
@@ -5977,7 +5993,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
 
             {/* Timetable Control Center (Filters & Legends) - Always visible in Timetable Tab */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50/50 p-5 rounded-xl border border-gray-150 shadow-inner text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50/50 p-5 rounded-xl border border-gray-100 shadow-inner text-xs">
               {/* 1. Status Filters */}
               <div className="space-y-2">
                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Status Filters</span>
@@ -5986,8 +6002,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     type="button"
                     onClick={() => setSelectedStatusFilter(selectedStatusFilter === "active" ? null : "active")}
                     className={`px-3 py-1.5 rounded-xl text-[10px] font-bold shadow-sm transition-all cursor-pointer flex items-center gap-2 border ${selectedStatusFilter === "active"
-                        ? "bg-indigo-650 border-indigo-650 text-white hover:bg-indigo-700"
-                        : "bg-white border-gray-200 text-gray-750 hover:bg-gray-55"
+                        ? "bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700"
+                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
                       }`}
                   >
                     <span className={`h-2 w-2 rounded-full ${selectedStatusFilter === "active" ? "bg-white" : "bg-indigo-600"}`}></span>
@@ -6034,7 +6050,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onClick={() => setSelectedLocationFilter(selectedLocationFilter === loc ? null : loc)}
                           className={`px-3 py-1.5 rounded-xl text-[10px] font-bold shadow-sm transition-all cursor-pointer flex items-center gap-2 border ${isSelected
                               ? "bg-purple-600 border-purple-600 text-white hover:bg-purple-700"
-                              : "bg-purple-50/50 border-purple-200 text-purple-905 hover:bg-purple-100/40"
+                              : "bg-purple-50/50 border-purple-200 text-purple-900 hover:bg-purple-100/40"
                             }`}
                         >
                           <span className={`h-2 w-2 rounded-full ${isSelected ? "bg-white" : "bg-purple-500"}`}></span>
@@ -6060,7 +6076,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onClick={() => handleClassFilterClick(displayLabel)}
                           className={`px-3 py-1.5 rounded-xl text-[10px] font-bold shadow-sm transition-all cursor-pointer border ${isSelected
                               ? "bg-teal-600 border-teal-600 text-white hover:bg-teal-700 shadow-inner"
-                              : "bg-teal-55 border-teal-105 text-teal-700 hover:bg-teal-100/60"
+                              : "bg-teal-50 border-teal-100 text-teal-700 hover:bg-teal-100/60"
                             }`}
                         >
                           {displayLabel}
@@ -6085,14 +6101,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           return (
                             <th key={idx} className="sticky top-0 z-20 p-4 text-xs font-bold text-gray-400 uppercase tracking-wider text-center select-none bg-gray-50/95 backdrop-blur-xs border-b border-gray-200 w-[8%]">
                               <div>{col.label}</div>
-                              <div className="text-[9px] text-gray-450 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
+                              <div className="text-[9px] text-gray-400 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
                             </th>
                           );
                         }
                         if (col.type === "slot") {
                           slotCounter++;
                           return (
-                            <th key={col.time} className="sticky top-0 z-20 p-4 text-xs font-bold text-gray-750 bg-gray-55/95 backdrop-blur-xs border-b border-gray-200 w-[12%]">
+                            <th key={col.time} className="sticky top-0 z-20 p-4 text-xs font-bold text-gray-700 bg-gray-50/95 backdrop-blur-xs border-b border-gray-200 w-[12%]">
                               <div>Period {slotCounter}</div>
                               <div className="text-[10px] text-gray-400 font-normal mt-0.5">{formatTimeLabel(col.time)}</div>
                             </th>
@@ -6103,12 +6119,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     })()}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-150 bg-white">
+                <tbody className="divide-y divide-gray-100 bg-white">
                   {effectiveWeekDates.map((date) => {
                     return (
-                      <tr key={date.day} className="h-24 hover:bg-gray-55/10 transition-colors">
+                      <tr key={date.day} className="h-24 hover:bg-gray-50/10 transition-colors">
                         {/* First Cell: Day / Date */}
-                        <td className="sticky left-0 z-10 p-3 text-xs font-bold text-gray-705 border-r border-gray-200 bg-gray-50/95 backdrop-blur-xs align-middle">
+                        <td className="sticky left-0 z-10 p-3 text-xs font-bold text-gray-700 border-r border-gray-200 bg-gray-50/95 backdrop-blur-xs align-middle">
                           <div className="flex flex-col justify-center items-center">
                             <span className="text-sm font-black text-gray-900 leading-none">{date.day}</span>
                             <span className="text-[9px] text-gray-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
@@ -6172,7 +6188,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             return (
                               <td
                                 key={`break-${cIdx}`}
-                                className="p-2 text-center text-xs font-extrabold text-gray-455 bg-gray-50/5 uppercase tracking-widest italic select-none border-r border-gray-150 last:border-r-0 align-middle"
+                                className="p-2 text-center text-xs font-extrabold text-gray-500 bg-gray-50/5 uppercase tracking-widest italic select-none border-r border-gray-100 last:border-r-0 align-middle"
                               >
                                 {col.label}
                               </td>
@@ -6191,7 +6207,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                           if (isDemo && demoSession) {
                             return (
-                              <td key={time} className="p-1.5 h-24 border-r border-gray-150 last:border-r-0 transition-all bg-pink-50/20">
+                              <td key={time} className="p-1.5 h-24 border-r border-gray-100 last:border-r-0 transition-all bg-pink-50/20">
                                 <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-pink-200 bg-pink-50/70 text-xs shadow-2xs">
                                   <div>
                                     <div className="flex items-center justify-between gap-1 mb-1">
@@ -6224,7 +6240,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             const examInfo = cellData.exam;
                             const hasAtt = cellData.hasAttendance;
                             return (
-                              <td key={time} className="p-1.5 h-24 border-r border-gray-150 last:border-r-0 transition-all bg-purple-50/20">
+                              <td key={time} className="p-1.5 h-24 border-r border-gray-100 last:border-r-0 transition-all bg-purple-50/20">
                                 <div
                                   onClick={() => {
                                     if (slot) {
@@ -6284,11 +6300,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                           let cardClass = "";
                           if (hasAttendance) {
-                            cardClass = "bg-emerald-50/30 border-emerald-200 text-emerald-950 hover:border-emerald-450";
+                            cardClass = "bg-emerald-50/30 border-emerald-200 text-emerald-950 hover:border-emerald-400";
                           } else if (!isFuture) {
-                            cardClass = "bg-amber-50/20 border-amber-300 text-amber-950 hover:border-amber-450";
+                            cardClass = "bg-amber-50/20 border-amber-300 text-amber-950 hover:border-amber-400";
                           } else if (isCovering || approvedReq) {
-                            cardClass = "bg-blue-50/40 border-blue-200 text-blue-905 hover:border-blue-300";
+                            cardClass = "bg-blue-50/40 border-blue-200 text-blue-900 hover:border-blue-300";
                           } else if (pendingReq) {
                             cardClass = "bg-amber-50/50 border-amber-300 text-amber-900 hover:border-amber-400";
                           } else {
@@ -6299,7 +6315,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <td
                               key={time}
                               onClick={slot && !isFilteredOut ? () => handleCellClick(date.day, date.dateStr, date.formatted, time) : undefined}
-                              className={`p-1.5 h-24 border-r border-gray-150 last:border-r-0 transition-all ${slot && !isFilteredOut ? "cursor-pointer hover:bg-gray-55/50" : isFilterActive ? "bg-white" : "bg-gray-50/10"
+                              className={`p-1.5 h-24 border-r border-gray-100 last:border-r-0 transition-all ${slot && !isFilteredOut ? "cursor-pointer hover:bg-gray-50/50" : isFilterActive ? "bg-white" : "bg-gray-50/10"
                                 }`}
                             >
                               {slot && !isFilteredOut ? (
@@ -6317,7 +6333,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                           </span>
                                           {/* Year Badge */}
                                           {yearStr && (
-                                            <span className="px-1 py-0.5 rounded bg-amber-50 border border-amber-255 text-[7.5px] font-black text-amber-700 uppercase shrink-0">
+                                            <span className="px-1 py-0.5 rounded bg-amber-50 border border-amber-300 text-[7.5px] font-black text-amber-700 uppercase shrink-0">
                                               {yearStr.replace(" Year", " Yr")}
                                             </span>
                                           )}
@@ -6334,7 +6350,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     <div className="font-extrabold text-[10.5px] text-gray-800 line-clamp-2 leading-tight mb-1" title={approvedReq?.course || slot.course}>
                                       {getCanonicalSubjectName(approvedReq?.course || slot.course)}
                                     </div>
-                                    <div className="flex items-center gap-1 text-[10px] text-gray-555">
+                                    <div className="flex items-center gap-1 text-[10px] text-gray-600">
                                       <MapPin className="h-2.5 w-2.5 shrink-0 text-gray-400" />
                                       <span className="truncate font-semibold">{slot.location}</span>
                                     </div>
@@ -6394,14 +6410,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                           </span>
                                         );
                                       }
-                                      return <span className="text-gray-550">My Class</span>;
+                                      return <span className="text-gray-500">My Class</span>;
                                     })()}
 
-                                    <span className={`px-1.5 py-0.5 rounded-[4px] text-[7.5px] font-extrabold uppercase ${isCovering || approvedReq
+                                    <span className={`px-1.5 py-0.5 rounded-sm text-[7.5px] font-extrabold uppercase ${isCovering || approvedReq
                                       ? 'bg-blue-100 text-blue-700 border border-blue-200/50'
                                       : pendingReq
-                                        ? 'bg-amber-105 text-amber-700 border border-amber-200/50'
-                                        : 'bg-indigo-55 text-indigo-700 border border-indigo-100'
+                                        ? 'bg-amber-100 text-amber-700 border border-amber-200/50'
+                                        : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
                                       }`}>
                                       {isCovering ? 'Covering' : approvedReq ? 'Handed Over' : pendingReq ? 'Pending' : 'Active'}
                                     </span>
@@ -6499,12 +6515,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   const isCompleted = demoSession.status === "completed";
                                   return (
                                     <div className={`h-full flex flex-col justify-between p-2 rounded-xl border text-xs shadow-sm ${isCompleted
-                                        ? "bg-emerald-50/70 border-emerald-250 text-emerald-900"
-                                        : "bg-pink-50/50 border-pink-200 text-pink-905"
+                                        ? "bg-emerald-50/70 border-emerald-200 text-emerald-900"
+                                        : "bg-pink-50/50 border-pink-200 text-pink-900"
                                       }`}>
                                       <div>
                                         <div className="flex flex-wrap items-center gap-1 mb-1 max-w-full">
-                                          <span className="px-1.5 py-0.5 rounded bg-pink-100 dark:bg-pink-950 border border-pink-250 text-[7px] font-black text-pink-700 dark:text-pink-400 uppercase tracking-wide">
+                                          <span className="px-1.5 py-0.5 rounded bg-pink-100 dark:bg-pink-950 border border-pink-200 text-[7px] font-black text-pink-700 dark:text-pink-400 uppercase tracking-wide">
                                             Demo Review
                                           </span>
                                           <span className="text-[7.5px] font-black text-pink-400">Week {demoSession.week}</span>
@@ -6527,7 +6543,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   );
                                 }
                                 return isFilterActive ? null : (
-                                  <div className="h-full flex items-center justify-center border border-dashed border-gray-250 rounded-xl bg-gray-50/10">
+                                  <div className="h-full flex items-center justify-center border border-dashed border-gray-200 rounded-xl bg-gray-50/10">
                                     <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">No class</span>
                                   </div>
                                 );
@@ -6546,9 +6562,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
         {/* Handover Requests Tracker */}
         {activeTab === "handovers" && (
-          <div className="bg-white border border-gray-200 rounded-xl p-6 backdrop-blur-md shadow-sm space-y-8">
+          <div className="bg-white border border-slate-100 rounded-2xl p-6 backdrop-blur-md shadow-card space-y-8">
             <div className="flex items-center gap-2 mb-2">
-              <ListTodo className="h-5 w-5 text-indigo-655" />
+              <ListTodo className="h-5 w-5 text-indigo-700" />
               <h2 className="text-lg font-bold text-gray-900">Handovers</h2>
             </div>
 
@@ -6556,14 +6572,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             <div className="space-y-3">
               <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Handovers Requested By You (Sent)</h3>
               {myRequests.length === 0 ? (
-                <div className="text-center py-6 border border-gray-150 rounded-xl bg-gray-50/50">
+                <div className="text-center py-6 border border-gray-100 rounded-xl bg-gray-50/50">
                   <p className="text-xs text-gray-500">No sent handover requests submitted yet.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-205 shadow-sm">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-550 font-bold uppercase text-[10px]">
+                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px]">
                         <th className="p-3">Handover Date</th>
                         <th className="p-3">Course / Time</th>
                         <th className="p-3">Covering Staff</th>
@@ -6573,12 +6589,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <th className="p-3 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-150 bg-white">
+                    <tbody className="divide-y divide-gray-100 bg-white">
                       {myRequests.map((req) => (
                         <tr key={req.id} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="p-3 font-bold text-gray-805">
+                          <td className="p-3 font-bold text-gray-800">
                             <span className="flex items-center gap-1">
-                              <CalendarCheck2 className="h-3.5 w-3.5 text-indigo-655" />
+                              <CalendarCheck2 className="h-3.5 w-3.5 text-indigo-700" />
                               {req.dateFormatted} ({req.dateStr})
                             </span>
                           </td>
@@ -6597,7 +6613,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     </span>
                                   )}
                                   {sem && (
-                                    <span className="px-1.5 py-0.5 rounded bg-teal-55 border border-teal-200 text-[8px] font-black text-teal-700 uppercase shrink-0">
+                                    <span className="px-1.5 py-0.5 rounded bg-teal-50 border border-teal-200 text-[8px] font-black text-teal-700 uppercase shrink-0">
                                       {sem}
                                     </span>
                                   )}
@@ -6605,15 +6621,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               );
                             })()}
                             <div className="font-bold text-gray-900">{req.course}</div>
-                            <div className="text-[10px] text-gray-550">{req.day}, {formatTimeLabel(req.time)}</div>
+                            <div className="text-[10px] text-gray-500">{req.day}, {formatTimeLabel(req.time)}</div>
                           </td>
-                          <td className="p-3 font-bold text-gray-805">
+                          <td className="p-3 font-bold text-gray-800">
                             <span className="flex items-center gap-1">
-                              <UserCheck className="h-3.5 w-3.5 text-indigo-655" />
+                              <UserCheck className="h-3.5 w-3.5 text-indigo-700" />
                               {req.targetStaffName}
                             </span>
                           </td>
-                          <td className="p-3 max-w-xs truncate text-gray-650 italic" title={req.reason}>
+                          <td className="p-3 max-w-xs truncate text-gray-600 italic" title={req.reason}>
                             &ldquo;{req.reason}&rdquo;
                           </td>
                           <td className="p-3">
@@ -6623,8 +6639,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 : req.status === "rejected"
                                   ? "bg-red-100 text-red-800 border border-red-200/50"
                                   : req.status === "pending_cam"
-                                    ? "bg-indigo-150 text-indigo-800 border border-indigo-200/50"
-                                    : "bg-amber-100 text-amber-805 border border-amber-200/50"
+                                    ? "bg-indigo-100 text-indigo-800 border border-indigo-200/50"
+                                    : "bg-amber-100 text-amber-800 border border-amber-200/50"
                                 }`}>
                                 {req.status === "pending_cam" ? "Awaiting CM Approval" : req.status}
                               </span>
@@ -6643,7 +6659,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <button
                                 type="button"
                                 onClick={async () => { const r = await cancelRequest(req.id); toast(r.message, r.success ? "success" : "error"); }}
-                                className="px-2.5 py-1.5 rounded-lg bg-red-50 text-red-650 hover:bg-red-100 hover:text-red-700 border border-red-200 transition-colors inline-flex items-center gap-1 text-[10px] font-bold shadow-sm"
+                                className="px-2.5 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 border border-red-200 transition-colors inline-flex items-center gap-1 text-[10px] font-bold shadow-sm"
                                 title="Cancel Request"
                               >
                                 <XCircle className="h-3.5 w-3.5" />
@@ -6665,14 +6681,14 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             <div className="space-y-3 pt-2">
               <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Coverage Tasks Assigned To You (Received)</h3>
               {myCoverageRequests.length === 0 ? (
-                <div className="text-center py-6 border border-gray-150 rounded-xl bg-gray-50/50">
-                  <p className="text-xs text-gray-550">No coverage tasks assigned to you yet.</p>
+                <div className="text-center py-6 border border-gray-100 rounded-xl bg-gray-50/50">
+                  <p className="text-xs text-gray-500">No coverage tasks assigned to you yet.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-gray-205 shadow-sm">
+                <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
-                      <tr className="bg-gray-55 border-b border-gray-200 text-gray-550 font-bold uppercase text-[10px]">
+                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold uppercase text-[10px]">
                         <th className="p-3">Handover Date</th>
                         <th className="p-3">Course / Time</th>
                         <th className="p-3">Requestor (Staff)</th>
@@ -6682,12 +6698,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <th className="p-3">Timestamp</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-150 bg-white">
+                    <tbody className="divide-y divide-gray-100 bg-white">
                       {myCoverageRequests.map((req) => (
                         <tr key={req.id} className="hover:bg-gray-50/50 transition-colors">
-                          <td className="p-3 font-bold text-gray-805">
+                          <td className="p-3 font-bold text-gray-800">
                             <span className="flex items-center gap-1">
-                              <CalendarCheck2 className="h-3.5 w-3.5 text-indigo-655" />
+                              <CalendarCheck2 className="h-3.5 w-3.5 text-indigo-700" />
                               {req.dateFormatted} ({req.dateStr})
                             </span>
                           </td>
@@ -6706,7 +6722,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     </span>
                                   )}
                                   {sem && (
-                                    <span className="px-1.5 py-0.5 rounded bg-teal-55 border border-teal-200 text-[8px] font-black text-teal-700 uppercase shrink-0">
+                                    <span className="px-1.5 py-0.5 rounded bg-teal-50 border border-teal-200 text-[8px] font-black text-teal-700 uppercase shrink-0">
                                       {sem}
                                     </span>
                                   )}
@@ -6714,12 +6730,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               );
                             })()}
                             <div className="font-bold text-gray-900">{req.course}</div>
-                            <div className="text-[10px] text-gray-550">{req.day}, {formatTimeLabel(req.time)}</div>
+                            <div className="text-[10px] text-gray-500">{req.day}, {formatTimeLabel(req.time)}</div>
                           </td>
-                          <td className="p-3 font-bold text-gray-805">
+                          <td className="p-3 font-bold text-gray-800">
                             <div className="flex flex-col gap-1">
                               <span className="flex items-center gap-1">
-                                <UserCheck className="h-3.5 w-3.5 text-indigo-655" />
+                                <UserCheck className="h-3.5 w-3.5 text-indigo-700" />
                                 {req.requestorName}
                               </span>
                               {req.request_type === "swap_compensate" && (
@@ -6729,7 +6745,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               )}
                             </div>
                           </td>
-                          <td className="p-3 max-w-xs truncate text-gray-650 italic" title={req.reason}>
+                          <td className="p-3 max-w-xs truncate text-gray-600 italic" title={req.reason}>
                             {req.request_type === "swap_compensate" ? (
                               <span className="text-indigo-700 not-italic font-semibold">
                                 {req.requestorName.split(" ")[0]} is offering this class as compensation for a past handover.
@@ -6744,7 +6760,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 ? "bg-teal-100 text-teal-800 border border-teal-200/50"
                                 : req.status === "rejected"
                                   ? "bg-red-100 text-red-800 border border-red-200/50"
-                                  : "bg-amber-105 text-amber-805 border border-amber-200/50"
+                                  : "bg-amber-100 text-amber-800 border border-amber-200/50"
                                 }`}>
                                 {req.status}
                               </span>
@@ -6760,25 +6776,43 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <div className="flex gap-2">
                                 <button
                                   type="button"
+                                  disabled={resolvingHandoverReqId === req.id}
                                   onClick={async () => {
+                                    if (resolvingHandoverReqId) return;
                                     if (await showConfirm({ message: "Are you sure you want to accept this handover request?", confirmLabel: "Accept" })) {
-                                      await handleRequest(req.id, "approved", "", "Mentor", req.course);
-                                      toast("Handover request accepted.", "success");
+                                      setResolvingHandoverReqId(req.id);
+                                      try {
+                                        await handleRequest(req.id, "approved", "", "Mentor", req.course);
+                                        toast("Handover request accepted.", "success");
+                                      } catch (err: any) {
+                                        toast(err?.message || "Failed to accept the handover request.", "error");
+                                      } finally {
+                                        setResolvingHandoverReqId(null);
+                                      }
                                     }
                                   }}
-                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors cursor-pointer"
+                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9.5px] font-bold shadow-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Accept
                                 </button>
                                 <button
                                   type="button"
+                                  disabled={resolvingHandoverReqId === req.id}
                                   onClick={async () => {
+                                    if (resolvingHandoverReqId) return;
                                     if (await showConfirm({ message: "Are you sure you want to reject this handover request?", danger: true, confirmLabel: "Reject" })) {
-                                      await handleRequest(req.id, "rejected", "", "Mentor");
-                                      toast("Handover request rejected.", "info");
+                                      setResolvingHandoverReqId(req.id);
+                                      try {
+                                        await handleRequest(req.id, "rejected", "", "Mentor");
+                                        toast("Handover request rejected.", "info");
+                                      } catch (err: any) {
+                                        toast(err?.message || "Failed to reject the handover request.", "error");
+                                      } finally {
+                                        setResolvingHandoverReqId(null);
+                                      }
                                     }
                                   }}
-                                  className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-655 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors cursor-pointer"
+                                  className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 rounded-lg text-[9.5px] font-bold shadow-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Reject
                                 </button>
@@ -6811,40 +6845,40 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           <div className="space-y-6 font-sans">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Profile Summary Card */}
-              <div className="bg-pastel-cream p-7 rounded-dribbble-panel border-transparent shadow-sm flex flex-col items-center justify-between text-center min-h-[300px] group hover:shadow-md transition-all duration-300">
+              <div className="bg-pastel-cream p-6 rounded-2xl border-transparent shadow-sm flex flex-col items-center justify-between text-center min-h-[300px] group hover:shadow-md transition-all duration-300">
                 <div className="flex flex-col items-center space-y-4 w-full">
-                  <div className="h-20 w-20 rounded-full bg-indigo-650 border-4 border-white text-white flex items-center justify-center text-3xl font-black shadow-md uppercase">
+                  <div className="h-20 w-20 rounded-full bg-indigo-600 border-4 border-white text-white flex items-center justify-center text-3xl font-black shadow-md uppercase">
                     {currentMentor.name.substring(0, 2)}
                   </div>
                   <div>
                     <h2 className="text-lg font-extrabold text-slate-900 leading-tight">{currentMentor.name}</h2>
-                    <p className="text-[10px] text-slate-455 font-bold uppercase tracking-wider mt-1">Faculty Mentor Profile</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Faculty Mentor Profile</p>
                   </div>
                   <div className="flex flex-wrap justify-center gap-1.5 pt-1">
-                    <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase">
+                    <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-100 text-[9px] font-black text-slate-700 uppercase">
                       Faculty Mentor
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-150 text-[9px] font-black text-slate-700 uppercase inline-flex items-center gap-1">
+                    <span className="px-2 py-0.5 rounded bg-white/80 border border-slate-100 text-[9px] font-black text-slate-700 uppercase inline-flex items-center gap-1">
                       <span>{currentMentor.mentor_group}</span>
                       <CourseInfoButton course={currentMentor.mentor_group} collegeId={currentMentor.college_id} size="xs" />
                     </span>
                   </div>
                 </div>
 
-                <div className="w-full border-t border-slate-155/60 pt-4 mt-4 text-left space-y-2">
+                <div className="w-full border-t border-slate-200/60 pt-4 mt-4 text-left space-y-2">
                   <div className="flex justify-between text-[11px] font-bold">
-                    <span className="text-slate-455">Faculty ID</span>
+                    <span className="text-slate-500">Faculty ID</span>
                     <span className="text-slate-800 font-mono">{currentMentor.id}</span>
                   </div>
                   <div className="flex justify-between text-[11px] font-bold">
-                    <span className="text-slate-455">Primary Email</span>
+                    <span className="text-slate-500">Primary Email</span>
                     <span className="text-slate-800 truncate max-w-[170px]" title={currentMentor.email}>{currentMentor.email}</span>
                   </div>
                 </div>
               </div>
 
               {/* Teaching Details Card */}
-              <div className="md:col-span-2 bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-6 flex flex-col justify-between">
+              <div className="md:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6 flex flex-col justify-between">
                 <div>
                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Academic & Curricular Assignments</h3>
                   <div className="space-y-4">
@@ -6868,7 +6902,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       <div className="flex flex-wrap gap-2">
                         {currentMentor.classes && currentMentor.classes.split(/,|\n/).length > 0 ? (
                           currentMentor.classes.split(/,|\n/).map((cls, idx) => (
-                            <span key={idx} className="px-2.5 py-1 rounded-xl bg-teal-55 border border-teal-100 text-xs font-bold text-teal-700">
+                            <span key={idx} className="px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-100 text-xs font-bold text-teal-700">
                               {cls.trim()}
                             </span>
                           ))
@@ -6881,8 +6915,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex items-center gap-3">
-                  <Sparkles className="h-5 w-5 text-indigo-650 shrink-0" />
-                  <div className="text-[11px] text-indigo-850 font-semibold leading-normal">
+                  <Sparkles className="h-5 w-5 text-indigo-600 shrink-0" />
+                  <div className="text-[11px] text-indigo-800 font-semibold leading-normal">
                     Your academic profile and subjects list are managed by your Campus Manager (CM). Shift changes or subject reallocations will be updated automatically upon approval.
                   </div>
                 </div>
@@ -6890,32 +6924,32 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
             </div>
 
             {/* Timetable Statistics */}
-            <div className="bg-pastel-blue p-7 rounded-dribbble-panel border-transparent shadow-sm space-y-6">
-              <h3 className="text-xs font-black text-slate-555 uppercase tracking-widest font-sans">Workload & Coverage Metrics</h3>
+            <div className="bg-pastel-blue p-6 rounded-2xl border-transparent shadow-sm space-y-6">
+              <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest font-sans">Workload & Coverage Metrics</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
                 <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                   <span className="text-3xl font-extrabold text-slate-900">
                     {mySlots.length}
                   </span>
-                  <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Weekly Teaching Slots</span>
+                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Weekly Teaching Slots</span>
                 </div>
                 <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                   <span className="text-3xl font-extrabold text-slate-900">
                     {memoizedMyRequestsCount}
                   </span>
-                  <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Handovers Requested</span>
+                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Handovers Requested</span>
                 </div>
                 <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                   <span className="text-3xl font-extrabold text-slate-900">
                     {memoizedMyCoveringApprovedCount}
                   </span>
-                  <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Substitution Duties Covered</span>
+                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Substitution Duties Covered</span>
                 </div>
-                <div className="p-4 bg-white/80 rounded-xl border border-slate-105/40">
+                <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                   <span className="text-3xl font-extrabold text-slate-900">
                     {memoizedProfileMyAttendance.length}
                   </span>
-                  <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Attendance Records Marked</span>
+                  <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Attendance Records Marked</span>
                 </div>
               </div>
             </div>
@@ -7016,7 +7050,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               {/* Empty state */}
               {sortedDates.length === 0 && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-12 flex flex-col items-center gap-3 text-center shadow-xs">
+                <div className="bg-white border border-slate-100 rounded-2xl p-12 flex flex-col items-center gap-3 text-center shadow-card">
                   <div className="h-14 w-14 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center">
                     <ClipboardList className="h-6 w-6 text-slate-300" />
                   </div>
@@ -7270,7 +7304,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {/* Class Info Box - Minimal & Clean */}
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl mb-4 space-y-2">
+                <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl mb-4 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-bold text-slate-900 truncate">{selectedCell.slot.course}</span>
                     <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 shrink-0">
@@ -7332,7 +7366,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     )}
                   </div>
                 ) : selectedCell.type === "own" && approvedReq ? (
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-800 space-y-2 mb-2">
+                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl text-center text-xs text-slate-800 space-y-2 mb-2">
                     <CheckCircle className="h-6 w-6 mx-auto text-slate-600" />
                     <p className="font-bold">Class Handed Over</p>
                     <p className="text-slate-500">This class has been handed over to <strong>{approvedReq.coverStaffName}</strong>.</p>
@@ -7389,7 +7423,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => setModalTab("handover")}
-                      className="w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 transition-all shadow-2xs cursor-pointer group flex items-start gap-3"
+                      className="w-full text-left p-3.5 rounded-xl border border-slate-100 bg-white hover:border-slate-400 hover:bg-slate-50 transition-all shadow-2xs cursor-pointer group flex items-start gap-3"
                     >
                       <div className="p-2 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition-colors shrink-0 mt-0.5">
                         <Send className="w-5 h-5" />
@@ -8164,7 +8198,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 </div>
 
                 {/* Session Details Card */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4 space-y-2">
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl mb-4 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-bold text-slate-900 truncate">{selectedCell.slot.course}</span>
                     <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-indigo-100 text-indigo-700 shrink-0">
@@ -8419,12 +8453,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           return (
             <div className="space-y-6 font-sans">
               {/* Interactive 4-Dropdown Selector Bar: Department -> Semester -> Subject -> Week */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs font-sans">
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card font-sans">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
                     {/* 1. Department */}
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
+                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Department</label>
                       <select
                         value={activeDept}
                         onChange={(e) => {
@@ -8445,7 +8479,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                     {/* 2. Semester */}
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
+                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Semester</label>
                       <select
                         value={activeSem}
                         onChange={(e) => {
@@ -8469,7 +8503,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                     {/* 3. Subject */}
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Subject</label>
+                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Subject</label>
                       <select
                         value={activeSubj}
                         onChange={(e) => setTrackerSubject(e.target.value)}
@@ -8482,7 +8516,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                     {/* 4. Week */}
                     <div className="space-y-1">
-                      <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Week</label>
+                      <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Week</label>
                       <select
                         value={trackerWeek}
                         onChange={(e) => setTrackerWeek(parseInt(e.target.value, 10))}
@@ -8559,7 +8593,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             </button>
 
                             <button
+                              disabled={deletingWeeklyTask}
                               onClick={async () => {
+                                if (deletingWeeklyTask) return;
                                 const confirmed = await showConfirm({
                                   title: `Delete Week ${trackerWeek} Task?`,
                                   message: `Are you sure you want to delete the task "${currentTask.task_name}" for ${activeSubj} (Week ${trackerWeek})? This will remove the task assignment and student tracker data for this week.`,
@@ -8569,14 +8605,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 });
                                 if (!confirmed) return;
 
-                                const res = await deleteWeeklyTask(currentTask.class_group, activeSubj, trackerWeek);
-                                if (res.success) {
-                                  toast(`Week ${trackerWeek} task deleted successfully.`, "success");
-                                } else {
-                                  toast(res.message || "Failed to delete task.", "error");
+                                setDeletingWeeklyTask(true);
+                                try {
+                                  const res = await deleteWeeklyTask(currentTask.class_group, activeSubj, trackerWeek);
+                                  if (res.success) {
+                                    toast(`Week ${trackerWeek} task deleted successfully.`, "success");
+                                  } else {
+                                    toast(res.message || "Failed to delete task.", "error");
+                                  }
+                                } finally {
+                                  setDeletingWeeklyTask(false);
                                 }
                               }}
-                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-rose-200 hover:bg-rose-50 text-rose-600 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-rose-200 hover:bg-rose-50 text-rose-600 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Trash2 className="h-3.5 w-3.5 text-rose-600" />
                               <span>Delete Task</span>
@@ -8599,10 +8640,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
 
                     {currentTask ? (
-                      <div className="bg-white border border-slate-150 p-4 rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-xs">
+                      <div className="bg-white border border-slate-100 p-4 rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-card">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold font-mono rounded border border-indigo-150">
+                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold font-mono rounded border border-indigo-100">
                               Week {trackerWeek}
                             </span>
                             <div className="text-sm font-extrabold text-slate-900 leading-snug">
@@ -8614,7 +8655,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               href={currentTask.task_pdf_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-150 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
+                              className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
                             >
                               <FileText className="h-3.5 w-3.5 text-indigo-600" />
                               <span>View Reference Document</span>
@@ -8667,7 +8708,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               })()}
 
               {/* Student Submissions & Evaluation */}
-              <div className="bg-white border border-slate-250/60 rounded-xl p-6 shadow-xs space-y-5">
+              <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-5">
                 {/* Student Submissions Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2.5">
@@ -8687,7 +8728,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     return (
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[10px] font-bold">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full border border-indigo-150 flex items-center gap-1.5">
+                          <span className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-full border border-indigo-100 flex items-center gap-1.5">
                             <Sparkles className="h-3 w-3 text-indigo-500" />
                             <span>15-Wk Completion: <strong className="text-indigo-900">{overallPct}%</strong></span>
                           </span>
@@ -8722,7 +8763,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-slate-50 mb-2">
                           <Users className="h-6 w-6 text-slate-300" />
                         </div>
-                        <p className="text-xs text-slate-455 italic">No students registered in class &ldquo;{activeClassGroup}&rdquo;.</p>
+                        <p className="text-xs text-slate-500 italic">No students registered in class &ldquo;{activeClassGroup}&rdquo;.</p>
                       </div>
                     );
                   }
@@ -8800,7 +8841,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   return (
                     <div className="space-y-4">
                       {/* Filters Header Bar */}
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
                         <div className="flex flex-wrap items-center gap-3">
                           <div className="relative">
                             <input
@@ -8808,13 +8849,13 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               value={trackerSearchTerm}
                               onChange={(e) => setTrackerSearchTerm(e.target.value)}
                               placeholder=" Search by student name or roll..."
-                              className="pl-4 pr-4 py-2.5 text-xs border border-slate-205 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] w-64 bg-white font-medium text-slate-800"
+                              className="pl-4 pr-4 py-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] w-64 bg-white font-medium text-slate-800"
                             />
                           </div>
                           <select aria-label="Status filter"
                             value={trackerStatusFilter}
                             onChange={(e) => setTrackerStatusFilter(e.target.value)}
-                            className="px-3.5 py-2.5 text-xs border border-slate-205 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white font-bold text-slate-700 cursor-pointer"
+                            className="px-3.5 py-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D528A2]/10 focus:border-[#D528A2] bg-white font-bold text-slate-700 cursor-pointer"
                           >
                             <option value="all">All Statuses</option>
                             <option value="submitted">Submitted</option>
@@ -8848,10 +8889,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         </div>
                       </div>
 
-                      <div className="overflow-x-auto rounded-xl border border-slate-205 shadow-xs bg-white scroll-touch">
+                      <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs bg-white scroll-touch">
                         <table className="w-full border-collapse text-left text-xs font-semibold min-w-[980px]">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold uppercase text-[9.5px] whitespace-nowrap">
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9.5px] whitespace-nowrap">
                               <th className="p-4 w-[50px] text-center border-r border-slate-100/60">S.No</th>
                               <th className="p-4 border-r border-slate-100/60 min-w-[180px]">Student Name / Roll</th>
                               <th className="p-4 border-r border-slate-100/60 min-w-[260px]">15-Week Progress Matrix</th>
@@ -8880,7 +8921,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     {absoluteIdx + 1}
                                   </td>
                                   <td className="p-4 border-r border-slate-100/60">
-                                    <div className="font-bold text-slate-805">{student.name}</div>
+                                    <div className="font-bold text-slate-800">{student.name}</div>
                                     <div className="text-[10px] text-slate-400 font-mono mt-0.5">{student.id}</div>
                                     {(() => {
                                       const { lc, hr } = getStudentCodingStats(student);
@@ -8949,7 +8990,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                           <div className="flex items-center justify-between text-[10px]">
                                             <span className="font-extrabold text-slate-700">{studentSubmittedWeeks} / {assignedWeeksCount || 15} Wks ({completionPct}%)</span>
                                             {studentGradedWeeks > 0 && (
-                                              <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-150">
+                                              <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
                                                 {studentGradedWeeks} Graded
                                               </span>
                                             )}
@@ -9003,7 +9044,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                         <span>View Work</span>
                                       </a>
                                     ) : (
-                                      <span className="text-slate-350 text-xs">—</span>
+                                      <span className="text-slate-300 text-xs">—</span>
                                     )}
                                   </td>
                                   <td className="p-4">
@@ -9051,7 +9092,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </div>
 
                       {/* Pagination Bar */}
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150 text-xs font-bold text-slate-700">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs font-bold text-slate-700">
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Rows per page:</span>
                           <select
@@ -9086,7 +9127,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <span>Previous</span>
                           </button>
 
-                          <span className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-150 font-black text-xs">
+                          <span className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100 font-black text-xs">
                             Page {validPage} of {totalPages || 1}
                           </span>
 
@@ -9109,17 +9150,17 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           onOpenChange={(next) => { if (!next) setEditingTask(false); }}
                           ariaLabel={currentTask ? "Edit assignment details" : "Assign new task"}
                           overlayClassName="bg-slate-900/60 backdrop-blur-sm p-4"
-                          panelClassName="bg-white rounded-xl border-gray-150 shadow-xl max-w-2xl overflow-hidden flex flex-col max-h-[90vh] p-0 space-y-0"
+                          panelClassName="bg-white rounded-xl border-gray-100 shadow-xl max-w-2xl overflow-hidden flex flex-col max-h-[90vh] p-0 space-y-0"
                         >
                             <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-gray-50">
                               <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-1.5">
-                                <BookOpen className="h-5 w-5 text-indigo-650" />
+                                <BookOpen className="h-5 w-5 text-indigo-600" />
                                 <span>{currentTask ? "Edit Assignment Details" : "Assign New Task"}</span>
                               </h3>
                               <button
                                 onClick={() => setEditingTask(false)}
                                 aria-label="Close task form"
-                                className="p-1 hover:bg-gray-250 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
+                                className="p-1 hover:bg-gray-200 rounded-lg transition-colors cursor-pointer text-gray-500 hover:text-gray-800"
                               >
                                 <X className="h-4 w-4" />
                               </button>
@@ -9263,7 +9304,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 </div>
                               </div>
 
-                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-[11px] text-slate-700 font-medium">
+                              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between text-[11px] text-slate-700 font-medium">
                                 <span>Deadline: <strong className="font-extrabold text-slate-900">1 Week from Assignment</strong></span>
                                 <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 font-bold rounded-lg uppercase tracking-wider text-[9px]">
                                   {trackerWeek % 2 === 0 ? "ASSESSMENT WEEK" : "REGULAR WEEK"}
@@ -9274,7 +9315,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => setEditingTask(false)}
-                                  className="px-4 py-2 hover:bg-gray-100 text-gray-655 rounded-xl transition-all font-bold cursor-pointer text-xs"
+                                  className="px-4 py-2 hover:bg-gray-100 text-gray-700 rounded-xl transition-all font-bold cursor-pointer text-xs"
                                 >
                                   Cancel
                                 </button>
@@ -9653,7 +9694,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
           return (
             <div className="space-y-6 font-sans">
               {/* ── Sub-Tabs Switcher ── */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-100 rounded-2xl p-4 shadow-card">
                 <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-xl border border-slate-200/80 w-fit">
                   <button
                     type="button"
@@ -9672,7 +9713,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     onClick={() => setAcadActiveSubTab("weekly")}
                     className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${
                       acadActiveSubTab === "weekly"
-                        ? "bg-white text-indigo-650 shadow-xs"
+                        ? "bg-white text-indigo-600 shadow-xs"
                         : "text-slate-500 hover:text-slate-800"
                     }`}
                   >
@@ -9692,7 +9733,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
               {acadActiveSubTab === "ledger" && (
                 <div className="space-y-6 animate-fadeIn">
                   {/* Header Banner */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                       <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-1">
                         <BookOpen className="w-3.5 h-3.5" />
@@ -9728,25 +9769,25 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                   {/* 4 Summary KPI Boxes */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card space-y-1">
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Periods Logged</span>
                       <div className="text-xl font-black text-slate-900">{totalPeriodsCount}</div>
                       <span className="text-[9px] text-slate-400 font-semibold block">{subjectPeriodsCount} in active view</span>
                     </div>
 
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card space-y-1">
                       <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider block">Units in Progress</span>
                       <div className="text-xl font-black text-indigo-900">{uniqueUnitsCovered} Units</div>
                       <span className="text-[9px] text-indigo-500/80 font-semibold block">Syllabus progression</span>
                     </div>
 
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card space-y-1">
                       <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">Academic Courses</span>
                       <div className="text-xl font-black text-emerald-900">{availableAcadSubjects.length} Subjects</div>
                       <span className="text-[9px] text-emerald-600/80 font-semibold block">{uniqueSubjectsCovered} with logged classes</span>
                     </div>
 
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card space-y-1">
                       <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Latest Conduction Date</span>
                       <div className="text-sm font-black text-slate-900 truncate mt-1">{latestLogDate}</div>
                       <span className="text-[9px] text-slate-400 font-semibold block">Authoritative date log</span>
@@ -9754,7 +9795,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
 
                   {/* Subject Selector Bar */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card space-y-3">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">Select Academic Subject to Filter</span>
                       <span className="text-xs font-bold text-slate-500 inline-flex items-center gap-1.5">
@@ -9806,7 +9847,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
 
                   {/* Filter Controls Bar */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2 flex-wrap flex-1 min-w-[280px]">
                       {/* Search Input */}
                       <div className="relative flex-1 min-w-[200px]">
@@ -9875,7 +9916,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   {/* Date-wise Period Conduction Feed */}
                   <div className="space-y-4">
                     {filteredLogs.length === 0 ? (
-                      <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-3 shadow-xs">
+                      <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center space-y-3 shadow-card">
                         <div className="h-12 w-12 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto">
                           <BookOpen className="w-6 h-6" />
                         </div>
@@ -9904,7 +9945,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                         return (
                           <div
                             key={log.id}
-                            className={`bg-white border rounded-xl p-5 shadow-2xs hover:shadow-xs transition-all space-y-3 ${
+                            className={`bg-white border rounded-xl p-5 shadow-2xs hover:shadow-card transition-all space-y-3 ${
                               isNotDelivered ? "border-rose-200/80 bg-rose-50/10" : "border-slate-200"
                             }`}
                           >
@@ -9963,7 +10004,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             {/* Topic Covered Body */}
                             <div className="space-y-1.5">
                               <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Topic Covered</span>
-                              <p className="text-xs font-bold text-slate-800 leading-relaxed bg-slate-50/80 border border-slate-150 p-3 rounded-xl">
+                              <p className="text-xs font-bold text-slate-800 leading-relaxed bg-slate-50/80 border border-slate-100 p-3 rounded-xl">
                                 {log.topic}
                               </p>
                             </div>
@@ -10355,12 +10396,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                 return (
                   <div className="space-y-6 font-sans animate-fadeIn">
                     {/* Interactive 4-Dropdown Filter Bar */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
                           {/* 1. Department */}
                           <div className="space-y-1">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Department</label>
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Department</label>
                             <select
                               value={activeWeeklyDept}
                               onChange={(e) => {
@@ -10377,7 +10418,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                           {/* 2. Semester */}
                           <div className="space-y-1">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Semester</label>
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Semester</label>
                             <select
                               value={activeWeeklySem}
                               onChange={(e) => {
@@ -10393,7 +10434,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                           {/* 3. Subject */}
                           <div className="space-y-1">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Academic Course</label>
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Academic Course</label>
                             <select
                               value={activeWeeklySubj}
                               onChange={(e) => setAcadWeeklySubject(e.target.value)}
@@ -10406,7 +10447,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                           {/* 4. Week */}
                           <div className="space-y-1">
-                            <label className="text-[10px] text-slate-455 font-extrabold uppercase tracking-wider block">Target Week</label>
+                            <label className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block">Target Week</label>
                             <select
                               value={acadWeeklyWeek}
                               onChange={(e) => setAcadWeeklyWeek(parseInt(e.target.value, 10))}
@@ -10458,7 +10499,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               <button
                                 onClick={() => {
                                   setAcadTaskName(currentWeeklyTask.task_name || "");
-                                  setAcadTaskDate(currentWeeklyTask.task_date || currentWeeklyTask.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10));
+                                  setAcadTaskDate(currentWeeklyTask.task_date || currentWeeklyTask.created_at?.slice(0, 10) || getLocalDateStr());
                                   setAcadTaskPdf(currentWeeklyTask.task_pdf_url || "");
                                   setAcadIncludeQuiz(Boolean(currentWeeklyTask.quiz_topic));
                                   setAcadQuizUrl(currentWeeklyTask.quiz_topic && currentWeeklyTask.quiz_topic !== "Enabled" ? currentWeeklyTask.quiz_topic : "");
@@ -10475,7 +10516,9 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                               </button>
 
                               <button
+                                disabled={deletingAcadWeeklyTask}
                                 onClick={async () => {
+                                  if (deletingAcadWeeklyTask) return;
                                   if (!(await showConfirm({
                                     title: `Delete Week ${acadWeeklyWeek} Academic Task?`,
                                     message: `Are you sure you want to delete the academic task "${currentWeeklyTask.task_name}" for ${activeWeeklySubj} (Week ${acadWeeklyWeek})? This will reset all student marks for this week.`,
@@ -10483,14 +10526,19 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     confirmLabel: "Delete Task"
                                   }))) return;
 
-                                  const res = await deleteWeeklyAcademicTask(activeWeeklyClassGroup, activeWeeklySubj, acadWeeklyWeek);
-                                  if (res.success) {
-                                    toast(`Week ${acadWeeklyWeek} academic task deleted successfully.`, "success");
-                                  } else {
-                                    toast(res.message || "Failed to delete task.", "error");
+                                  setDeletingAcadWeeklyTask(true);
+                                  try {
+                                    const res = await deleteWeeklyAcademicTask(activeWeeklyClassGroup, activeWeeklySubj, acadWeeklyWeek);
+                                    if (res.success) {
+                                      toast(`Week ${acadWeeklyWeek} academic task deleted successfully.`, "success");
+                                    } else {
+                                      toast(res.message || "Failed to delete task.", "error");
+                                    }
+                                  } finally {
+                                    setDeletingAcadWeeklyTask(false);
                                   }
                                 }}
-                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-rose-200 hover:bg-rose-50 text-rose-600 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0"
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold border border-rose-200 hover:bg-rose-50 text-rose-600 bg-white shadow-xs flex items-center gap-1.5 cursor-pointer transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <Trash2 className="h-3.5 w-3.5 text-rose-600" />
                                 <span>Delete Task</span>
@@ -10500,7 +10548,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             <button
                               onClick={() => {
                                 setAcadTaskName("");
-                                setAcadTaskDate(new Date().toISOString().slice(0, 10));
+                                setAcadTaskDate(getLocalDateStr());
                                 setAcadTaskPdf("");
                                 setAcadIncludeQuiz(true);
                                 setAcadQuizUrl("");
@@ -10520,10 +10568,10 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </div>
 
                       {currentWeeklyTask ? (
-                        <div className="bg-white border border-slate-150 p-4 rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-xs">
+                        <div className="bg-white border border-slate-100 p-4 rounded-xl flex flex-col md:flex-row justify-between md:items-center gap-4 shadow-card">
                           <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold font-mono rounded border border-indigo-150">
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold font-mono rounded border border-indigo-100">
                                 Week {acadWeeklyWeek}
                               </span>
                               <span className="px-2 py-0.5 bg-slate-50 text-slate-700 text-[10px] font-bold rounded border border-slate-200 flex items-center gap-1">
@@ -10591,7 +10639,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                 href={currentWeeklyTask.task_pdf_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-150 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
+                                className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-colors"
                               >
                                 <FileText className="h-3.5 w-3.5 text-indigo-600" />
                                 <span>View Reference Material</span>
@@ -10628,11 +10676,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
 
                     {/* Student Submissions & 3-Component Evaluation Table */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-5">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-5">
                       {/* Top Action Bar */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="p-2 rounded-xl bg-indigo-650 text-white">
+                          <div className="p-2 rounded-xl bg-indigo-600 text-white">
                             <ClipboardList className="h-4 w-4" />
                           </div>
                           <div>
@@ -10735,7 +10783,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </div>
 
                       {/* Filter Bar */}
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
                         <div className="flex flex-wrap items-center gap-3">
                           <div className="relative">
                             <input
@@ -10831,7 +10879,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     </td>
                                     <td className="p-3 border-r border-slate-100">
                                       <div className="font-bold text-slate-900 leading-tight">{student.name}</div>
-                                      <div className="text-[10px] text-indigo-650 font-mono font-bold mt-0.5 select-all">
+                                      <div className="text-[10px] text-indigo-600 font-mono font-bold mt-0.5 select-all">
                                         {student.email}
                                       </div>
                                       <div className="text-[9.5px] text-slate-400 font-mono">
@@ -10840,7 +10888,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                     </td>
                                     <td className="p-3 text-center border-r border-slate-100">
                                       {currentAttStatus === "—" ? (
-                                        <span className="inline-flex items-center justify-center text-xs font-bold text-slate-350 select-none">
+                                        <span className="inline-flex items-center justify-center text-xs font-bold text-slate-300 select-none">
                                           —
                                         </span>
                                       ) : (
@@ -11010,7 +11058,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                           </span>
                                         </div>
                                       ) : (
-                                        <span className="text-slate-350 text-xs">—</span>
+                                        <span className="text-slate-300 text-xs">—</span>
                                       )}
                                     </td>
                                     {/* Remarks & Save Status */}
@@ -11065,7 +11113,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                       </div>
 
                       {/* Pagination Controls */}
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-150 text-xs font-bold text-slate-700">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs font-bold text-slate-700">
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Rows per page:</span>
                           <select
@@ -11199,7 +11247,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                             </div>
 
                             {/* Active Evaluation Components Checkboxes & URLs */}
-                            <div className="space-y-3 p-4 bg-slate-50/90 rounded-2xl border border-slate-200 shadow-2xs">
+                            <div className="space-y-3 p-4 bg-slate-50/90 rounded-2xl border border-slate-100 shadow-2xs">
                               <div className="flex items-center justify-between">
                                 <label className="text-[10.5px] font-black text-slate-700 uppercase tracking-wider block">
                                   Select Evaluation Components for Week {acadWeeklyWeek}
@@ -11368,7 +11416,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 text-xs">
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-2 text-xs">
                           <div className="space-y-0.5">
                             <div className="flex items-center gap-1.5">
                               <span className="font-extrabold text-slate-800">{dayName}</span>
@@ -11627,7 +11675,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                     </div>
 
                     <form onSubmit={handleSubmitAcadEditRequest} className="p-5 space-y-4">
-                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
+                      <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 space-y-2 text-xs">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] uppercase font-black tracking-wider text-slate-400">Current Log Record</span>
                           <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-bold">
@@ -11720,8 +11768,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
               {/* Statistics Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs flex items-center gap-4">
-                  <div className="p-3 bg-indigo-50 border border-indigo-100 text-indigo-650 rounded-xl">
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex items-center gap-4">
+                  <div className="p-3 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-xl">
                     <Calendar className="h-5 w-5" />
                   </div>
                   <div>
@@ -11730,8 +11778,8 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs flex items-center gap-4">
-                  <div className="p-3 bg-pink-50 border border-pink-100 text-pink-650 rounded-xl">
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex items-center gap-4">
+                  <div className="p-3 bg-pink-50 border border-pink-100 text-pink-600 rounded-xl">
                     <Sparkles className="h-5 w-5" />
                   </div>
                   <div>
@@ -11740,12 +11788,12 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs flex items-center gap-4">
-                  <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-650 rounded-xl">
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex items-center gap-4">
+                  <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl">
                     <GraduationCap className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="text-[10px] text-slate-405 font-extrabold uppercase tracking-wide">Average Score</span>
+                    <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide">Average Score</span>
                     <p className="text-2xl font-black text-slate-800">{completedCount > 0 ? `${avgScore} / 100` : "N/A"}</p>
                   </div>
                 </div>
@@ -11755,15 +11803,15 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
 
                 {/* Left Column: Upcoming Evaluations (1/3 width) */}
                 <div className="lg:col-span-1 space-y-4">
-                  <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs space-y-4">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">Upcoming Reviews</h3>
 
                     {pendingDemos.length > 0 ? (
                       <div className="space-y-4">
                         {pendingDemos.map(demo => (
-                          <div key={demo.id} className="p-4 bg-slate-50/50 border border-slate-150 rounded-xl space-y-2">
+                          <div key={demo.id} className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl space-y-2">
                             <div className="flex justify-between items-center gap-2">
-                              <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-150 text-indigo-600 text-[8px] font-black uppercase rounded truncate">
+                              <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-600 text-[8px] font-black uppercase rounded truncate">
                                 {demo.subject}
                               </span>
                               {demo.status === "reallocation_required" ? (
@@ -11771,17 +11819,17 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({
                                   Reschedule Required (Leave Impacted)
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 bg-amber-55 text-amber-800 text-[8px] font-black uppercase rounded border border-amber-200 shrink-0">
+                                <span className="px-2 py-0.5 bg-amber-50 text-amber-800 text-[8px] font-black uppercase rounded border border-amber-200 shrink-0">
                                   {demo.status === "confirmed" ? "Confirmed" : "Pending"}
                                 </span>
                               )}
                             </div>
                             <div>
                               <p className="text-[11.5px] font-bold text-slate-800">{demo.dateStr}</p>
-                              <p className="text-[10px] text-slate-455 font-semibold">{demo.timeSlot}</p>
+                              <p className="text-[10px] text-slate-500 font-semibold">{demo.timeSlot}</p>
                             </div>
-                            <div className="text-[9.5px] text-slate-505 font-medium">
-                              Evaluator: <span className="font-bold text-slate-705">{demo.smeName}</span>
+                            <div className="text-[9.5px] text-slate-500 font-medium">
+                              Evaluator: <span className="font-bold text-slate-700">{demo.smeName}</span>
                             </div>
 
                             {demo.status === "reallocation_required" ? (
@@ -11836,28 +11884,44 @@ Request Reschedule →
                         <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
                           <h4 className="text-[10px] font-black uppercase text-indigo-500 tracking-wider">Swap Proposals Received</h4>
                           {received.map((req: any) => (
-                            <div key={req.id} className="p-3 bg-indigo-50/20 border border-indigo-150 rounded-xl space-y-2 text-xs">
+                            <div key={req.id} className="p-3 bg-indigo-50/20 border border-indigo-100 rounded-xl space-y-2 text-xs">
                               <p className="font-semibold text-slate-800 dark:text-slate-100">
                                 {req.mentorName} wants to swap:
                               </p>
-                              <p className="text-[10.5px] text-slate-550">{req.subject} • {req.dateStr} • {req.timeSlot}</p>
-                              {req.reason && <p className="text-[10px] text-slate-450 italic">"{req.reason}"</p>}
+                              <p className="text-[10.5px] text-slate-500">{req.subject} • {req.dateStr} • {req.timeSlot}</p>
+                              {req.reason && <p className="text-[10px] text-slate-400 italic">"{req.reason}"</p>}
                               <div className="flex gap-2 pt-1">
                                 <button
+                                  disabled={resolvingDemoSwapId === req.id}
                                   onClick={async () => {
-                                    const res = await resolveDemoSwap(req.id, "rejected");
-                                    if (res.success) toast("Proposal rejected.", "success");
+                                    if (resolvingDemoSwapId) return;
+                                    setResolvingDemoSwapId(req.id);
+                                    try {
+                                      const res = await resolveDemoSwap(req.id, "rejected");
+                                      if (res.success) toast("Proposal rejected.", "success");
+                                      else toast(res.message || "Failed to reject the proposal.", "error");
+                                    } finally {
+                                      setResolvingDemoSwapId(null);
+                                    }
                                   }}
-                                  className="flex-1 py-1 text-[10px] font-bold border border-slate-250 hover:bg-slate-100 rounded-lg text-slate-600 transition-all cursor-pointer text-center"
+                                  className="flex-1 py-1 text-[10px] font-bold border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-600 transition-all cursor-pointer text-center disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Reject
                                 </button>
                                 <button
+                                  disabled={resolvingDemoSwapId === req.id}
                                   onClick={async () => {
-                                    const res = await resolveDemoSwap(req.id, "pending_sme");
-                                    if (res.success) toast("Proposal accepted! Awaiting SME approval.", "success");
+                                    if (resolvingDemoSwapId) return;
+                                    setResolvingDemoSwapId(req.id);
+                                    try {
+                                      const res = await resolveDemoSwap(req.id, "pending_sme");
+                                      if (res.success) toast("Proposal accepted! Awaiting SME approval.", "success");
+                                      else toast(res.message || "Failed to accept the proposal.", "error");
+                                    } finally {
+                                      setResolvingDemoSwapId(null);
+                                    }
                                   }}
-                                  className="flex-1 py-1 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all cursor-pointer text-center"
+                                  className="flex-1 py-1 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all cursor-pointer text-center disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Accept
                                 </button>
@@ -11876,12 +11940,12 @@ Request Reschedule →
                       if (sent.length === 0) return null;
                       return (
                         <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
-                          <h4 className="text-[10px] font-black uppercase text-slate-405 tracking-wider">Sent Swap Requests</h4>
+                          <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Sent Swap Requests</h4>
                           <div className="space-y-2">
                             {sent.map((req: any) => (
-                              <div key={req.id} className="p-2.5 bg-slate-50 border border-slate-150 rounded-xl flex items-center justify-between text-[11px] gap-2">
+                              <div key={req.id} className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between text-[11px] gap-2">
                                 <div className="min-w-0">
-                                  <p className="font-bold text-slate-700 dark:text-slate-350 truncate">Peer: {req.proposedMentorName}</p>
+                                  <p className="font-bold text-slate-700 dark:text-slate-300 truncate">Peer: {req.proposedMentorName}</p>
                                   <p className="text-[9.5px] text-slate-400">{req.dateStr} • {req.timeSlot}</p>
                                 </div>
                                 <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase shrink-0 ${req.status === "approved"
@@ -11890,7 +11954,7 @@ Request Reschedule →
                                       ? "bg-rose-100 text-rose-700"
                                       : req.status === "pending_sme"
                                         ? "bg-indigo-100 text-indigo-700"
-                                        : "bg-amber-105 text-amber-700"
+                                        : "bg-amber-100 text-amber-700"
                                   }`}>
                                   {req.status === "pending_peer" ? "Peer Pend" : req.status === "pending_sme" ? "SME Pend" : req.status}
                                 </span>
@@ -11905,13 +11969,13 @@ Request Reschedule →
 
                 {/* Right Column: Completed Evaluations & Feedback (2/3 width) */}
                 <div className="lg:col-span-2 space-y-4">
-                  <div className="bg-white border border-slate-205 rounded-xl p-5 shadow-xs space-y-4">
-                    <h3 className="text-xs font-black text-slate-805 uppercase tracking-widest border-b border-slate-100 pb-2">Completed Evaluations</h3>
+                  <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">Completed Evaluations</h3>
 
                     {completedDemos.length > 0 ? (
                       <div className="space-y-4">
                         {completedDemos.map(demo => (
-                          <div key={demo.id} className="p-5 border border-slate-150 hover:border-indigo-200 rounded-xl bg-white transition-all shadow-xs flex flex-col md:flex-row justify-between gap-4">
+                          <div key={demo.id} className="p-5 border border-slate-100 hover:border-indigo-200 rounded-xl bg-white transition-all shadow-card flex flex-col md:flex-row justify-between gap-4">
                             <div className="space-y-2 flex-grow">
                               <div className="flex items-center gap-2">
                                 <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[8.5px] font-black uppercase rounded-lg">
@@ -11919,8 +11983,8 @@ Request Reschedule →
                                 </span>
                                 <span className="text-[9.5px] font-semibold text-slate-400">{demo.dateStr} • {demo.timeSlot}</span>
                               </div>
-                              <div className="text-[10px] text-slate-505 font-medium">
-                                Evaluator: <span className="font-bold text-slate-705">{demo.smeName}</span> • Cohort: <span className="font-bold text-slate-705">{demo.stream}</span>
+                              <div className="text-[10px] text-slate-500 font-medium">
+                                Evaluator: <span className="font-bold text-slate-700">{demo.smeName}</span> • Cohort: <span className="font-bold text-slate-700">{demo.stream}</span>
                               </div>
                               {(() => {
                                 // Phase C: show which department compliance criteria were flagged
@@ -11940,7 +12004,7 @@ Request Reschedule →
                                 ) : null;
                               })()}
                               {demo.comments && (
-                                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl mt-2 text-xs text-slate-655 font-medium leading-relaxed italic">
+                                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl mt-2 text-xs text-slate-700 font-medium leading-relaxed italic">
                                   &ldquo;{demo.comments}&rdquo;
                                 </div>
                               )}
@@ -12017,11 +12081,11 @@ Request Reschedule →
           d.setDate(monday.getDate() + i);
           swapGridDates.push({
             day: dayOrder[i],
-            dateStr: d.toISOString().slice(0, 10),
+            dateStr: getInstitutionDateStr(d),
             formatted: d.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
           });
         }
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = getLocalDateStr();
         // Show the OTHER mentor's timetable — use pre-computed memoized slots
         const theirSlots = memoizedSwapTargetSlots;
         const swapGridRows = rows; // reuse computed time-column structure from main timetable
@@ -12205,7 +12269,7 @@ Request Reschedule →
                                           </div>
                                         ) : (
                                           <div className="h-full flex items-center justify-center">
-                                            <div className="w-full h-full border border-dashed border-slate-150 rounded-xl bg-slate-50/20" />
+                                            <div className="w-full h-full border border-dashed border-slate-100 rounded-xl bg-slate-50/20" />
                                           </div>
                                         )}
                                       </td>
@@ -12337,7 +12401,7 @@ Request Reschedule →
             <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
               <RefreshCw className="h-5 w-5 text-indigo-500 animate-spin-slow" />
               <div>
-                <h3 className="text-sm font-black uppercase text-slate-855 dark:text-white tracking-wider">
+                <h3 className="text-sm font-black uppercase text-slate-900 dark:text-white tracking-wider">
                   Request Internal Swap
                 </h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">
@@ -12348,7 +12412,7 @@ Request Reschedule →
 
             {demoSwapStep === 1 ? (
               <div className="space-y-4">
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-150 text-[11px] text-slate-600 dark:text-slate-350 space-y-1">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
                   <p><strong>Demo Subject:</strong> {demoSwapModalSession.subject} (Cohort: {demoSwapModalSession.stream})</p>
                   <p><strong>Date / Period:</strong> {demoSwapModalSession.dateStr} • {demoSwapModalSession.timeSlot}</p>
                 </div>
@@ -12358,7 +12422,7 @@ Request Reschedule →
                   <select
                     value={demoSwapReason}
                     onChange={(e) => setDemoSwapReason(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-205 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                     aria-label="Reason for Swap"
                   >
                     <option value="I am unavailable">I am unavailable</option>
@@ -12376,7 +12440,7 @@ Request Reschedule →
                     value={demoSwapRemarks}
                     onChange={(e) => setDemoSwapRemarks(e.target.value)}
                     placeholder="Describe details for peer mentor review..."
-                    className="w-full px-3 py-2 rounded-xl border border-slate-205 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     aria-label="Remarks (Optional)"
                   />
                 </div>
@@ -12385,14 +12449,14 @@ Request Reschedule →
                   <button
                     type="button"
                     onClick={() => setDemoSwapModalSession(null)}
-                    className="flex-1 px-4 py-2.5 text-xs font-black text-slate-655 border border-slate-200 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    className="flex-1 px-4 py-2.5 text-xs font-black text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
                     onClick={() => setDemoSwapStep(2)}
-                    className="flex-1 px-4 py-2.5 text-xs font-black text-white bg-indigo-650 hover:bg-indigo-700 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    className="flex-1 px-4 py-2.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     Find Eligible Peers
                   </button>
@@ -12417,7 +12481,7 @@ Request Reschedule →
                         <div className="flex items-center gap-2 text-right shrink-0">
                           <div>
                             <span className="text-[8px] font-black uppercase text-indigo-500 block">Match</span>
-                            <span className="text-xs font-black text-indigo-605 dark:text-indigo-400">{peer.score}%</span>
+                            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">{peer.score}%</span>
                           </div>
                           {selectedProposedPeer?.mentorId === peer.mentorId && (
                             <Check className="h-4 w-4 text-indigo-500" />
@@ -12434,7 +12498,7 @@ Request Reschedule →
                   <button
                     type="button"
                     onClick={() => setDemoSwapStep(1)}
-                    className="flex-1 px-4 py-2.5 text-xs font-black text-slate-655 border border-slate-200 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    className="flex-1 px-4 py-2.5 text-xs font-black text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     Back
                   </button>
@@ -12442,7 +12506,7 @@ Request Reschedule →
                     type="button"
                     disabled={demoSwapSubmitting || !selectedProposedPeer}
                     onClick={handleSubmitInternalSwap}
-                    className="flex-grow px-4 py-2.5 text-xs font-black text-white bg-indigo-650 hover:bg-indigo-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                    className="flex-grow px-4 py-2.5 text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-1.5 shadow-xs"
                   >
                     {demoSwapSubmitting ? (
                       <>
@@ -12528,7 +12592,7 @@ Request Reschedule →
 
               <div className="space-y-4 overflow-y-auto pr-1 flex-1">
                 {/* Current Session Summary Card */}
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-2 text-xs">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700/80 space-y-2 text-xs">
                   <div className="flex justify-between items-center gap-2">
                     <span className="font-extrabold text-slate-800 dark:text-white text-xs">
                       {rescheduleModalSession.subject}

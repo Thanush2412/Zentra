@@ -103,7 +103,7 @@ export const KAMAssessmentsOversight: React.FC<{
   return (
     <div className="space-y-6 font-sans">
       {/* Header */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-black text-slate-900">Regional Assessment & CIA Exam Benchmark</h2>
           <p className="text-xs text-slate-400 font-semibold mt-0.5">
@@ -141,7 +141,7 @@ export const KAMAssessmentsOversight: React.FC<{
       </div>
 
       {/* Assessment Cycle Milestone Breakdown */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-card space-y-4">
         <div>
           <h3 className="text-sm font-black text-slate-900">Regional Assessment Cycle Milestones</h3>
           <p className="text-xs font-semibold text-slate-400">Target vs achieved class score averages across internal evaluation phases</p>
@@ -150,7 +150,7 @@ export const KAMAssessmentsOversight: React.FC<{
         {breakdowns.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {breakdowns.map((b, idx) => (
-              <Card key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 shadow-none">
+              <Card key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2 shadow-none">
                 <CardContent className="p-0 space-y-2">
                   <div className="flex justify-between items-start">
                     {b.weightage ? (
@@ -183,7 +183,7 @@ export const KAMAssessmentsOversight: React.FC<{
       </div>
 
       {/* Department Scores Benchmark Table with Shadcn Table & Pagination */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+      <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-card space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
             <h3 className="text-sm font-black text-slate-900">Departmental Exam & CIA Score Matrix</h3>

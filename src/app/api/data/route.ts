@@ -138,7 +138,11 @@ export async function GET(request: Request) {
     // turn the dashboard load into an out-of-memory function. Any slice that comes
     // back exactly full is reported as truncated below, so short data is never
     // presented as complete data.
-    const CAPS = { mentors: 5000, slots: 40000, students: 5000, users: 5000, subjectGroups: 2000, colleges: 1000, academicEvents: 5000, facultyLeaves: 5000 };
+    const CAPS = {
+      mentors: 5000, slots: 40000, students: 5000, users: 5000, subjectGroups: 2000,
+      colleges: 1000, academicEvents: 5000, facultyLeaves: 5000,
+      demoSessions: 1000, demoSwaps: 200
+    };
 
     const mentorSql = kamHasColleges
       ? `SELECT * FROM mentors WHERE college_id IN ${kamInClause}`
@@ -211,6 +215,45 @@ export async function GET(request: Request) {
     const isLnd = role === "L and D";
     const needsDemo = isAdmin || isSME || isLnd || isCM || isMentor;
 
+    // Demo reads are per-role: a mentor only needs their own sessions, an SME only
+    // the ones they assess, a CM their campus (demo_sessions has no college_id, so
+    // scope via its mentors), and admin/L&D the institution. Unscoped slices used to
+    // send every campus's demos to every mentor.
+    let demoSessionSql: string;
+    let demoSessionParams: any[];
+    let demoSwapSql: string;
+    let demoSwapParams: any[];
+    if (isMentor && userId) {
+      demoSessionSql = `SELECT * FROM demo_sessions WHERE mentorId = ? ORDER BY created_at DESC LIMIT ${CAPS.demoSessions}`;
+      demoSessionParams = [userId];
+      demoSwapSql = `SELECT * FROM demo_swap_requests WHERE mentorId = ? OR proposedMentorId = ? ORDER BY created_at DESC LIMIT ${CAPS.demoSwaps}`;
+      demoSwapParams = [userId, userId];
+    } else if (isSME && userId) {
+      demoSessionSql = `SELECT * FROM demo_sessions WHERE smeId = ? ORDER BY created_at DESC LIMIT ${CAPS.demoSessions}`;
+      demoSessionParams = [userId];
+      demoSwapSql = `SELECT * FROM demo_swap_requests WHERE smeId = ? OR proposedSmeId = ? ORDER BY created_at DESC LIMIT ${CAPS.demoSwaps}`;
+      demoSwapParams = [userId, userId];
+    } else if (isCM) {
+      demoSessionSql = collegeId
+        ? `SELECT * FROM demo_sessions WHERE mentorId IN (SELECT id FROM mentors WHERE college_id = ?) ORDER BY created_at DESC LIMIT ${CAPS.demoSessions}`
+        : "SELECT 1 WHERE 1=0";
+      demoSessionParams = collegeId ? [collegeId] : [];
+      demoSwapSql = collegeId
+        ? `SELECT * FROM demo_swap_requests WHERE mentorId IN (SELECT id FROM mentors WHERE college_id = ?) ORDER BY created_at DESC LIMIT ${CAPS.demoSwaps}`
+        : "SELECT 1 WHERE 1=0";
+      demoSwapParams = collegeId ? [collegeId] : [];
+    } else if (needsDemo) {
+      demoSessionSql = `SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT ${CAPS.demoSessions}`;
+      demoSessionParams = [];
+      demoSwapSql = `SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT ${CAPS.demoSwaps}`;
+      demoSwapParams = [];
+    } else {
+      demoSessionSql = "SELECT 1 WHERE 1=0";
+      demoSessionParams = [];
+      demoSwapSql = "SELECT 1 WHERE 1=0";
+      demoSwapParams = [];
+    }
+
     // Leave requests scoping
     let leaveSql: string;
     let leaveParams: any[] = [];
@@ -251,11 +294,11 @@ export async function GET(request: Request) {
       { sql: (isStudent && collegeId) ? "SELECT * FROM weekly_tasks WHERE mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) OR class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?) ORDER BY week_number ASC LIMIT 200" : (collegeId && (isCM || isMentor) ? "SELECT * FROM weekly_tasks WHERE mentor_id = ? OR mentor_id IN (SELECT id FROM mentors WHERE college_id = ?) OR class_group IN (SELECT DISTINCT classGroup FROM students WHERE college_id = ?) ORDER BY week_number ASC LIMIT 200" : (isAdminOrKAM ? "SELECT * FROM weekly_tasks ORDER BY week_number ASC LIMIT 200" : "SELECT 1 WHERE 1=0")), params: (isStudent && collegeId) ? [collegeId, collegeId] : (collegeId && (isCM || isMentor) ? [userId || "", collegeId, collegeId] : []) },
       { sql: (isStudent && userId) ? "SELECT * FROM student_tracker WHERE student_id = ? OR student_id IN (SELECT id FROM students WHERE id = ? OR email = ?) ORDER BY updated_at DESC LIMIT 500" : (collegeId && (isCM || isMentor) ? "SELECT * FROM student_tracker WHERE student_id IN (SELECT id FROM students WHERE college_id = ?) OR graded_by = ? ORDER BY updated_at DESC LIMIT 500" : (isAdminOrKAM ? "SELECT * FROM student_tracker ORDER BY updated_at DESC LIMIT 500" : "SELECT 1 WHERE 1=0")), params: (isStudent && userId) ? [userId, userId, userId] : (collegeId && (isCM || isMentor) ? [collegeId, userId || ""] : []) },
       { sql: needsDemo ? "SELECT * FROM sme_users" : "SELECT 1 WHERE 1=0", params: [] },
-      { sql: needsDemo ? "SELECT * FROM demo_sessions ORDER BY created_at DESC LIMIT 200" : "SELECT 1 WHERE 1=0", params: [] },
+      { sql: demoSessionSql, params: demoSessionParams },
       { sql: !isStudent ? `SELECT * FROM subject_groups ORDER BY name ASC LIMIT ${CAPS.subjectGroups}` : "SELECT 1 WHERE 1=0", params: [] },
       { sql: needsDemo ? "SELECT * FROM demo_rules ORDER BY created_at DESC" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: isAdmin ? "SELECT * FROM signup_requests ORDER BY created_at DESC LIMIT 40" : "SELECT 1 WHERE 1=0", params: [] },
-      { sql: needsDemo ? "SELECT * FROM demo_swap_requests ORDER BY created_at DESC LIMIT 100" : "SELECT 1 WHERE 1=0", params: [] },
+      { sql: demoSwapSql, params: demoSwapParams },
       { sql: isAdminOrKAM ? "SELECT * FROM kam_tasks ORDER BY created_at DESC LIMIT 50" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: isAdminOrKAM ? "SELECT * FROM campus_issues ORDER BY created_at DESC LIMIT 50" : "SELECT 1 WHERE 1=0", params: [] },
       { sql: !isStudent ? "SELECT * FROM academic_years" : "SELECT 1 WHERE 1=0", params: [] },
@@ -349,19 +392,40 @@ export async function GET(request: Request) {
       filteredApprovedHandovers = approvedHandovers.filter((h: any) => mentorIds.has(h.originalMentorId) || mentorIds.has(h.coverStaffId));
     }
 
-    // A capped slice that comes back exactly full had more rows behind it that were
-    // not sent. Folding that into `partial` reuses the incomplete-load banner the
-    // dashboard already raises for a failed slice, so short data is never shown as
-    // the whole picture.
+    // A capped slice that comes back exactly full had more rows behind it that were not
+    // sent. That is a size guard, not an outage: folding it into `partial` made every
+    // institution with 30 announcements look like a database that could not be reached.
+    // It is reported in its own field so the client can say "some lists are capped"
+    // instead. The numbers mirror the LIMIT of each slice above.
     const truncatedSections: string[] = [];
-    if (slots?.length >= CAPS.slots) truncatedSections.push("slots");
-    if (students?.length >= CAPS.students) truncatedSections.push("students");
-    if (mentors?.length >= CAPS.mentors) truncatedSections.push("mentors");
-    if (users?.length >= CAPS.users) truncatedSections.push("users");
+    const truncated = (rows: any[] | undefined, cap: number, name: string) => {
+      if (Array.isArray(rows) && rows.length >= cap) truncatedSections.push(name);
+    };
+    truncated(slots, CAPS.slots, "slots");
+    truncated(students, CAPS.students, "students");
+    truncated(mentors, CAPS.mentors, "mentors");
+    truncated(users, CAPS.users, "users");
+    truncated(studentAttendance, isStudent ? 2000 : isMentor ? 20000 : 60000, "studentAttendance");
+    truncated(announcements, 30, "announcements");
+    truncated(leaveRequests, 100, "leaveRequests");
+    truncated(signupRequests, 40, "signupRequests");
+    truncated(kamTasks, 50, "kamTasks");
+    truncated(campusIssues, 50, "campusIssues");
+    truncated(studentInterviews, isKAM && kamHasColleges ? 100 : 40, "studentInterviews");
+    truncated(interviewEvaluations, 40, "interviewEvaluations");
+    truncated(approvals, 40, "approvals");
+    truncated(leaveBalances, 40, "leaveBalances");
+    truncated(weeklyTasks, 200, "weeklyTasks");
+    truncated(studentTracker, 500, "studentTracker");
+    truncated(academicTracker, 500, "academicTracker");
+    truncated(weeklyAcademicTasks, 500, "weeklyAcademicTasks");
+    truncated(studentAcademicTracker, 3000, "studentAcademicTracker");
+    truncated(demoSessions, CAPS.demoSessions, "demoSessions");
+    truncated(demoSwapRequests, CAPS.demoSwaps, "demoSwapRequests");
 
     return NextResponse.json({
       success: true,
-      partial: failedSlices.length > 0 || truncatedSections.length > 0,
+      partial: failedSlices.length > 0,
       failedSections: failedSlices.map((f) => sliceSection(f.sql)),
       truncatedSections,
       mentors: filteredMentors.map((m) => ({

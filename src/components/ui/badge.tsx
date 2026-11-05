@@ -7,19 +7,19 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 function Badge({ className, variant = "default", ...props }: BadgeProps) {
   const variants = {
-    default: "bg-[#D528A2]/10 text-[#D528A2] dark:text-[#f45fc6] border-[#D528A2]/25 shadow-xs",
-    brand: "bg-gradient-to-r from-[#D528A2] to-[#F4A863] text-white border-transparent shadow-xs",
-    secondary: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700",
-    destructive: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25",
-    outline: "text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800",
-    success: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25",
-    warning: "bg-[#F4A863]/15 text-[#d97d2e] dark:text-[#F4A863] border-[#F4A863]/30"
+    default: "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200/60 shadow-xs",
+    brand: "brand-gradient text-white border-transparent shadow-xs",
+    secondary: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200/60 dark:border-slate-700",
+    destructive: "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200/60",
+    outline: "text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 bg-white dark:bg-transparent",
+    success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200/60",
+    warning: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200/60"
   };
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-colors",
+        "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[11px] font-bold tracking-tight transition-colors",
         variants[variant],
         className
       )}

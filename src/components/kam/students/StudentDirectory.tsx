@@ -166,7 +166,7 @@ export const StudentDirectory: React.FC<StudentDirectoryProps> = ({
   return (
     <div className="space-y-4">
       {/* Risk Filter Chips & College Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Embedded College Selector */}
           <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
@@ -238,7 +238,7 @@ export const StudentDirectory: React.FC<StudentDirectoryProps> = ({
       </div>
 
       {/* Students Table with Shadcn Table & Pagination */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>

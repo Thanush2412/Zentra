@@ -192,7 +192,7 @@ export const KAMFacultyGovernance: React.FC<{
             </Card>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-sm font-black text-slate-900">Faculty Daily Punch Log & Punctuality</h3>
@@ -318,7 +318,7 @@ export const KAMFacultyGovernance: React.FC<{
 
       {/* ── SUB-TAB 2: 14-DAY UPCOMING LEAVE & COVERAGE RADAR ── */}
       {subTab === "leaves" && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
           <div className="border-b border-slate-100 pb-3">
             <h3 className="text-sm font-black text-slate-900">Upcoming 14-Day Faculty Leave Schedule & Substitution Coverage</h3>
             <p className="text-xs text-slate-400 font-medium">Preventing unstaffed classroom blackouts by tracking coverage assignments</p>
@@ -414,7 +414,7 @@ export const KAMFacultyGovernance: React.FC<{
             </Card>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-black text-slate-900">SME Teaching Evaluation Feed</h3>
               <p className="text-xs text-slate-400 font-medium">Recent instructor teaching demonstrations and SME assessment feedback</p>
@@ -425,7 +425,7 @@ export const KAMFacultyGovernance: React.FC<{
                 <div className="py-8 text-center text-xs font-bold text-slate-400">No demo teaching records found.</div>
               ) : (
                 paginatedDemos.map(d => (
-                  <div key={d.id} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 flex items-start justify-between gap-3 text-xs">
+                  <div key={d.id} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-100 flex items-start justify-between gap-3 text-xs">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-black text-slate-900">{d.mentorName}</span>

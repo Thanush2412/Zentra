@@ -7,6 +7,8 @@ import { useToast } from "@/context/ToastContext";
 import { apiFetch, setClientCsrfToken } from "@/lib/apiFetch";
 import { roleGrantsSuperAdmin } from "@/lib/superadmin";
 import { queryRootsForDomain } from "@/lib/queryKeys";
+import { announceDataChanged } from "@/lib/dataSync";
+import { describeFailedSections, describeLoadFailure } from "@/lib/dataLoadStatus";
 import { generateId } from "@/lib/id";
 
 export interface AuthenticatedUser {
@@ -197,8 +199,6 @@ export interface Holiday {
 }
 
 export type Role = "mentor" | "hr" | "cm" | "kam" | "admin" | "student" | "fee_manager" | "sme" | "L and D";
-/** Workspaces a super admin can launch from the master role modal. */
-const SUPER_ADMIN_WORKSPACES: Role[] = ["admin", "cm", "mentor", "kam", "student", "fee_manager", "sme", "L and D"];
 export type ShiftType = "shift_1" | "shift_2" | "general";
 
 export interface WeeklyTask {
@@ -430,6 +430,10 @@ interface AppContextProps {
   isDataLoading: boolean;
   /** Set when the last full /api/data refresh failed — UI shows a retry banner. */
   dataLoadError: boolean;
+  /** Why the load failed, in one sentence. Null when the failure has no better name. */
+  dataLoadMessage: string | null;
+  /** Lists the server sent back capped (newest rows only) — not an error, so not a red banner. */
+  cappedSections: string[];
   retryDataLoad: () => Promise<void>;
   /** Set when the logged-in identity cannot be resolved — dashboards must render an error, not another user's data. */
   currentIdentityError: string | null;
@@ -541,7 +545,7 @@ interface AppContextProps {
   createKAM: (kam: { id: string; name: string; email: string; title: string }) => Promise<{ success: boolean; message: string }>;
   updateKAM: (kam: { id: string; name: string; email: string; title: string }) => Promise<{ success: boolean; message: string }>;
   deleteKAM: (id: string) => Promise<{ success: boolean; message: string }>;
-  createCAM: (cam: { id: string; name: string; email: string; college_id: string; kam_id: string }) => Promise<{ success: boolean; message: string }>;
+  createCAM: (cam: { id: string; name: string; email: string; college_id: string; kam_id: string; password?: string }) => Promise<{ success: boolean; message: string }>;
   updateCAM: (cam: { id: string; name: string; email: string; college_id: string; kam_id: string }) => Promise<{ success: boolean; message: string }>;
   deleteCAM: (id: string) => Promise<{ success: boolean; message: string }>;
   departmentsList: Department[];
@@ -553,6 +557,8 @@ interface AppContextProps {
   deleteDepartment: (id: string) => Promise<{ success: boolean; message: string; deletedCounts?: { slots: number; students: number; mentors: number; subjects: number } }>;
   deleteCourse: (id: string) => Promise<{ success: boolean; message: string; deletedCounts?: { slots: number; students: number; mentors: number; subjects: number } }>;
   refreshData: (silent?: boolean, scope?: { role: Role; userId: string }) => Promise<any>;
+  /** Invalidate a change domain and notify every open tab/role to re-read. */
+  notifyDataChanged: (domain: string) => void;
   refreshAttendance: (collegeId?: string) => Promise<void>;
   students: Student[];
   studentAttendance: StudentAttendance[];
@@ -801,6 +807,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isLoading, setIsLoading] = useState(true);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [dataLoadError, setDataLoadError] = useState(false);
+  const [dataLoadMessage, setDataLoadMessage] = useState<string | null>(null);
+  const [cappedSections, setCappedSections] = useState<string[]>([]);
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [baseDate, setBaseDate] = useState<string>(() => {
     const today = new Date();
@@ -865,12 +873,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     queryClient.invalidateQueries({
       predicate: (query) => roots.has(String(query.queryKey[0] ?? "")),
     });
-    if (typeof window === "undefined") return;
-    try {
-      window.dispatchEvent(new CustomEvent("fp_data_changed", { detail: { domain, at: Date.now() } }));
-      // localStorage writes fire "storage" events in OTHER same-origin tabs.
-      localStorage.setItem("fp_data_changed", JSON.stringify({ domain, at: Date.now() }));
-    } catch (_) { /* storage may be unavailable (private mode) */ }
+    announceDataChanged(domain);
   }, [queryClient]);
 
   // DATA_FLOW_AUDIT D5: coalesce concurrent refreshes and drop stale responses.
@@ -918,9 +921,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const data = await apiFetch(`/api/data?role=${role}&userId=${encodeURIComponent(userId)}`);
       if (data.success) {
-        // Some slices can fail while the rest load. The retry banner already says the
-        // data may be stale, so reuse it instead of presenting empty tabs as truth.
+        // Some slices can fail while the rest load — name them, because "couldn't reach
+        // the database" sent people to check a healthy prod database. A slice that only
+        // hit its row cap is `truncatedSections`, shown as its own amber notice.
         setDataLoadError(Boolean(data.partial));
+        setDataLoadMessage(data.partial ? describeFailedSections(data.failedSections || []) : null);
+        setCappedSections(Array.isArray(data.truncatedSections) ? data.truncatedSections : []);
         setLastSyncTime(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }));
         // D5: a newer refresh started while this one was in flight — discard this
         // response instead of overwriting fresher state with stale data.
@@ -973,7 +979,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     } catch (e) {
       console.error("Error fetching data from API:", e);
-      if (seq === refreshDataSeq.current) setDataLoadError(true);
+      if (seq === refreshDataSeq.current) {
+        const report = describeLoadFailure(e);
+        setDataLoadError(true);
+        setDataLoadMessage(report.message);
+        setCappedSections([]);
+      }
     } finally {
       setIsDataLoading(false);
       if (!silent) {
@@ -995,6 +1006,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   /** Manual retry after a failed full data refresh (powers the DashboardLayout retry banner). */
   const retryDataLoad = useCallback(async () => {
     setDataLoadError(false);
+    setDataLoadMessage(null);
     await refreshData(false);
   }, [refreshData]);
 
@@ -1056,30 +1068,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (collegesData?.success && Array.isArray(collegesData.colleges)) setColleges(collegesData.colleges);
         if (signupData?.success && Array.isArray(signupData.requests)) setSignupRequests(signupData.requests);
       } else if (role === "sme") {
-        const targetCol = collegeId || (colleges.length > 0 ? colleges[0].id : "");
-        const [demosData, availData] = await Promise.all([
-          targetCol
-            ? apiFetch(`/api/demo-sessions?college_id=${encodeURIComponent(targetCol)}`).catch(() => ({}))
-            : apiFetch("/api/demo-sessions").catch(() => ({})),
-          apiFetch(`/api/sme-availability?sme_id=${encodeURIComponent(userId)}`).catch(() => ({}))
-        ]);
-        if (demosData?.success && Array.isArray(demosData.records)) setDemoSessions(demosData.records);
+        const availData = await apiFetch(`/api/sme-availability?sme_id=${encodeURIComponent(userId)}`).catch(() => ({}));
         if (availData?.success && Array.isArray(availData.availability)) setSmeAvailability(availData.availability);
-      } else if (role === "L and D") {
-        const targetCol = collegeId || (colleges.length > 0 ? colleges[0].id : "");
-        let demosData: any = {};
-        if (targetCol) {
-          demosData = await apiFetch(`/api/demo-sessions?college_id=${encodeURIComponent(targetCol)}`).catch(() => ({}));
-        } else if (colleges.length > 0) {
-          const results = await Promise.all(
-            colleges.map(c => apiFetch(`/api/demo-sessions?college_id=${encodeURIComponent(c.id)}`).catch(() => ({})))
-          );
-          demosData = { success: true, records: results.flatMap((r: any) => r?.records || []) };
-        } else {
-          demosData = await apiFetch("/api/demo-sessions").catch(() => ({}));
-        }
-        if (demosData?.success && Array.isArray(demosData.records)) setDemoSessions(demosData.records);
       }
+      // L&D has no workspace read of its own: neither sme_users nor the allocator has a
+      // college_id, so the demo-sessions calls here always sent an unscoped
+      // ?college_id-less request that the endpoint rejects with 400. /api/data already
+      // returns the role-scoped demoSessions slice for both sme and L&D.
     } catch (err) {
       console.warn("loadRoleWorkspace error:", err);
     } finally {
@@ -1091,18 +1086,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initApp = async () => {
       document.documentElement.classList.remove("dark");
 
-      // 1. Authenticate with server using HttpOnly cookie & load live profile
+      // 1. Authenticate with server using HttpOnly cookie & load live profile.
+      //    The reference slice is public and does not depend on who is signed in, so
+      //    it goes out in the same wave instead of after the identity round trip.
       let authUser: AuthenticatedUser | null = null;
-      try {
-        const authData = await apiFetch("/api/auth/me");
-        if (authData.success && authData.user) {
-          authUser = authData.user;
-          if (authData.csrfToken) {
-            setClientCsrfToken(authData.csrfToken);
-          }
+      const [authData, refData] = await Promise.all([
+        apiFetch("/api/auth/me").catch(() => ({ success: false })),
+        apiFetch("/api/data/reference").catch((refErr: unknown) => {
+          console.warn("Reference data bootstrap error:", refErr);
+          return { success: false };
+        })
+      ]);
+      if (authData.success && authData.user) {
+        authUser = authData.user;
+        if (authData.csrfToken) {
+          setClientCsrfToken(authData.csrfToken);
         }
-      } catch {
-        authUser = null;
+      }
+
+      // 2. Fast-path reference bootstrap (<30KB). Applied whether or not the session
+      //    is live: the endpoint is public and a signed-out visitor on the login page
+      //    becomes this user seconds later, so the lists are a pre-warm, not a leak.
+      if (refData.success) {
+        if (refData.colleges) setColleges(refData.colleges);
+        if (refData.subjects) setSubjectsList(refData.subjects);
+        if (refData.departments) setDepartmentsList(refData.departments);
+        if (refData.academicYears) setAcademicYears(refData.academicYears);
+        if (refData.systemSettings) setSystemSettings(prev => ({ ...prev, ...refData.systemSettings }));
       }
 
       if (!authUser) {
@@ -1121,29 +1131,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setCurrentUser(authUser);
 
-      // 2. Fast-path reference bootstrap (<30KB)
-      try {
-        const refData = await apiFetch("/api/data/reference");
-        if (refData.success) {
-          if (refData.colleges) setColleges(refData.colleges);
-          if (refData.subjects) setSubjectsList(refData.subjects);
-          if (refData.departments) setDepartmentsList(refData.departments);
-          if (refData.academicYears) setAcademicYears(refData.academicYears);
-          if (refData.systemSettings) setSystemSettings(prev => ({ ...prev, ...refData.systemSettings }));
-        }
-      } catch (refErr) {
-        console.warn("Reference data bootstrap error:", refErr);
-      }
-
       // 3. Restore session using authoritative server user immediately (< 50ms total boot)
-      // A super admin's chosen workspace must survive a reload instead of always
-      // snapping back to the admin console.
-      const serverRole: Role = normalizeRoleValue(authUser.role);
-      const storedWorkspace = typeof window !== "undefined" ? localStorage.getItem("fp_current_role") : null;
-      const parsedRole: Role = authUser.isSuperAdmin && storedWorkspace
-        && SUPER_ADMIN_WORKSPACES.includes(normalizeRoleValue(storedWorkspace))
-        ? normalizeRoleValue(storedWorkspace)
-        : serverRole;
+      // A super admin is restored as the admin console only: the role never
+      // morphs into another person's portal, and the stored workspace is ignored.
+      const parsedRole: Role = normalizeRoleValue(authUser.role);
       setCurrentRoleState(parsedRole);
       if (authUser.college_id) {
         setCurrentCampusScope(authUser.college_id);
@@ -1826,6 +1817,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setDemoSwapRequests(prev => prev.map(r => r.id === requestId ? { ...r, status } : r));
+        // Approving a swap rewrites demo_sessions server-side, so the request badge
+        // alone is not the whole change: every dashboard that renders the session
+        // must re-read or it keeps showing the old mentor/slot.
+        if (status === "approved") {
+          await refreshData();
+          broadcastDataChanged("demos");
+        }
         return { success: true, message: data.message || `L&D swap request ${status} successfully.` };
       }
       return { success: false, message: data.message || "Failed to resolve swap request." };
@@ -2928,7 +2926,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const createCAM = async (camData: { id: string; name: string; email: string; college_id: string; kam_id: string }) => {
+  const createCAM = async (camData: { id: string; name: string; email: string; college_id: string; kam_id: string; password?: string }) => {
     try {
       const res = await fetch("/api/cm", {
         method: "POST",
@@ -2938,6 +2936,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success && camData.college_id) {
         setColleges(prev => prev.map(c => c.id === camData.college_id ? { ...c, cam_id: camData.id, cam_name: camData.name, cam_email: camData.email } : c));
+        broadcastDataChanged("cams");
       }
       return data;
     } catch (e: any) {
@@ -2955,6 +2954,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success && camData.college_id) {
         setColleges(prev => prev.map(c => c.id === camData.college_id ? { ...c, cam_id: camData.id, cam_name: camData.name, cam_email: camData.email } : c));
+        broadcastDataChanged("cams");
       }
       return data;
     } catch (e: any) {
@@ -3579,6 +3579,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setAcademicYears(prev => prev.includes(yearName) ? prev : [...prev, yearName]);
+        broadcastDataChanged("events");
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to save year" };
@@ -3593,6 +3594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setAcademicYears(prev => prev.filter(y => y !== yearName));
+        broadcastDataChanged("events");
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to delete year" };
@@ -3618,6 +3620,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           return [...prev, savedEvent];
         });
+        broadcastDataChanged("events");
         return { success: true, event: savedEvent, dayOrderSync: data.dayOrderSync };
       }
       return { success: false, message: data.message || "Failed to save event" };
@@ -3632,6 +3635,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       if (data.success) {
         setAcademicEvents(prev => prev.filter(e => e.id !== id));
+        broadcastDataChanged("events");
         return { success: true };
       }
       return { success: false, message: data.message || "Failed to delete event" };
@@ -3819,6 +3823,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentIdentityError,
     isDataLoading,
     dataLoadError,
+    dataLoadMessage,
+    cappedSections,
     retryDataLoad,
     currentShift,
     setCurrentShift,
@@ -3885,6 +3891,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteDepartment,
     deleteCourse,
     refreshData,
+    notifyDataChanged: broadcastDataChanged,
     refreshAttendance,
     students,
     updateStudent,
@@ -3989,6 +3996,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentIdentityError,
     isDataLoading,
     dataLoadError,
+    dataLoadMessage,
+    cappedSections,
     retryDataLoad,
     departmentsList,
     coursesList,

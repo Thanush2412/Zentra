@@ -345,7 +345,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {daySlots.map((s: any) => (
-                      <div key={s.id} className="bg-slate-50 hover:bg-white rounded-xl p-3 border border-slate-200 shadow-2xs space-y-1.5 transition-all">
+                      <div key={s.id} className="bg-slate-50 hover:bg-white rounded-2xl p-3 border border-slate-100 shadow-card space-y-1.5 transition-all">
                         <div className="flex justify-between items-center">
                           <span className="px-2 py-0.5 rounded-md text-[9.5px] font-black uppercase bg-pink-50 text-[#D528A2] border border-pink-100">
                             {s.time}
@@ -372,7 +372,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {coursesHandled.map((c: any) => (
-                  <div key={c.course} className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-2 shadow-2xs">
+                  <div key={c.course} className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-2 shadow-2xs">
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="text-xs font-black text-slate-900">{c.course}</h4>
@@ -407,7 +407,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
               ) : (
                 <div className="space-y-2.5">
                   {demoSessions.map((d: any) => (
-                    <div key={d.id} className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-1.5">
+                    <div key={d.id} className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 shadow-2xs space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-slate-900">{d.subject || "Domain Demo Session"}</span>
                         <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
@@ -425,7 +425,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
                         <span>Score: <strong className="text-[#D528A2]">{d.marks !== undefined && d.marks !== null ? `${d.marks}/100` : "Pending"}</strong></span>
                       </div>
                       {d.comments && (
-                        <p className="text-[10px] text-slate-600 bg-white p-2 rounded-lg border border-slate-200/80 mt-1 italic">
+                        <p className="text-[10px] text-slate-600 bg-white p-2 rounded-2xl border border-slate-100 mt-1 italic shadow-card">
                           "{d.comments}"
                         </p>
                       )}
@@ -446,7 +446,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
                     Outbound Handover Requests ({handoversSent.length})
                   </h4>
                   {handoversSent.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-slate-200">No outbound swap requests</p>
+                    <p className="text-[11px] text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-slate-100">No outbound swap requests</p>
                   ) : (
                     handoversSent.map((h: any) => (
                       <div key={h.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[10px] space-y-1">
@@ -466,7 +466,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
                     Inbound Coverage Requests ({handoversReceived.length})
                   </h4>
                   {handoversReceived.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-slate-200">No inbound coverage requests</p>
+                    <p className="text-[11px] text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-slate-100">No inbound coverage requests</p>
                   ) : (
                     handoversReceived.map((h: any) => (
                       <div key={h.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[10px] space-y-1">
@@ -485,7 +485,7 @@ export const Mentor360: React.FC<Mentor360Props> = ({ mentorId, onClose }) => {
         </div>
 
         {/* Compact Footer */}
-        <div className="bg-slate-50 p-3 px-4 border-t border-slate-200 flex items-center justify-between shrink-0">
+        <div className="bg-slate-50 p-3 px-4 border-t border-slate-100 flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={handleExportExcel}

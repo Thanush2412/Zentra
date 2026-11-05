@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { User, Users } from "lucide-react";
 import { Panel } from "../Panel";
 import { Combobox } from "../ui/combobox";
@@ -54,6 +54,7 @@ export default function LndRulesTab({
   saveDepartmentRule,
   handleSetMentorTarget
 }: LndRulesTabProps) {
+  const [savingRuleGroup, setSavingRuleGroup] = useState<string | null>(null);
   // Rules tab uses the same campus-scoped group model as the grid filter.
   const mentorGroupCounts = useMemo(
     () => buildGroupCounts(mentors, selectedCollegeId, getMentorGroup),
@@ -96,7 +97,7 @@ export default function LndRulesTab({
     >
       <div className="space-y-6">
         {/* Target L&D Config Card */}
-        <div className="bg-slate-50/80 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+        <div className="bg-slate-50/80 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-3">
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <span className="text-xs font-black uppercase text-slate-800 dark:text-white">Default Weekly L&D Target per Mentor</span>
@@ -127,7 +128,7 @@ export default function LndRulesTab({
               const isDirty = localVal !== dbVal;
 
               return (
-                <div key={groupName} className="flex items-center justify-between p-4 rounded-xl bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+                <div key={groupName} className="flex items-center justify-between p-4 rounded-2xl bg-white/80 dark:bg-[#131317]/80 border border-slate-100 dark:border-slate-800 shadow-card">
                   <div>
                     <span className="text-xs font-black text-slate-800 dark:text-white block">{groupName}</span>
                     <span className="text-[10px] text-slate-400 font-semibold block">Target: {dbVal} L&D/week</span>
@@ -143,11 +144,17 @@ export default function LndRulesTab({
                     />
                     <button
                       onClick={async () => {
-                        await saveDepartmentRule(groupName, localVal);
-                        setDeptRuleInputs(prev => { const next = { ...prev }; delete next[groupName]; return next; });
+                        if (savingRuleGroup) return;
+                        setSavingRuleGroup(groupName);
+                        try {
+                          await saveDepartmentRule(groupName, localVal);
+                          setDeptRuleInputs(prev => { const next = { ...prev }; delete next[groupName]; return next; });
+                        } finally {
+                          setSavingRuleGroup(null);
+                        }
                       }}
-                      disabled={!isDirty}
-                      className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${isDirty ? "bg-[#D528A2] hover:bg-[#c02090] text-white shadow-xs cursor-pointer" : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
+                      disabled={!isDirty || savingRuleGroup === groupName}
+                      className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${isDirty && savingRuleGroup !== groupName ? "bg-[#D528A2] hover:bg-[#c02090] text-white shadow-xs cursor-pointer" : "bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
                         }`}
                     >
                       Save
@@ -160,7 +167,7 @@ export default function LndRulesTab({
         </div>
 
         {/* MENTOR GROUP-WISEINDIVIDUAL FACULTY L&D QUOTA CONFIGURATOR */}
-        <div className="bg-white/80 dark:bg-[#131317]/80 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-4 font-sans mt-6 backdrop-blur-md">
+        <div className="bg-white/80 dark:bg-[#131317]/80 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-card space-y-4 font-sans mt-6 backdrop-blur-md">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
             <div>
               <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">

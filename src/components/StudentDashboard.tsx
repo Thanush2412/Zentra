@@ -6,6 +6,7 @@ import { useApp, Slot, StudentAttendance } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { apiFetch } from "@/lib/apiFetch";
 import { qk } from "@/lib/queryKeys";
+import { getLocalDateStr } from "@/lib/localDate";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "./Button";
 import {
@@ -50,6 +51,7 @@ import { formatTimeLabel, calculateShiftSchedule, resolveClassGroupDetailsFromSt
 import { Pagination } from "@/components/ui/Pagination";
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/components/ui/table";
 import { CourseInfoButton } from "./CourseInfoModal";
+import { StudentMonthlyNpsCard } from "@/components/student/StudentMonthlyNpsCard";
 
 // Library Books Interface
 interface BookItem {
@@ -1371,7 +1373,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         }`}
                     >
                       <div className="relative flex items-center justify-center">
-                        <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-650"}`} />
+                        <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-600"}`} />
                         {isCollapsed && count > 0 && (
                           <span className="absolute -top-1.5 -right-1.5 block h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" />
                         )}
@@ -1542,14 +1544,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   e.preventDefault();
                   setActiveTab("interviews");
                 }}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-purple-50 dark:bg-purple-900/25 flex items-center justify-center text-purple-600 shrink-0 group-hover:scale-105 transition-transform">
                   <Award className="h-5 w-5" />
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">My Interviews</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Join Google Meet, view slots & rubric scores</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Join Google Meet, view slots & rubric scores</span>
                 </div>
               </a>
 
@@ -1560,14 +1562,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   e.preventDefault();
                   setActiveTab("exams");
                 }}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-rose-50 dark:bg-rose-900/25 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
                   <BookOpen className="h-5 w-5" />
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Examinations & Test Marks</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">View test marks, scorecards & timetables</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">View test marks, scorecards & timetables</span>
                 </div>
               </a>
 
@@ -1578,14 +1580,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   e.preventDefault();
                   setActiveTab("materials");
                 }}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-teal-50 dark:bg-teal-900/25 flex items-center justify-center text-teal-500 shrink-0 group-hover:scale-105 transition-transform">
                   <Book className="h-5 w-5" />
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Subject Materials</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Unit-wise notes, slides & question banks</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Unit-wise notes, slides & question banks</span>
                 </div>
               </a>
 
@@ -1596,14 +1598,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   e.preventDefault();
                   setActiveTab("fees");
                 }}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
               >
                 <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/25 flex items-center justify-center text-emerald-600 shrink-0 group-hover:scale-105 transition-transform">
                   <CreditCard className="h-5 w-5" />
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">Fees</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
                     {(feeData?.stats?.unpaidCount || 0) > 0
                       ? `${feeData?.stats?.unpaidCount} fee record${feeData?.stats?.unpaidCount === 1 ? "" : "s"} pending`
                       : "Semester fees, receipts & payment links"}
@@ -1618,14 +1620,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   e.preventDefault();
                   setActiveTab("profile");
                 }}
-                className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
+                className="p-5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all flex items-center gap-4 shadow-card cursor-pointer group sm:col-span-2"
               >
-                <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-350 shrink-0 group-hover:scale-105 transition-transform">
+                <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center text-slate-600 dark:text-slate-300 shrink-0 group-hover:scale-105 transition-transform">
                   <User className="h-5 w-5" />
                 </div>
                 <div>
                   <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">My Profile</span>
-                  <span className="text-[10px] text-slate-455 dark:text-slate-400 font-medium">Personal info and settings</span>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Personal info and settings</span>
                 </div>
               </a>
             </div>
@@ -1647,7 +1649,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   const evaluatedCount = (studentInterviews || []).filter((inv: any) => inv.status === "evaluated").length;
 
                   return (
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-card relative flex flex-col justify-between group hover:shadow-card-lg transition-all">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
                           <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Mock Interviews</span>
@@ -1682,7 +1684,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   const isClear = unpaidAmt === 0;
 
                   return (
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs relative flex flex-col justify-between group hover:shadow-md transition-all">
+                    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-card relative flex flex-col justify-between group hover:shadow-card-lg transition-all">
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
                           <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Semester Fees</span>
@@ -1714,8 +1716,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               </div>
 
+              {/* Monthly class feedback (feeds admin Reports & Insight → Student NPS) */}
+              <StudentMonthlyNpsCard studentId={currentStudent?.id || ""} />
+
               {/* Curriculum Tasks & Weekly Submissions */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-5">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-card space-y-5">
                 <div className="flex items-center justify-between border-b border-slate-100/80 pb-4">
                   <div>
                     <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Curriculum Tasks & Submissions</h2>
@@ -1781,7 +1786,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           <div className="flex items-center gap-3 shrink-0">
                             <span className={`px-2.5 py-1 rounded-full text-[9px] font-extrabold uppercase tracking-wider select-none ${isGraded
-                                ? "bg-emerald-100 text-emerald-805 border border-emerald-200/50"
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200/50"
                                 : isSubmitted
                                   ? "bg-indigo-50 text-indigo-700 border border-indigo-200/50"
                                   : "bg-amber-50 text-amber-700 border border-amber-200/50"
@@ -1832,7 +1837,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <div className="lg:col-span-1 space-y-6">
 
               {/* Class Attendance Calendar Card with Dates & Ticks */}
-              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-5">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-xs space-y-5">
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-base font-extrabold text-slate-900 tracking-tight">Class attendance</h2>
@@ -1972,7 +1977,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 </div>
 
                 {/* Calendar Legend & Stats Bar */}
-                <div className="space-y-2 border-t border-slate-150/70 pt-3">
+                <div className="space-y-2 border-t border-slate-100/70 pt-3">
                   <div className="flex items-center justify-between text-[10px] font-extrabold uppercase text-slate-500">
                     <div className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
@@ -1992,7 +1997,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
 
               {/* My Schedule Card */}
-              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-xs space-y-5">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-xs space-y-5">
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-extrabold text-slate-900 tracking-tight">My schedule</h2>
                   <span className="px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-lg text-[9px] font-black text-slate-500 uppercase tracking-widest">
@@ -2003,7 +2008,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <div className="space-y-4">
                   {/* Today's Scheduled Interview Banner if any */}
                   {(() => {
-                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const todayStr = getLocalDateStr();
                     const todayInterview = studentInterviews.find(inv => inv.target_date === todayStr);
                     if (!todayInterview) return null;
 
@@ -2018,7 +2023,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     return (
                       <div className="p-4 bg-purple-50/80 border border-purple-200 rounded-xl flex items-center justify-between gap-4 shadow-xs">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-8.5 w-8.5 rounded-full bg-purple-100 border border-purple-250 flex items-center justify-center font-bold text-purple-700 text-xs shrink-0 select-none">
+                          <div className="h-8.5 w-8.5 rounded-full bg-purple-100 border border-purple-200 flex items-center justify-center font-bold text-purple-700 text-xs shrink-0 select-none">
                             I
                           </div>
                           <div className="min-w-0">
@@ -2060,12 +2065,12 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     return (
                       <div key={slot.id || index} className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-8.5 w-8.5 rounded-full bg-indigo-50 border border-slate-150 flex items-center justify-center font-bold text-indigo-650 text-xs shrink-0 select-none">
+                          <div className="h-8.5 w-8.5 rounded-full bg-indigo-50 border border-slate-100 flex items-center justify-center font-bold text-indigo-600 text-xs shrink-0 select-none">
                             {initial}
                           </div>
                           <div className="min-w-0">
                             <span className="text-xs font-bold text-slate-800 block truncate">{slot.course || "Scheduled Period"}</span>
-                            <span className="text-[10px] text-slate-455 block truncate font-semibold mt-0.5">{teacherName}</span>
+                            <span className="text-[10px] text-slate-500 block truncate font-semibold mt-0.5">{teacherName}</span>
                           </div>
                         </div>
                         <div className="text-right shrink-0">
@@ -2077,7 +2082,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </div>
                     );
                   })}
-                  {myClassSlots.length === 0 && !studentInterviews.some(inv => inv.target_date === new Date().toISOString().slice(0, 10)) && (
+                  {myClassSlots.length === 0 && !studentInterviews.some(inv => inv.target_date === getLocalDateStr()) && (
                     <div className="text-center py-6 text-slate-400 text-xs italic font-semibold">
                       No classes scheduled for today.
                     </div>
@@ -2093,29 +2098,29 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab 2: e-Campus Timetable */}
         {activeTab === "schedule" && (
-          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3">
+          <div className="bg-white border border-slate-100 rounded-2xl p-6 space-y-4 shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Weekly Class Timetable</h2>
-                <p className="text-[11px] text-slate-450 mt-1">Displays scheduled courses and period attendance status for the selected week.</p>
+                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Weekly Class Timetable</h2>
+                <p className="text-[11px] text-slate-400 mt-1">Displays scheduled courses and period attendance status for the selected week.</p>
               </div>
 
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-inner shrink-0">
                 <button
                   type="button"
                   onClick={() => setWeekOffset(weekOffset - 1)}
-                  className="p-1 hover:bg-white rounded-lg text-slate-650 hover:text-indigo-650 transition-all cursor-pointer"
+                  className="p-1 hover:bg-white rounded-lg text-slate-600 hover:text-indigo-600 transition-all cursor-pointer"
                   title="Previous Week"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
-                <span className="text-[10px] font-bold text-slate-755 px-2 min-w-[130px] text-center select-none font-sans">
+                <span className="text-[10px] font-bold text-slate-800 px-2 min-w-[130px] text-center select-none font-sans">
                   {weekOffset === 0 ? "Current Week" : `${effectiveWeekDates[0]?.formatted} – ${effectiveWeekDates[effectiveWeekDates.length - 1]?.formatted}`}
                 </span>
                 <button
                   type="button"
                   onClick={() => setWeekOffset(weekOffset + 1)}
-                  className="p-1 hover:bg-white rounded-lg text-slate-650 hover:text-indigo-650 transition-all cursor-pointer"
+                  className="p-1 hover:bg-white rounded-lg text-slate-600 hover:text-indigo-600 transition-all cursor-pointer"
                   title="Next Week"
                 >
                   <ChevronRight className="h-3.5 w-3.5" />
@@ -2126,23 +2131,23 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             <div className="overflow-auto max-h-[70vh] rounded-xl border border-slate-200 shadow-sm relative no-scrollbar">
               <table className="w-full table-fixed border-collapse text-left min-w-[800px]">
                 <thead>
-                  <tr className="text-xs text-slate-550 dark:text-slate-300 font-bold uppercase">
+                  <tr className="text-xs text-slate-500 dark:text-slate-300 font-bold uppercase">
                     <th className="sticky top-0 left-0 z-30 p-4 w-[12%] text-slate-700 dark:text-slate-200 bg-slate-100/95 dark:bg-[#141419] backdrop-blur-xs border-r border-b border-slate-200 dark:border-white/5">Day / Date</th>
                     {(() => {
                       let slotCounter = 0;
                       return rows.map((col, idx) => {
                         if (col.type === "break" || col.type === "lunch") {
                           return (
-                            <th key={idx} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider text-center select-none bg-slate-55/95 dark:bg-[#0f0f14] backdrop-blur-xs border-b border-slate-200 dark:border-white/5 w-[8%]">
+                            <th key={idx} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider text-center select-none bg-slate-50/95 dark:bg-[#0f0f14] backdrop-blur-xs border-b border-slate-200 dark:border-white/5 w-[8%]">
                               <div>{col.label}</div>
-                              <div className="text-[9px] text-slate-450 dark:text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
+                              <div className="text-[9px] text-slate-400 dark:text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.timeRange)}</div>
                             </th>
                           );
                         }
                         if (col.type === "slot") {
                           slotCounter++;
                           return (
-                            <th key={col.time} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-55/95 dark:bg-[#141419] backdrop-blur-xs border-b border-slate-200 dark:border-white/5 w-[12%]">
+                            <th key={col.time} className="sticky top-0 z-20 p-4 text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-50/95 dark:bg-[#141419] backdrop-blur-xs border-b border-slate-200 dark:border-white/5 w-[12%]">
                               <div>Period {slotCounter}</div>
                               <div className="text-[10px] text-slate-400 dark:text-slate-400 font-normal mt-0.5">{formatTimeLabel(col.time)}</div>
                             </th>
@@ -2153,7 +2158,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     })()}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-150 dark:divide-white/5 bg-white dark:bg-[#101015]">
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5 bg-white dark:bg-[#101015]">
                   {effectiveWeekDates.map((date) => {
                     const dayConfig = dailyConfigsList.find((c: any) => c.dateStr === date.dateStr);
                     const isHighlighted = highlightedDate === date.dateStr;
@@ -2164,11 +2169,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         id={`date-row-${date.dateStr}`}
                         className={`h-24 transition-all duration-500 ${isHighlighted
                             ? "bg-indigo-50/80 dark:bg-indigo-950/40 ring-2 ring-indigo-500 ring-inset shadow-md"
-                            : "hover:bg-slate-55/10 dark:hover:bg-white/[0.02]"
+                            : "hover:bg-slate-50/10 dark:hover:bg-white/[0.02]"
                           }`}
                       >
                         {/* First Cell: Day / Date */}
-                        <td className="sticky left-0 z-10 p-3 text-xs font-bold text-slate-705 border-r border-slate-200 bg-slate-50/95 dark:bg-[#141419] dark:border-white/5 backdrop-blur-xs align-middle">
+                        <td className="sticky left-0 z-10 p-3 text-xs font-bold text-slate-700 border-r border-slate-200 bg-slate-50/95 dark:bg-[#141419] dark:border-white/5 backdrop-blur-xs align-middle">
                           <div className="flex flex-col justify-center items-center">
                             <span className="text-sm font-black text-slate-900 leading-none">{date.day}</span>
                             <span className="text-[9px] text-slate-400 font-extrabold uppercase mt-1 leading-none">{date.formatted}</span>
@@ -2211,7 +2216,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             return (
                               <td
                                 key={`break-${cIdx}`}
-                                className="p-2 text-center text-xs font-extrabold text-slate-455 bg-slate-50/5 uppercase tracking-widest italic select-none border-r border-slate-150 last:border-r-0 align-middle"
+                                className="p-2 text-center text-xs font-extrabold text-slate-500 bg-slate-50/5 uppercase tracking-widest italic select-none border-r border-slate-100 last:border-r-0 align-middle"
                               >
                                 {col.label}
                               </td>
@@ -2258,7 +2263,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             const slotTiming = mySlot?.slot_start_time || interviewForSlot.preferred_start_time || "Time TBA";
 
                             return (
-                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-100 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
                                 <div className={`h-full flex flex-col justify-between p-2 rounded-xl border text-xs shadow-xs transition-all ${isCompleted
                                     ? "bg-emerald-50/80 border-emerald-300 text-emerald-950"
                                     : "bg-purple-50/80 border-purple-300 text-purple-950 hover:shadow-sm"
@@ -2304,7 +2309,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           if (cellData?.type === "holiday") {
                             return (
-                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-middle bg-rose-50/10 dark:bg-rose-950/5">
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-100 dark:border-white/5 last:border-r-0 align-middle bg-rose-50/10 dark:bg-rose-950/5">
                                 <div className="h-full flex flex-col items-center justify-center p-2 rounded-xl border border-dashed border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/20 text-center">
                                   <span className="text-[8.5px] font-black uppercase text-rose-700 dark:text-rose-400">College Holiday</span>
                                   <span className="text-[8px] text-rose-500 font-medium truncate max-w-full mt-0.5">{cellData.config?.notes || "No Classes Scheduled"}</span>
@@ -2315,7 +2320,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           if (cellData?.type === "event") {
                             return (
-                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-amber-50/15 dark:bg-amber-950/5">
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-100 dark:border-white/5 last:border-r-0 align-top bg-amber-50/15 dark:bg-amber-950/5">
                                 <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 shadow-xs">
                                   <div>
                                     <span className="px-1.5 py-0.5 rounded bg-amber-200/80 border border-amber-300 text-[7.5px] font-black text-amber-800 uppercase tracking-wide">
@@ -2346,7 +2351,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           if (cellData?.type === "exam") {
                             const examInfo = cellData.exam;
                             return (
-                              <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-purple-50/20 dark:bg-purple-950/10">
+                              <td key={time} className="p-1.5 h-24 border-r border-slate-100 dark:border-white/5 last:border-r-0 align-top bg-purple-50/20 dark:bg-purple-950/10">
                                 <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-purple-300 dark:border-purple-800/60 bg-purple-50/70 dark:bg-purple-950/30 shadow-xs">
                                   <div>
                                     <div className="flex items-center justify-between gap-1 mb-1">
@@ -2384,18 +2389,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           }
 
                           return (
-                            <td key={time} className="p-1.5 h-24 border-r border-slate-150 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
+                            <td key={time} className="p-1.5 h-24 border-r border-slate-100 dark:border-white/5 last:border-r-0 align-top bg-white dark:bg-[#101015]">
                               {!cellData || !cellData.slot ? (
-                                <div className="h-full flex items-center justify-center text-[9px] text-slate-400 italic border border-dashed border-slate-150 rounded-xl bg-slate-55/30">
+                                <div className="h-full flex items-center justify-center text-[9px] text-slate-400 italic border border-dashed border-slate-100 rounded-xl bg-slate-50/30">
                                   Free Period
                                 </div>
                               ) : (
-                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-slate-200 dark:border-white/8 bg-slate-50/20 dark:bg-[#1c1c26] shadow-sm relative overflow-hidden">
+                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-slate-100 dark:border-white/8 bg-slate-50/20 dark:bg-[#1c1c26] shadow-sm relative overflow-hidden">
                                   <div className="space-y-1">
-                                    <div className="text-[9px] font-extrabold text-indigo-650 truncate" title={cellData.handover?.course || cellData.slot.course}>
+                                    <div className="text-[9px] font-extrabold text-indigo-600 truncate" title={cellData.handover?.course || cellData.slot.course}>
                                       {cellData.handover?.course || cellData.slot.course}
                                     </div>
-                                    <div className="text-[8px] text-slate-450 dark:text-slate-300 font-bold truncate">
+                                    <div className="text-[8px] text-slate-400 dark:text-slate-300 font-bold truncate">
                                       {cellData.handover ? (
                                         <span className="text-slate-700 font-extrabold">{cellData.handover.coverStaffName}</span>
                                       ) : (
@@ -2442,11 +2447,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         {/* Tab: My Interviews & Evaluation Marks */}
         {activeTab === "interviews" && (
           <div className="space-y-6 font-sans">
-            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
                   <h2 className="text-base font-black text-slate-900">My Interview Sessions &amp; Evaluation Marks</h2>
-                  <p className="text-xs text-slate-450 font-medium mt-0.5">
+                  <p className="text-xs text-slate-400 font-medium mt-0.5">
                     View scheduled interview dates, evaluator ratings (Communication, Technical, Content, Confidence), questions asked, and clearance status.
                   </p>
                 </div>
@@ -2464,7 +2469,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 if (myCohortInterviews.length === 0) {
                   return (
                     <div className="text-center py-12 border border-slate-100 rounded-xl bg-slate-50/50">
-                      <Award className="h-8 w-8 text-slate-350 mx-auto mb-2" />
+                      <Award className="h-8 w-8 text-slate-300 mx-auto mb-2" />
                       <p className="text-xs font-bold text-slate-700">No Interview Sessions Scheduled</p>
                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Your cohort has no active interview allocations scheduled at this time.</p>
                     </div>
@@ -2489,7 +2494,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       const isVerified = inv.status === "completed";
 
                       return (
-                        <div key={inv.id} className="p-5 rounded-xl border border-slate-200 bg-slate-50/30 space-y-3.5 shadow-xs">
+                        <div key={inv.id} className="p-5 rounded-xl border border-slate-100 bg-slate-50/30 space-y-3.5 shadow-xs">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <span className="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {(inv.type || "internal").toUpperCase()} INTERVIEW
@@ -2506,7 +2511,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           {/* Allocation & Time Slot Window */}
                           {isAllocated ? (
-                            <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2">
+                            <div className="bg-white p-3.5 rounded-2xl border border-slate-100 space-y-2 shadow-card">
                               <div className="flex items-center justify-between text-xs font-bold text-slate-700">
                                 <span className="flex items-center gap-1.5 text-indigo-700">
                                   <Clock className="w-3.5 h-3.5" /> Assigned Time: {assignedTime}
@@ -2550,7 +2555,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                           {/* Evaluation Status & Multi-criteria Scores */}
                           {myEval ? (
-                            <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                            <div className="bg-white p-3.5 rounded-2xl border border-slate-100 space-y-2.5 shadow-card">
                               <div className="flex items-center justify-between">
                                 <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${myEval.status === "Cleared" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
                                     myEval.status === "Needs Improvement" ? "bg-amber-50 text-amber-700 border border-amber-200" :
@@ -2608,7 +2613,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               )}
                             </div>
                           ) : isAllocated ? (
-                            <div className="p-3 bg-indigo-50/60 border border-indigo-150 rounded-xl text-center text-[11px] font-bold text-indigo-800">
+                            <div className="p-3 bg-indigo-50/60 border border-indigo-100 rounded-xl text-center text-[11px] font-bold text-indigo-800">
                               ⏳ Scheduled & Ready — Awaiting Evaluation by {assignedMentor}
                             </div>
                           ) : null}
@@ -2624,7 +2629,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
         {/* Tab 5: Examinations, Test Marks & Assessment Hub */}
         {activeTab === "exams" && (() => {
-          const todayStr = new Date().toISOString().slice(0, 10);
+          const todayStr = getLocalDateStr();
           const allExams = studentExamsList || [];
           const pastExams = allExams.filter((ex: any) => ex.exam_date < todayStr);
           const upcomingExams = allExams.filter((ex: any) => ex.exam_date >= todayStr);
@@ -2748,10 +2753,10 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           return (
             <div className="space-y-5 font-sans">
               {/* Header Navigation & Sub-Tabs */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-3.5">
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3.5">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-650">
+                    <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
                       <BookOpen className="h-5 w-5" />
                     </div>
                     <div>
@@ -2764,7 +2769,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           )}
                         </span>
                       </h2>
-                      <p className="text-[11px] text-slate-450 mt-0.5">
+                      <p className="text-[11px] text-slate-400 mt-0.5">
                         Track your test marks, evaluated scores, pass/fail status, evaluator feedback, and upcoming assessment timetables.
                       </p>
                     </div>
@@ -2853,7 +2858,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <div className="space-y-4">
                   {/* Filter and search bar */}
                   {availableExamTypes.length > 0 && (
-                    <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-3 shadow-card flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10px] font-extrabold uppercase text-slate-400 mr-1">Filter Test:</span>
                         <button
@@ -2901,11 +2906,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                   {/* Exam-wise Grouped Cards */}
                   {examsLoading ? (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-400 font-bold shadow-sm">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 font-bold shadow-card">
                       Loading evaluated test scores...
                     </div>
                   ) : availableExamTypes.length === 0 ? (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-400 shadow-sm">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-400 shadow-card">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <BookOpen className="h-8 w-8 text-slate-300" />
                         <p className="font-bold text-slate-600 text-sm">No Test Marks Published Yet</p>
@@ -2915,7 +2920,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </div>
                     </div>
                   ) : examGroups.length === 0 ? (
-                    <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-500 text-xs shadow-sm">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-slate-500 text-xs shadow-card">
                       No test marks matching your current filter.{" "}
                       <button
                         type="button"
@@ -2933,7 +2938,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       return (
                         <div
                           key={group.type}
-                          className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden transition-all hover:border-slate-300"
+                          className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden transition-all hover:border-slate-300"
                         >
                           {/* Group Header */}
                           <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-indigo-50/20 to-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
@@ -2944,7 +2949,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <h3 className="text-sm font-black text-slate-900 tracking-tight">{group.type}</h3>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-150">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-100">
                                     {group.evalCount} / {group.totalSubjects} Evaluated
                                   </span>
                                   {group.pct !== null && (
@@ -3011,7 +3016,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   <TableHead className="p-3">Evaluator & Remarks</TableHead>
                                 </TableRow>
                               </TableHeader>
-                              <TableBody className="divide-y divide-slate-150 bg-white font-medium">
+                              <TableBody className="divide-y divide-slate-100 bg-white font-medium">
                                 {/* 1. Evaluated Marks */}
                                 {group.typeMarks.map((m: any, idx: number) => {
                                   const isAbs = Boolean(m.is_absent);
@@ -3208,7 +3213,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                             ) : null}
                           </div>
                         </td>
-                        <td className="p-3 text-slate-650">
+                        <td className="p-3 text-slate-600">
                           <div className="flex items-center gap-1.5 text-[10.5px]">
                             <Clock className="h-3 w-3 text-slate-400 shrink-0" />
                             <span className="font-semibold text-slate-800">{ex.session_time || `${ex.start_time} - ${ex.end_time}`}</span>
@@ -3239,7 +3244,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 return (
                   <div className="space-y-4">
                     {/* Upcoming exams */}
-                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
                       <div className="px-4 py-2.5 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-black uppercase text-indigo-700 tracking-wider">Upcoming Scheduled Tests</span>
@@ -3259,7 +3264,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                               <TableHead className="p-3 text-center">Status</TableHead>
                             </TableRow>
                           </TableHeader>
-                          <TableBody className="divide-y divide-slate-150 bg-white font-medium">
+                          <TableBody className="divide-y divide-slate-100 bg-white font-medium">
                             {examsLoading ? (
                               <TableRow>
                                 <TableCell colSpan={6} className="p-8 text-center text-slate-400 font-bold">
@@ -3280,7 +3285,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                     {/* Past exams — only shown if any exist */}
                     {pastExams.length > 0 && (
-                      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                      <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
                         <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
                           <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Past Tests & Examinations</span>
                           <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[9px] font-black">{pastExams.length}</span>
@@ -3297,7 +3302,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                 <TableHead className="p-3 text-center">Status</TableHead>
                               </TableRow>
                             </TableHeader>
-                            <TableBody className="divide-y divide-slate-150 bg-white font-medium">
+                            <TableBody className="divide-y divide-slate-100 bg-white font-medium">
                               {examTableRows(pastExams, true)}
                             </TableBody>
                           </Table>
@@ -3315,7 +3320,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         {(activeTab === "materials" || activeTab === "library") && (
           <div className="space-y-6 animate-fadeIn">
             {/* Subject Selector & Header */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-4">
+            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div>
                   <div className="flex items-center gap-2">
@@ -3379,7 +3384,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </div>
 
             {/* Unit Tabs & Filters Bar */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {/* Unit 1 to 5 Filter Tabs */}
                 <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
@@ -3495,7 +3500,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                     return (
                       <div
                         key={mat.id}
-                        className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs hover:shadow-md hover:border-indigo-200 transition-all flex flex-col justify-between space-y-4 group"
+                        className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card hover:shadow-card-lg hover:border-indigo-200 transition-all flex flex-col justify-between space-y-4 group"
                       >
                         <div className="space-y-3">
                           <div className="flex items-start justify-between gap-3">
@@ -3573,9 +3578,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           if (feeLoading && !feeData) return <div className="py-16 text-center text-sm text-slate-400">Loading your fee details…</div>;
 
           if (!feeData) return (
-            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4 shadow-sm font-sans">
-              <h2 className="text-xs font-bold text-slate-550 uppercase tracking-wider">Fees & Online Payments</h2>
-              <p className="text-[11px] text-slate-450 mt-1">Could not load fee data. Try refreshing.</p>
+            <div className="bg-white border border-slate-100 rounded-2xl p-6 space-y-4 shadow-card font-sans">
+              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Fees & Online Payments</h2>
+              <p className="text-[11px] text-slate-400 mt-1">Could not load fee data. Try refreshing.</p>
               <button onClick={() => feeQuery.refetch()} className="px-4 py-2 rounded-xl btn-gradient text-white text-xs font-bold cursor-pointer">Retry</button>
             </div>
           );
@@ -3598,16 +3603,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 ))}
               </div>
 
-              <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 shadow-sm">
+              <div className="bg-white border border-slate-100 rounded-2xl p-5 space-y-3 shadow-card">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider">Fee Breakdown</h3>
                   <button onClick={() => feeQuery.refetch()} className="p-1.5 rounded-xl border border-slate-200 text-slate-400 hover:text-[#D528A2] cursor-pointer transition-colors"><RefreshCw className="h-3 w-3" /></button>
                 </div>
                 {fees.map((fee: any) => (
-                  <div key={fee.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-150 bg-slate-50/50 gap-3">
+                  <div key={fee.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-100 bg-slate-50/50 gap-3">
                     <div className="space-y-0.5">
                       <h4 className="text-xs font-extrabold text-slate-800">{fee.term_name}</h4>
-                      <div className="flex items-center gap-3 text-[10px] text-slate-450 font-bold">
+                      <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold">
                         <span>Total: <span className="text-slate-700">{fmtR(fee.amount)}</span></span>
                         <span>•</span>
                         <span>Paid: <span className="text-slate-800">{fmtR(fee.paid_amount)}</span></span>
@@ -3651,7 +3656,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
 
               {payments.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
                   <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-4">Payment History</h3>
                   <div className="space-y-2">
                     {[...payments].sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()).map((p: any) => (
@@ -3829,13 +3834,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           return (
             <div className="space-y-6 font-sans">
               {/* Category Switcher Banner: Academic vs Skill */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-100 rounded-2xl p-4 shadow-card">
                 <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200/80 w-fit">
                   <button
                     type="button"
                     onClick={() => setStudentTrackerCategory("academic")}
                     className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${studentTrackerCategory === "academic"
-                        ? "bg-white text-indigo-650 shadow-xs"
+                        ? "bg-white text-indigo-600 shadow-xs"
                         : "text-slate-500 hover:text-slate-800"
                       }`}
                   >
@@ -3867,7 +3872,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               {studentTrackerCategory === "academic" && (
                 <div className="space-y-6 animate-fadeIn">
                   {/* Subject Selector Bar */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+                  <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">
                         Select Academic Course
@@ -3941,7 +3946,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         <div
                           key={`acad_wk_${wk}`}
                           id={`acad-task-week-${wk}`}
-                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 hover:shadow-sm transition-all duration-300 scroll-mt-24 ${highlightedWeek === wk
+                          className={`bg-white border rounded-xl p-5 shadow-card space-y-4 hover:shadow-card transition-all duration-300 scroll-mt-24 ${highlightedWeek === wk
                               ? "border-indigo-500 ring-4 ring-indigo-100 shadow-md scale-[1.01]"
                               : "border-slate-200"
                             }`}
@@ -4033,7 +4038,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                     <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider block">
                                       Weekly Focus &amp; Overview
                                     </span>
-                                    <p className="text-xs font-bold text-slate-800 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-150">
+                                    <p className="text-xs font-bold text-slate-800 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">
                                       {task.task_name}
                                     </p>
                                   </div>
@@ -4148,7 +4153,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                               {/* Faculty Feedback */}
                               {entry?.feedback && (
-                                <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg space-y-1">
+                                <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg space-y-1">
                                   <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block">
                                     Faculty Remarks &amp; Feedback
                                   </span>
@@ -4173,7 +4178,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <div className="space-y-6 animate-fadeIn">
                   {/* Subject Selector / Header with Clean NEW Indicator */}
                   {assignedMentorSubjects.length === 1 ? (
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-wrap gap-4 items-center justify-between">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Skill Development Course</span>
@@ -4197,7 +4202,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </div>
                     </div>
                   ) : assignedMentorSubjects.length > 1 ? (
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Assigned Skill Development Courses</label>
                         <span className="text-[10px] text-slate-500 font-bold">{studentClassDetails.sem} • {studentClassDetails.year}</span>
@@ -4246,7 +4251,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-wrap gap-4 items-center justify-between">
+                    <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-wrap gap-4 items-center justify-between">
                       <div className="space-y-1.5 flex-grow max-w-md">
                         <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider block">Select Skill Subject</label>
                         <select
@@ -4296,7 +4301,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         <div
                           key={wk}
                           id={`skill-task-week-${wk}`}
-                          className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 transition-all duration-300 scroll-mt-24 ${highlightedWeek === wk
+                          className={`bg-white border rounded-xl p-5 shadow-card space-y-4 transition-all duration-300 scroll-mt-24 ${highlightedWeek === wk
                               ? "border-indigo-500 ring-4 ring-indigo-100 shadow-md scale-[1.01]"
                               : isNewTask
                                 ? "border-rose-300 ring-1 ring-rose-100"
@@ -4370,7 +4375,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                   <div className="space-y-3">
                                     <div className="space-y-1">
                                       <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Instructions</span>
-                                      <p className="text-xs font-medium text-slate-800 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-150">
+                                      <p className="text-xs font-medium text-slate-800 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">
                                         {task.task_name}
                                       </p>
                                     </div>
@@ -4409,7 +4414,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                       <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Student Submission</span>
 
                                       {currentUrl && !editSubmissionMode[wk] ? (
-                                        <div className="rounded-lg border border-slate-200 p-3.5 bg-slate-50 space-y-2.5">
+                                        <div className="rounded-lg border border-slate-100 p-3.5 bg-slate-50 space-y-2.5">
                                           <div className="flex items-start justify-between gap-3">
                                             <div className="space-y-1 min-w-0">
                                               <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Submitted Link / File</span>
@@ -4419,7 +4424,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                                   <a
                                                     href={currentUrl}
                                                     download={`Week_${wk}_Submission`}
-                                                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-650 hover:underline truncate"
+                                                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:underline truncate"
                                                   >
                                                     <span>Download Attached Document</span>
                                                     <Download className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
@@ -4430,7 +4435,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                                                   href={currentUrl}
                                                   target="_blank"
                                                   rel="noreferrer"
-                                                  className="inline-flex items-center gap-1 text-xs font-bold text-indigo-650 hover:underline truncate max-w-full"
+                                                  className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:underline truncate max-w-full"
                                                 >
                                                   <span className="truncate">{currentUrl}</span>
                                                   <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
@@ -4590,7 +4595,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
                                     {/* Mentor Viva Feedback & Remarks */}
                                     {entry?.viva_assessment && (
-                                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg space-y-1">
+                                      <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg space-y-1">
                                         <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Faculty Feedback</span>
                                         <p className="text-xs font-medium text-slate-700 italic leading-relaxed">
                                           &ldquo;{entry.viva_assessment}&rdquo;
@@ -4622,16 +4627,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           return (
             <form onSubmit={handleSaveProfile} className="space-y-6 font-sans">
               {/* Access Controller Banner */}
-              <div className="flex justify-between items-center bg-white p-4.5 rounded-xl border border-slate-100 shadow-sm flex-wrap gap-4">
+              <div className="flex justify-between items-center bg-white p-4.5 rounded-xl border border-slate-100 shadow-card flex-wrap gap-4">
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl ${isProfileEditAllowed ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                     {isProfileEditAllowed ? <CheckCircle className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
                   </div>
                   <div>
-                    <h3 className="text-xs font-black text-slate-805">
+                    <h3 className="text-xs font-black text-slate-800">
                       {isProfileEditAllowed ? "Profile Editing Access Enabled" : "Profile Editing Access Locked"}
                     </h3>
-                    <p className="text-[10px] text-slate-455 mt-0.5 font-semibold">
+                    <p className="text-[10px] text-slate-500 mt-0.5 font-semibold">
                       {isProfileEditAllowed
                         ? "You are permitted to modify your academic and personal registration credentials."
                         : "Editing has been disabled by your Campus Manager (CM) for your class group."}
@@ -4643,7 +4648,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   <button
                     type="button"
                     onClick={startEditingProfile}
-                    className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition-all hover:scale-[1.01] cursor-pointer"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition-all hover:scale-[1.01] cursor-pointer"
                   >
                     Edit Profile Data
                   </button>
@@ -4652,8 +4657,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               {/* Editing Action Row */}
               {isEditingProfile && (
-                <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-150 p-4.5 rounded-xl justify-end flex-wrap">
-                  <span className="text-xs font-bold text-indigo-850 mr-auto">
+                <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 p-4.5 rounded-xl justify-end flex-wrap">
+                  <span className="text-xs font-bold text-indigo-800 mr-auto">
                     You are in editing mode. Save your changes to persist them to the database.
                   </span>
                   <button
@@ -4665,7 +4670,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-indigo-655 hover:bg-indigo-705 text-white rounded-xl text-xs font-extrabold shadow-md transition-all cursor-pointer"
+                    className="px-5 py-2 bg-indigo-700 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md transition-all cursor-pointer"
                   >
                     Save Changes
                   </button>
@@ -4676,9 +4681,9 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                 {/* Section 1: Personal & Primary Identity */}
-                <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-5">
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5">
                   <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                    <User className="h-5 w-5 text-indigo-650" />
+                    <User className="h-5 w-5 text-indigo-600" />
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Personal & Identity Credentials</h3>
                   </div>
 
@@ -4722,7 +4727,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Aadhar Card Number</span>
                       {/* ROLE_UI_AUDIT S1 (P0): Aadhaar is sensitive PII — students can no
                           longer edit it themselves; only CAM/Admin can change it. */}
-                      <span className="text-xs font-extrabold text-slate-855 block font-mono">
+                      <span className="text-xs font-extrabold text-slate-900 block font-mono">
                         {currentStudent.aadhar_number
                           ? `XXXX-XXXX-${currentStudent.aadhar_number.replace(/\D/g, "").slice(-4) || "XXXX"}`
                           : <span className="text-slate-400 italic font-sans">Not Added</span>}
@@ -4740,7 +4745,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block">{currentStudent.dob || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-900 block">{currentStudent.dob || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 
@@ -4758,16 +4763,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           ))}
                         </select>
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block">{currentStudent.blood_group || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-900 block">{currentStudent.blood_group || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
                   </div>
                 </div>
 
                 {/* Section 2: Contact Details */}
-                <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-5">
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5">
                   <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                    <Clock className="h-5 w-5 text-indigo-655" />
+                    <Clock className="h-5 w-5 text-indigo-700" />
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Contact & Communications</h3>
                   </div>
 
@@ -4783,7 +4788,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           required
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-indigo-650 block break-all">{currentStudent.email}</span>
+                        <span className="text-xs font-extrabold text-indigo-600 block break-all">{currentStudent.email}</span>
                       )}
                     </div>
 
@@ -4798,7 +4803,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block">{currentStudent.phone || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-900 block">{currentStudent.phone || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 
@@ -4813,16 +4818,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block">{currentStudent.parent_phone || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-900 block">{currentStudent.parent_phone || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
                   </div>
                 </div>
 
                 {/* Section 3: Academic History & Medium */}
-                <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-5 lg:col-span-2">
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5 lg:col-span-2">
                   <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                    <BookOpen className="h-5 w-5 text-indigo-650" />
+                    <BookOpen className="h-5 w-5 text-indigo-600" />
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Academic Background & Marks</h3>
                   </div>
 
@@ -4839,7 +4844,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                         />
                       ) : (
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.department}</span>
+                          <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.department}</span>
                           <CourseInfoButton course={currentStudent.department} collegeId={currentStudent.college_id} size="xs" />
                         </div>
                       )}
@@ -4856,7 +4861,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.tenth_mark ? `${currentStudent.tenth_mark}%` : <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.tenth_mark ? `${currentStudent.tenth_mark}%` : <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 
@@ -4871,7 +4876,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.eleventh_mark ? `${currentStudent.eleventh_mark}%` : <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.eleventh_mark ? `${currentStudent.eleventh_mark}%` : <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 
@@ -4886,7 +4891,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-850 block">{currentStudent.twelfth_mark ? `${currentStudent.twelfth_mark}%` : <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-800 block">{currentStudent.twelfth_mark ? `${currentStudent.twelfth_mark}%` : <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 
@@ -4901,7 +4906,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           className="w-full px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold focus:ring-1 focus:ring-indigo-500 outline-none text-slate-800"
                         />
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block">{currentStudent.academic_group || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-900 block">{currentStudent.academic_group || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
 
@@ -4919,16 +4924,16 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           <option value="Other">Other</option>
                         </select>
                       ) : (
-                        <span className="text-xs font-extrabold text-slate-855 block">{currentStudent.medium || <span className="text-slate-400 italic">Not Added</span>}</span>
+                        <span className="text-xs font-extrabold text-slate-900 block">{currentStudent.medium || <span className="text-slate-400 italic">Not Added</span>}</span>
                       )}
                     </div>
                   </div>
                 </div>
 
                 {/* Section 4: Professional Portfolios & Practice Hubs */}
-                <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-5 lg:col-span-2">
+                <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5 lg:col-span-2">
                   <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-                    <Sparkles className="h-5 w-5 text-indigo-650" />
+                    <Sparkles className="h-5 w-5 text-indigo-600" />
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Professional Portfolios & Coding Profiles</h3>
                   </div>
 
@@ -4949,7 +4954,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           const val = currentStudent.linkedin_link;
                           if (!val) return <span className="text-xs text-slate-400 italic">Not Added</span>;
                           const href = val.startsWith("http") ? val : `https://${val}`;
-                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-650 hover:underline break-all">{val}</a>;
+                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 hover:underline break-all">{val}</a>;
                         })()
                       )}
                     </div>
@@ -4975,7 +4980,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           const val = currentStudent.github_id;
                           if (!val) return <span className="text-xs text-slate-400 italic">Not Added</span>;
                           const href = `https://github.com/${val.replace(/@/, "")}`;
-                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-650 hover:underline break-all">{val}</a>;
+                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 hover:underline break-all">{val}</a>;
                         })()
                       )}
                     </div>
@@ -4996,7 +5001,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           const val = currentStudent.project_drive_link;
                           if (!val) return <span className="text-xs text-slate-400 italic">Not Added</span>;
                           const href = val.startsWith("http") ? val : `https://${val}`;
-                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-650 hover:underline break-all">Google Drive Folder Link</a>;
+                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 hover:underline break-all">Google Drive Folder Link</a>;
                         })()
                       )}
                     </div>
@@ -5017,7 +5022,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           const val = currentStudent.hackerrank_link;
                           if (!val) return <span className="text-xs text-slate-400 italic">Not Added</span>;
                           const href = val.startsWith("http") ? val : `https://${val}`;
-                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-650 hover:underline break-all">{val}</a>;
+                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 hover:underline break-all">{val}</a>;
                         })()
                       )}
                     </div>
@@ -5038,7 +5043,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           const val = currentStudent.leetcode_link;
                           if (!val) return <span className="text-xs text-slate-400 italic">Not Added</span>;
                           const href = val.startsWith("http") ? val : `https://${val}`;
-                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-650 hover:underline break-all">{val}</a>;
+                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 hover:underline break-all">{val}</a>;
                         })()
                       )}
                     </div>
@@ -5059,7 +5064,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                           const val = currentStudent.figma_link;
                           if (!val) return <span className="text-xs text-slate-400 italic">Not Added</span>;
                           const href = val.startsWith("http") ? val : `https://${val}`;
-                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-650 hover:underline break-all">{val}</a>;
+                          return <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-600 hover:underline break-all">{val}</a>;
                         })()
                       )}
                     </div>
@@ -5068,7 +5073,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
 
               {/* Live Coding & Competitive Programming Performance Section */}
-              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-6">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
                   <div className="flex items-center gap-2.5">
                     <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-amber-500 text-slate-950 flex items-center justify-center font-black text-sm shadow-xs">
@@ -5246,7 +5251,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
 
               {/* Honors & Student Achievements Section */}
-              <div className="bg-white p-7 rounded-dribbble-panel border border-slate-100 shadow-sm space-y-5">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-5">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
                   <div className="flex items-center gap-2.5">
                     <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -5382,24 +5387,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
 
               {/* Attendance & Engagement Stats Card */}
-              <div className="bg-pastel-blue p-7 rounded-dribbble-panel border-transparent shadow-sm space-y-6">
-                <h3 className="text-xs font-black text-slate-555 uppercase tracking-widest font-sans">Attendance Performance Stats</h3>
+              <div className="bg-pastel-blue p-6 rounded-2xl border-transparent shadow-sm space-y-6">
+                <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest font-sans">Attendance Performance Stats</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
                   <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                     <span className="text-3xl font-extrabold text-slate-900">{overallPercentage.toFixed(1)}%</span>
-                    <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Average Attendance</span>
+                    <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Average Attendance</span>
                   </div>
                   <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                     <span className="text-3xl font-extrabold text-slate-900">{(overallPercentage / 20).toFixed(2)}</span>
-                    <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Attendance GPA</span>
+                    <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Attendance GPA</span>
                   </div>
                   <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                     <span className="text-3xl font-extrabold text-slate-900">{totalClasses}</span>
-                    <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Total Slots Marked</span>
+                    <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Total Slots Marked</span>
                   </div>
-                  <div className="p-4 bg-white/80 rounded-xl border border-slate-105/40">
+                  <div className="p-4 bg-white/80 rounded-xl border border-slate-100/40">
                     <span className="text-3xl font-extrabold text-slate-900">{presentClasses}</span>
-                    <span className="text-[9px] text-slate-455 font-extrabold uppercase tracking-wider block mt-1">Present Intervals</span>
+                    <span className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider block mt-1">Present Intervals</span>
                   </div>
                 </div>
               </div>
@@ -5453,7 +5458,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
           return (
             <div className="space-y-6 animate-fadeIn pb-12">
               {/* Header Card */}
-              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-card flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-[#D528A2] text-white flex items-center justify-center shadow-sm shrink-0">
                     <Award className="h-6 w-6" />
@@ -5486,7 +5491,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
               {/* KPI Analytics Summary Bar */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex items-center gap-3.5">
                   <div className="h-10 w-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
                     <Calendar className="h-5 w-5" />
                   </div>
@@ -5496,7 +5501,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex items-center gap-3.5">
                   <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
                     <CheckCircle2 className="h-5 w-5" />
                   </div>
@@ -5506,7 +5511,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center gap-3.5">
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex items-center gap-3.5">
                   <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
                     <Sparkles className="h-5 w-5" />
                   </div>
@@ -5516,7 +5521,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-xs flex items-center gap-3.5 bg-emerald-50/20">
+                <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-card flex items-center gap-3.5 bg-emerald-50/20">
                   <div className="h-10 w-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                     <Activity className="h-5 w-5" />
                   </div>
@@ -5569,7 +5574,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       return (
                         <div
                           key={slot.id || `${slot.interview_id}_${slot.slot_start_time}`}
-                          className="bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all duration-200 p-5 space-y-4 flex flex-col justify-between relative overflow-hidden group"
+                          className="bg-white rounded-2xl border border-slate-100 shadow-card hover:shadow-card-lg transition-all duration-200 p-5 space-y-4 flex flex-col justify-between relative overflow-hidden group"
                         >
                           <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-indigo-500 via-[#D528A2] to-teal-400" />
 
@@ -5716,7 +5721,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                       return (
                         <div
                           key={ev.id || `${ev.interview_id}_${ev.student_id}`}
-                          className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 space-y-5"
+                          className="bg-white rounded-2xl border border-slate-100 shadow-card p-6 space-y-5"
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                             <div>

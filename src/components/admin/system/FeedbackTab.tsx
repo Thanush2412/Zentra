@@ -28,6 +28,7 @@ import { usePagination } from "@/hooks/usePagination";
 import { formatRoleLabel, normalizeRoleValue } from "@/lib/utils";
 import { apiFetch } from "@/lib/apiFetch";
 import { useQuery } from "@tanstack/react-query";
+import { useToast } from "@/context/ToastContext";
 import { qk } from "@/lib/queryKeys";
 
 export interface FeedbackReport {
@@ -53,7 +54,7 @@ export interface FeedbackTabProps {
   reports?: FeedbackReport[];
   isLoading?: boolean;
   onRefresh?: () => void;
-  onStatusChange?: (id: string, status: "pending" | "resolved" | "closed", notes?: string) => Promise<void>;
+  onStatusChange?: (id: string, status: "pending" | "resolved" | "closed", notes?: string) => Promise<void | boolean>;
   statusUpdatingId?: string | null;
 }
 
@@ -64,6 +65,7 @@ export const FeedbackTab: React.FC<FeedbackTabProps> = ({
   onStatusChange: propOnStatusChange,
   statusUpdatingId: propStatusUpdatingId
 }) => {
+  const { toast } = useToast();
   const feedbackQuery = useQuery({
     queryKey: qk.adminFeedback("all"),
     queryFn: async () => {
@@ -80,16 +82,25 @@ export const FeedbackTab: React.FC<FeedbackTabProps> = ({
   const [internalUpdatingId, setInternalUpdatingId] = useState<string | null>(null);
   const statusUpdatingId = propStatusUpdatingId ?? internalUpdatingId;
 
-  const onStatusChange = async (id: string, status: "pending" | "resolved" | "closed", notes?: string) => {
-    if (propOnStatusChange) return propOnStatusChange(id, status, notes);
+  const onStatusChange = async (id: string, status: "pending" | "resolved" | "closed", notes?: string): Promise<boolean> => {
+    if (propOnStatusChange) return (await propOnStatusChange(id, status, notes)) !== false;
     setInternalUpdatingId(id);
     try {
-      await fetch("/api/feedback", {
+      const res = await fetch("/api/feedback", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status, adminNotes: notes })
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) {
+        toast(data?.message || "Failed to update the report.", "error");
+        return false;
+      }
       feedbackQuery.refetch();
+      return true;
+    } catch (err: any) {
+      toast(err.message || "Failed to update the report.", "error");
+      return false;
     } finally {
       setInternalUpdatingId(null);
     }
@@ -146,7 +157,8 @@ export const FeedbackTab: React.FC<FeedbackTabProps> = ({
 
   const handleConfirmResolve = async () => {
     if (!resolvingReport) return;
-    await onStatusChange(resolvingReport.id, "resolved", resolutionNote.trim());
+    const ok = await onStatusChange(resolvingReport.id, "resolved", resolutionNote.trim());
+    if (!ok) return;
     setResolvingReport(null);
     setResolutionNote("");
   };
@@ -272,17 +284,17 @@ export const FeedbackTab: React.FC<FeedbackTabProps> = ({
 
       {/* Feed List */}
       {isLoading && filteredReports.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-400 bg-white rounded-xl border border-slate-200/80">
+        <div className="flex flex-col items-center justify-center py-12 text-slate-400 bg-white rounded-2xl border border-slate-100 shadow-card">
           <Loader2 className="h-6 w-6 animate-spin text-indigo-600 mb-2" />
-          <p className="text-xs font-bold text-gray-500">Loading user feedback reports...</p>
+          <p className="text-xs font-bold text-slate-500">Loading user feedback reports...</p>
         </div>
       ) : filteredReports.length === 0 ? (
-        <div className="text-center px-4 py-12 bg-white rounded-xl border border-slate-200/80">
-          <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-400 flex items-center justify-center mx-auto mb-2.5">
+        <div className="text-center px-4 py-12 bg-white rounded-2xl border border-slate-100 shadow-card">
+          <div className="h-10 w-10 rounded-2xl bg-indigo-50 text-indigo-500 flex items-center justify-center mx-auto mb-2.5">
             <MessageSquare className="h-5 w-5" />
           </div>
-          <p className="text-xs font-extrabold text-gray-700">No Feedback Reports Found</p>
-          <p className="text-[11px] text-gray-400 mt-0.5 max-w-sm mx-auto">
+          <p className="text-xs font-bold text-slate-800">No Feedback Reports Found</p>
+          <p className="text-[11px] text-slate-400 mt-0.5 max-w-sm mx-auto">
             {search || statusFilter !== "all" || typeFilter !== "all"
               ? "No records match your active search or filters. Try clearing the filter."
               : 'User submissions from the floating "Report Issue / Feedback" modal will appear here.'}
@@ -302,7 +314,7 @@ export const FeedbackTab: React.FC<FeedbackTabProps> = ({
           )}
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {pagination.pageItems.map((r) => {
             const isPending = (r.status || "pending") === "pending";
             const isResolved = r.status === "resolved";
@@ -311,7 +323,7 @@ export const FeedbackTab: React.FC<FeedbackTabProps> = ({
             return (
               <div
                 key={r.id}
-                className="bg-white border border-gray-200/90 hover:border-indigo-300 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-all space-y-2"
+                className="bg-white border border-slate-100 hover:border-indigo-200 rounded-2xl p-4 shadow-card hover:shadow-md transition-all space-y-3"
               >
                 {/* Top Row: Meta Badges + Actions */}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">

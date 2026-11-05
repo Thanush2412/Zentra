@@ -160,9 +160,9 @@ export function AdminSidebar({
         onClick={() => handleNavigate(item.id)}
         onMouseEnter={() => prefetchRoleTab(queryClient, "admin", item.id, {})}
         onFocus={() => prefetchRoleTab(queryClient, "admin", item.id, {})}
-        className={`relative w-full flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors cursor-pointer ${
+        className={`relative w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-colors cursor-pointer ${
           isActive
-            ? "bg-indigo-50/90 font-semibold text-indigo-700"
+            ? "bg-indigo-50/90 font-bold text-indigo-700 shadow-xs"
             : `hover:bg-slate-50 hover:text-slate-900 ${
                 primary ? "font-semibold text-slate-700" : "font-medium text-slate-600"
               }`
@@ -301,14 +301,27 @@ export function AdminSidebar({
     <>
       <aside
         ref={asideRef}
-        className={`hidden md:flex shrink-0 flex-col self-stretch min-h-0 my-5 z-30 rounded-xl border border-slate-200/80 bg-white/85 backdrop-blur-md shadow-sm ${
-          collapsed ? "w-20 p-2" : "w-64 p-3"
+        className={`hidden md:flex shrink-0 flex-col self-stretch min-h-0 my-5 z-30 rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-md shadow-card ${
+          collapsed ? "w-20 p-2" : "w-64 p-3.5"
         }`}
         aria-label="Admin workspace navigation"
       >
         {collapsed ? railNav : expandedNav}
 
-        <div className="shrink-0 border-t border-slate-100 pt-2 mt-2 flex justify-center">
+        {!collapsed && (
+          <div className="relative overflow-hidden rounded-xl bg-indigo-50/60 p-3 border border-indigo-100/80 my-2 shrink-0">
+            <div className="text-[11px] font-bold text-slate-800">Need Help?</div>
+            <a
+              href="mailto:support@faceprep.in"
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 mt-0.5"
+            >
+              <span>Contact Support</span>
+              <span>&rarr;</span>
+            </a>
+          </div>
+        )}
+
+        <div className="shrink-0 border-t border-slate-100 pt-2 flex justify-center">
           <button
             type="button"
             onClick={onToggleCollapsed}

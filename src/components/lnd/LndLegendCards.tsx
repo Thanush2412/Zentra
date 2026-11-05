@@ -4,7 +4,7 @@ export default function LndLegendCards() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
       {/* Card 1: Legend */}
-      <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4 backdrop-blur-md">
+      <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-card space-y-4 backdrop-blur-md">
         <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Legend</h3>
         <div className="grid grid-cols-2 gap-3 text-[10.5px] font-semibold text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-2">
@@ -39,7 +39,7 @@ export default function LndLegendCards() {
       </div>
 
       {/* Card 2: Info */}
-      <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3 backdrop-blur-md">
+      <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-card space-y-3 backdrop-blur-md">
         <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2">Guidelines</h3>
         <ul className="list-disc pl-4 text-[10.5px] text-slate-500 dark:text-slate-400 space-y-1.5 font-semibold">
           <li>Time slots are configured in 60-minute duration blocks</li>
@@ -49,7 +49,7 @@ export default function LndLegendCards() {
       </div>
 
       {/* Card 3: Beyond College Hours */}
-      <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between backdrop-blur-md">
+      <div className="bg-white/80 dark:bg-[#131317]/80 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-card space-y-3 flex flex-col justify-between backdrop-blur-md">
         <div>
           <h3 className="text-xs font-black uppercase text-slate-700 dark:text-white tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-1.5">
             <Moon className="h-3.5 w-3.5 text-[#D528A2]" />

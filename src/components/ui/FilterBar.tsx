@@ -18,7 +18,7 @@ export function FilterBar({ children, aside, className }: FilterBarProps) {
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-white/70 px-3 py-2",
+        "flex flex-wrap items-center gap-2.5 rounded-2xl border border-slate-100 bg-white shadow-card px-4 py-2.5",
         className
       )}
     >

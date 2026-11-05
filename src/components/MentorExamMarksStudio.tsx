@@ -558,9 +558,9 @@ export const MentorExamMarksStudio: React.FC = () => {
 
       {!selectedExamId ? (
         /* STEP 0 + 1: EXAM TYPE PICKER → SUBJECT LIST */
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+        <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-5">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-150 pb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div className="flex items-center gap-3">
               {selectedExamType && (
                 <button
@@ -645,7 +645,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                     key={examType}
                     type="button"
                     onClick={() => setSelectedExamType(examType)}
-                    className="p-5 rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all bg-white flex flex-col items-start gap-3 text-left group cursor-pointer"
+                    className="p-5 rounded-2xl shadow-card border border-slate-100 hover:border-indigo-400 hover:shadow-card-lg transition-all bg-white flex flex-col items-start gap-3 text-left group cursor-pointer"
                   >
                     <div className="flex items-center justify-between w-full">
                       <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm">
@@ -696,7 +696,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                   return (
                     <div
                       key={ex.id}
-                      className="p-5 rounded-2xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all bg-white flex flex-col justify-between space-y-4 group"
+                      className="p-5 rounded-2xl shadow-card border border-slate-100 hover:border-indigo-400 hover:shadow-card-lg transition-all bg-white flex flex-col justify-between space-y-4 group"
                     >
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between gap-2">
@@ -759,8 +759,8 @@ export const MentorExamMarksStudio: React.FC = () => {
         /* STEP 2: MARKS EVALUATION & ROSTER TABLE */
         <div className="space-y-5">
           {/* Active Exam Header & Config Card */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div className="flex items-start gap-3">
                 <button
                   type="button"
@@ -883,7 +883,7 @@ export const MentorExamMarksStudio: React.FC = () => {
               </div>
 
               {/* KPI 1: Evaluated */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-center">
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center">
                 <span className="text-[9px] font-black uppercase text-slate-500 block">Evaluated</span>
                 <span className="text-base font-black text-slate-800">{summaryStats.evaluated} / {summaryStats.total}</span>
               </div>
@@ -984,7 +984,7 @@ export const MentorExamMarksStudio: React.FC = () => {
           </div>
 
           {/* Student Marks Evaluation Table */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
             <div className="overflow-x-auto max-h-[550px] scroll-touch">
               <Table className="w-full text-left text-xs border-collapse min-w-[850px]">
                 <TableHeader className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
@@ -999,7 +999,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                     <TableHead className="p-3">Remarks / Feedback</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody className="divide-y divide-slate-150 bg-white font-medium">
+                <TableBody className="divide-y divide-slate-100 bg-white font-medium">
                   {loadingRoster ? (
                     <TableRow>
                       <TableCell colSpan={8} className="p-12 text-center text-slate-400 font-bold">
@@ -1154,7 +1154,7 @@ export const MentorExamMarksStudio: React.FC = () => {
             </div>
 
             {/* Table Footer with Pagination */}
-            <div className="p-4 border-t border-slate-150 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
               <span className="text-slate-500 font-semibold">
                 Showing {filteredRoster.length} of {roster.length} students enrolled
               </span>
@@ -1202,7 +1202,7 @@ export const MentorExamMarksStudio: React.FC = () => {
               overlayClassName="p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
               panelClassName="max-w-md max-h-[90vh] p-6 space-y-4 rounded-2xl"
             >
-                <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
                       <Edit3 className="h-4 w-4" />
@@ -1225,7 +1225,7 @@ export const MentorExamMarksStudio: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 text-xs">
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-100 space-y-1.5 text-xs">
                   <div className="flex justify-between">
                     <span className="text-slate-500 font-semibold">Student:</span>
                     <span className="font-bold text-slate-800">{editingStudent.student_name} ({editingStudent.roll_number})</span>

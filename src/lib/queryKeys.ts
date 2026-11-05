@@ -27,6 +27,7 @@ export const qk = {
   loginHistory: (collegeId: string) => ["login-history", collegeId] as const,
   announcements: (collegeId: string) => ["announcements", collegeId] as const,
   systemSettings: () => ["system-settings"] as const,
+  approvals: (status = "all", collegeId = "all") => ["approvals", status, collegeId] as const,
   studentExams: (studentId: string, collegeId: string, scope = "") => ["student-exams", studentId, collegeId, scope] as const,
   studentAchievements: (studentId: string) => ["student-achievements", studentId] as const,
   studentMaterials: (collegeId: string, groupId: string) => ["student-materials", collegeId, groupId] as const,
@@ -66,6 +67,16 @@ const DOMAIN_ROOTS: Record<string, string[]> = {
   cams: ["admin-users", "interviews", "kam"],
   weeklyTasks: ["weekly-plan"],
   studentTracker: ["skill-tracker", "skill-development"],
+  // A day-order or exam write is read by four different roles through three
+  // different query roots; a write that only refreshes its own screen leaves
+  // the other portals on yesterday's timetable.
+  "daily-configs": ["daily-configs"],
+  exams: ["exams", "student-exams"],
+  materials: ["materials", "student-materials"],
+  demos: ["demo-reallocations", "demo-sessions"],
+  holidays: ["holidays"],
+  announcements: ["announcements"],
+  events: ["events"],
 };
 
 export function queryRootsForDomain(domain: string): string[] {

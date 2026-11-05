@@ -73,9 +73,9 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           <p className="text-sm font-semibold">Loading login sessions…</p>
         </div>
       ) : loginHistory.length === 0 ? (
-        <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
-          <History className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 font-semibold">No login sessions recorded.</p>
+        <div className="text-center py-16 border border-slate-100 rounded-2xl bg-white shadow-card">
+          <History className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 font-semibold">No login sessions recorded.</p>
         </div>
       ) : (
         <TableSurface

@@ -17,6 +17,25 @@
   --color-mint-800: #126448;
   --color-mint-900: #10523c;
   --color-mint-950: #032e1e;
+
+  /* Card elevation. Tailwind v4 only generates `shadow-card` from a @theme
+     token, so the :root/.dark copies below cannot be the single definition. */
+  --shadow-card: 0 4px 20px -2px rgba(148, 163, 184, 0.12), 0 2px 6px -1px rgba(148, 163, 184, 0.08);
+
+  /* Hero-panel elevation for the dashboard welcome banners and modals. */
+  --shadow-card-lg: 0 12px 36px -4px rgba(148, 163, 184, 0.15), 0 4px 12px -2px rgba(148, 163, 184, 0.06);
+
+  /* Tonal well inside a card — a soft cool sink rather than a flat grey fill. */
+  --inset-shadow-well: inset 0 1px 2px rgba(148, 163, 184, 0.1);
+
+  /* Soft-UI surface aliases. Colour utilities compile to `var(--color-x)`, so
+     pointing these at the runtime :root/.dark semantic vars makes
+     `bg-surface`, `bg-sunken` and `border-hairline` theme-aware for free. */
+  --color-canvas: var(--surface-0);
+  --color-surface: var(--surface-1);
+  --color-sunken: var(--surface-2);
+  --color-hairline: var(--line-soft);
+  --color-brand: var(--brand-primary);
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -31,27 +50,29 @@ html {
 }
 
 :root {
-  --background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 55%, #fff8f2 100%);
+  /* Soft canvas: near-white at the top, a cool grey at the bottom. */
+  --background: linear-gradient(160deg, #f7f8fc 0%, #eef1f7 100%);
   --foreground: #0f172a;
 
-  /* Flowbite Brand Color Tokens (#D528A2 & #F4A863) */
-  --brand-primary: #D528A2;
-  --brand-secondary: #F4A863;
-  --color-primary-50: #f9f6f8;
-  --color-primary-100: #f1e9ef;
-  --color-primary-200: #e8cfe0;
-  --color-primary-300: #ec9cd5;
-  --color-primary-400: #e46dc1;
-  --color-primary-500: #db3eac;
-  --color-primary-600: #c12493;
-  --color-primary-700: #9f1e79;
-  --color-primary-800: #78175b;
-  --color-primary-900: #561041;
-  --color-primary-950: #330f29;
+  /* Brand Color Tokens (#4F46E5 & #7C3AED) */
+  --brand-primary: #4F46E5;
+  --brand-secondary: #7C3AED;
+  --color-primary-50: #f5f3ff;
+  --color-primary-100: #ede9fe;
+  --color-primary-200: #ddd6fe;
+  --color-primary-300: #c4b5fd;
+  --color-primary-400: #a78bfa;
+  --color-primary-500: #8b5cf6;
+  --color-primary-600: #7c3aed;
+  --color-primary-700: #6d28d9;
+  --color-primary-800: #5b21b6;
+  --color-primary-900: #4c1d95;
+  --color-primary-950: #2e1065;
 }
 
 body {
-  background: linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 55%, #fff8f2 100%) fixed;
+  background-color: #f4f6fa;
+  background-image: var(--background);
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
@@ -59,20 +80,20 @@ body {
 
 /* Brand Button & Text Gradient Utilities */
 .btn-gradient {
-  background-image: linear-gradient(to right, #D528A2 0%, #F4A863 51%, #D528A2 100%) !important;
+  background-image: linear-gradient(to right, #4F46E5 0%, #7C3AED 51%, #4F46E5 100%) !important;
   background-size: 200% auto !important;
   background-position: 0% 50% !important;
   color: #ffffff !important;
   border: none !important;
   transition: background-position .4s ease, box-shadow .3s ease, transform .2s ease !important;
-  box-shadow: 0 4px 14px rgba(213, 40, 162, 0.28) !important;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.28) !important;
   font-weight: 700;
   cursor: pointer;
 }
 
 .btn-gradient:hover:not(:disabled) {
   background-position: 100% 50% !important;
-  box-shadow: 0 8px 24px rgba(213, 40, 162, 0.35) !important;
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.35) !important;
   transform: translateY(-1px) !important;
 }
 
@@ -87,11 +108,13 @@ body {
   background-clip: initial !important;
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+/* ─── Brand surfaces ─── */
+.brand-gradient {
+  background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%) !important;
+}
+
+.brand-hero-banner {
+  background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 40%, #E0E7FF 100%);
 }
 
 /* Redesigned Premium CSS Animations */
@@ -139,9 +162,11 @@ body {
   0% {
     transform: translateX(-100%);
   }
+
   50% {
     transform: translateX(0%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -226,20 +251,15 @@ body {
   }
 }
 
-/* Warm Canvas Theme with Modern Architectural Micro-Grid (Brighter & Crisp) */
+/* Soft Minimalist UI Canvas (Matched to eCampus Mockup) */
 .bg-warm-canvas {
-  background-color: #fbfcfe !important;
-  background-image: 
-    linear-gradient(to right, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(148, 163, 184, 0.16) 1px, transparent 1px) !important;
-  background-size: 24px 24px !important;
-  background-position: 0 0 !important;
-  background-repeat: repeat !important;
+  background-color: #f4f6fa !important;
+  background-image: var(--background) !important;
 }
 
 :where(.dark, .dark *) .bg-warm-canvas {
   background-color: #0b0f19 !important;
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px) !important;
   background-size: 24px 24px !important;
@@ -249,7 +269,7 @@ body {
 
 /* Standalone Modern Subtle Pattern Utility */
 .bg-dotted-grid {
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(148, 163, 184, 0.16) 1px, transparent 1px) !important;
   background-size: 24px 24px !important;
@@ -258,7 +278,7 @@ body {
 }
 
 :where(.dark, .dark *) .bg-dotted-grid {
-  background-image: 
+  background-image:
     linear-gradient(to right, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 1px, transparent 1px) !important;
   background-size: 24px 24px !important;
@@ -270,78 +290,73 @@ body {
 /* Modern 45° Bauhaus Diagonal Micro-Hatch Pattern for Login Page */
 .bg-diagonal-hatch {
   background-color: #fbfcfe !important;
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(99, 102, 241, 0.12),
-    rgba(99, 102, 241, 0.12) 1.2px,
-    transparent 1.2px,
-    transparent 14px
-  ) !important;
+  background-image: repeating-linear-gradient(45deg,
+      rgba(99, 102, 241, 0.12),
+      rgba(99, 102, 241, 0.12) 1.2px,
+      transparent 1.2px,
+      transparent 14px) !important;
 }
 
 :where(.dark, .dark *) .bg-diagonal-hatch {
   background-color: #0b0f19 !important;
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(255, 255, 255, 0.07),
-    rgba(255, 255, 255, 0.07) 1.2px,
-    transparent 1.2px,
-    transparent 14px
-  ) !important;
+  background-image: repeating-linear-gradient(45deg,
+      rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.07) 1.2px,
+      transparent 1.2px,
+      transparent 14px) !important;
 }
 
-/* Floating Sidebar & Header Styles with Glassmorphism & Soft Neomorphism */
+/* Floating shell surfaces — one authoritative definition each.
+   The sidebar and header are panels, so they carry the panel radius (1rem,
+   not the old 0.625rem) and sit on the canvas with soft cool elevation.
+   Four competing blocks used to override the negative highlight down to
+   0.02 alpha, which is why the shell rendered flat. */
 .floating-sidebar {
   height: calc(100vh - 9.5rem) !important;
   margin: 1.5rem 0 1.5rem 1.5rem !important;
-  border-radius: 0.625rem !important;
-  border: 1px solid rgba(255, 255, 255, 0.5) !important;
-  box-shadow: 6px 6px 18px rgba(165, 175, 190, 0.1),
-    -6px -6px 18px rgba(255, 255, 255, 0.85) !important;
-  background-color: rgba(255, 255, 255, 0.75) !important;
+  border-radius: 1rem !important;
+  border: 1px solid var(--line-soft) !important;
+  box-shadow: 6px 6px 18px rgba(148, 163, 184, 0.14), -6px -6px 18px rgba(255, 255, 255, 0.7) !important;
+  background-color: rgba(255, 255, 255, 0.82) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
 }
 
 .floating-header {
   margin: 1.5rem 1.5rem 0 1.5rem !important;
-  border-radius: 0.625rem !important;
-  border: 1px solid rgba(255, 255, 255, 0.5) !important;
-  box-shadow: 6px 6px 18px rgba(165, 175, 190, 0.08),
-    -6px -6px 18px rgba(255, 255, 255, 0.85) !important;
-  background-color: rgba(255, 255, 255, 0.75) !important;
+  border-radius: 1rem !important;
+  border: 1px solid var(--line-soft) !important;
+  box-shadow: var(--shadow-card) !important;
+  background-color: rgba(255, 255, 255, 0.82) !important;
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
 }
 
-
-.bg-pastel-cream {
-  background-color: #FDFBF7 !important;
-  border: 1px solid #F6EFE2 !important;
+/* The dual-tone highlight is a light-canvas trick; on the dark canvas it
+   would bloom, so the sidebar takes a plain deep elevation instead. */
+:where(.dark, .dark *) .floating-sidebar {
+  background-color: rgba(19, 19, 23, 0.82) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35) !important;
 }
 
-.bg-pastel-blue {
-  background-color: #F5F8FC !important;
-  border: 1px solid #E5EDF9 !important;
-}
 
-.bg-pastel-purple {
-  background-color: #FAF6FC !important;
-  border: 1px solid #EFE3F7 !important;
-}
-
+/* Tonal wells. Four hue names survive from the old pastel palette, but the
+   soft pass collapsed them onto one cool surface so a row of panels can no
+   longer render in four different whites. */
+.bg-pastel-cream,
+.bg-pastel-blue,
+.bg-pastel-purple,
 .bg-pastel-green {
-  background-color: #F2FAF5 !important;
-  border: 1px solid #E1F2E4 !important;
+  background-color: #f7f9fc !important;
+  border: 1px solid var(--line-soft) !important;
 }
 
-/* Custom rounded corners matching Dribbble style */
-.rounded-dribbble-card {
-  border-radius: 0.625rem !important;
-}
-
-.rounded-dribbble-panel {
-  border-radius: 0.625rem !important;
+:where(.dark, .dark *) .bg-pastel-cream,
+:where(.dark, .dark *) .bg-pastel-blue,
+:where(.dark, .dark *) .bg-pastel-purple,
+:where(.dark, .dark *) .bg-pastel-green {
+  background-color: #181820 !important;
+  border-color: var(--line-soft) !important;
 }
 
 /* Custom checkbox / indicator colors */
@@ -355,58 +370,33 @@ body {
   color: white;
 }
 
-:root {
-  --canvas-bg: #F5F7FB;
-  --panel-bg: rgba(255, 255, 255, 0.75);
-  --card-bg: #ffffff;
-  --border-color: rgba(255, 255, 255, 0.5);
-  --border-card: rgba(230, 235, 245, 0.8);
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --sidebar-active-bg: #eef2ff;
-  --sidebar-active-text: #4f46e5;
-  --sidebar-bg: rgba(255, 255, 255, 0.75);
-}
-
-.floating-sidebar {
-  background-color: var(--sidebar-bg) !important;
-  border-color: var(--border-color) !important;
-  box-shadow: 6px 6px 18px rgba(0, 0, 0, 0.05), -6px -6px 18px rgba(255, 255, 255, 0.02) !important;
-}
-
-.floating-header {
-  background-color: var(--sidebar-bg) !important;
-  border-color: var(--border-color) !important;
-}
-
 /* ── Sidebar Active State = Brand Gradient ──────── */
 .sidebar-active-item {
-  background-image: linear-gradient(to right, #D528A2 0%, #F4A863 51%, #D528A2 100%) !important;
+  background-image: linear-gradient(to right, #4F46E5 0%, #7C3AED 100%) !important;
   background-size: 200% auto !important;
   background-position: 0% 50% !important;
   color: #ffffff !important;
   border: none !important;
-  box-shadow: 0 4px 12px rgba(213, 40, 162, 0.22) !important;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25) !important;
   transform: none !important;
   transition: all 0.2s ease-in-out;
 }
+
 .sidebar-active-item * {
   color: #ffffff !important;
 }
-
-/* ── Layout containers use CSS Variables ────────── */
-.floating-sidebar { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
-.floating-header  { background-color: var(--sidebar-bg) !important; border-color: var(--border-color) !important; }
 
 /* ─── Custom Spin Reverse Animation ──────────────── */
 @keyframes spin-reverse {
   from {
     transform: rotate(360deg);
   }
+
   to {
     transform: rotate(0deg);
   }
 }
+
 .animate-spin-reverse {
   animation: spin-reverse 0.8s linear infinite;
 }
@@ -425,13 +415,16 @@ body {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(156, 163, 175, 0.3);
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(156, 163, 175, 0.55);
 }
@@ -442,10 +435,12 @@ body {
   height: 4px;
   display: block !important;
 }
+
 .no-scrollbar::-webkit-scrollbar-thumb {
   background: rgba(99, 102, 241, 0.25);
   border-radius: 9999px;
 }
+
 .no-scrollbar {
   -ms-overflow-style: auto;
   scrollbar-width: thin;
@@ -464,7 +459,9 @@ body {
 }
 
 /* ─── Touch tap delay fix on all interactive elements ── */
-button, a, [role="button"] {
+button,
+a,
+[role="button"] {
   touch-action: manipulation;
 }
 
@@ -473,9 +470,10 @@ button, a, [role="button"] {
   .floating-sidebar {
     display: none !important;
   }
+
   .floating-header {
     margin: 0.75rem 0.75rem 0 0.75rem !important;
-    border-radius: 0.5rem !important;
+    border-radius: 1rem !important;
   }
 }
 
@@ -494,11 +492,13 @@ button, a, [role="button"] {
 
 /* ─── Extra-small screen: tighter default spacing ─────────────── */
 @media (max-width: 480px) {
+
   /* Reduce main padding on very small phones */
   .floating-main-panel {
     padding: 0.75rem !important;
     padding-bottom: 5rem !important;
   }
+
   /* KPI stat card: reduce huge font on xs */
   .admin-kpi-value {
     font-size: 2rem !important;
@@ -509,6 +509,7 @@ button, a, [role="button"] {
 .hover-spin-icon {
   transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
+
 button:hover .hover-spin-icon,
 a:hover .hover-spin-icon {
   transform: rotate(360deg);
@@ -517,6 +518,7 @@ a:hover .hover-spin-icon {
 .hover-arrow-icon {
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
+
 button:hover .hover-arrow-icon,
 a:hover .hover-arrow-icon {
   transform: translateX(4px);
@@ -525,6 +527,7 @@ a:hover .hover-arrow-icon {
 .hover-tilt-icon {
   transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
 }
+
 button:hover .hover-tilt-icon,
 a:hover .hover-tilt-icon {
   transform: rotate(-15deg) scale(1.1);
@@ -532,8 +535,10 @@ a:hover .hover-tilt-icon {
 
 /* ─── Mobile Typography Scaling (all dashboards) ─────── */
 @media (max-width: 640px) {
+
   /* Reduce font weights to standard bold on mobile to avoid clunky looks */
-  .font-black, .font-extrabold {
+  .font-black,
+  .font-extrabold {
     font-weight: 700 !important;
   }
 
@@ -542,17 +547,22 @@ a:hover .hover-tilt-icon {
     font-size: 1.35rem !important;
     font-weight: 700 !important;
   }
+
   h2 {
     font-size: 1.15rem !important;
     font-weight: 700 !important;
   }
+
   h3 {
     font-size: 0.95rem !important;
     font-weight: 700 !important;
   }
 
   /* Stats numbers / KPI cards values */
-  .text-3xl, .text-4xl, .text-\[48px\], .text-\[36px\] {
+  .text-3xl,
+  .text-4xl,
+  .text-\[48px\],
+  .text-\[36px\] {
     font-size: 1.5rem !important;
     font-weight: 700 !important;
     line-height: 1.2 !important;
@@ -564,6 +574,7 @@ a:hover .hover-tilt-icon {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -589,7 +600,7 @@ a:hover .hover-tilt-icon {
   --ink-400: #94a3b8;
   --line-soft: rgba(226, 232, 240, 0.85);
   --line-strong: #cbd5e1;
-  --focus-ring: rgba(213, 40, 162, 0.38);
+  --focus-ring: rgba(79, 70, 229, 0.38);
   --status-success: #059669;
   --status-warning: #b45309;
   --status-danger: #dc2626;
@@ -597,7 +608,7 @@ a:hover .hover-tilt-icon {
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-card: 0 4px 20px -2px rgba(148, 163, 184, 0.12), 0 2px 6px -1px rgba(148, 163, 184, 0.08);
   --z-toast: 9999;
   --z-modal: 10000;
   --z-loading: 10001;
@@ -613,7 +624,7 @@ a:hover .hover-tilt-icon {
   --ink-400: #64748b;
   --line-soft: rgba(51, 65, 85, 0.85);
   --line-strong: #334155;
-  --focus-ring: rgba(244, 168, 99, 0.42);
+  --focus-ring: rgba(129, 140, 248, 0.45);
   --status-success: #34d399;
   --status-warning: #fbbf24;
   --status-danger: #f87171;
@@ -621,4 +632,19 @@ a:hover .hover-tilt-icon {
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
 }
 
+/* @theme shadow values are inlined into the generated utility, so the
+   `--shadow-card` override above never reaches `.shadow-card` in dark mode. */
+:where(.dark, .dark *) .shadow-card {
+  --tw-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+}
 
+/* Same inlining applies to `inset-shadow-well`: a dark sink is invisible,
+   so the well reads as a faint light edge instead. */
+:where(.dark, .dark *) .inset-shadow-well {
+  --tw-inset-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+}
+
+/* `shadow-card-lg` is only used by .brand-hero-banner, whose lavender gradient
+   stays light in dark mode, so the light token value is correct in both themes. */

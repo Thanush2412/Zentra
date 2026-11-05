@@ -23,6 +23,7 @@ import {
   Search
 } from "lucide-react";
 import { formatTimeLabel, isTimeSlotMatch } from "../lib/utils";
+import { getLocalDateStr, shiftDateStr } from "../lib/localDate";
 import {
   consecutiveHardClash,
   autoAssignSmes
@@ -83,7 +84,7 @@ export function LndAllocationDashboard() {
     resolveDemoSwap
   } = useApp();
 
-  const { toast } = useToast();
+  const { toast, confirm: showConfirm } = useToast();
   const queryClient = useQueryClient();
 
   // ── Leave-driven L&D Reallocation queue (L & D review) ──
@@ -126,21 +127,18 @@ export function LndAllocationDashboard() {
           return next;
         });
         await fetchDemoReallocations();
-        // Refresh every college's sessions so approving one request cannot hide
-        // another campus's rows from the all-colleges workspace.
+        // One institution-wide read instead of one request per campus, so approving a
+        // request cannot hide another campus's rows and does not multiply round trips.
         try {
-          if (colleges.length > 0) {
-            const results = await Promise.all(
-              colleges.map(c =>
-                apiFetch<any>(`/api/demo-sessions?college_id=${encodeURIComponent(c.id)}`).catch(() => ({}))
-              )
-            );
-            const merged = results.flatMap((r: any) =>
-              r?.success && Array.isArray(r.records) ? r.records : []
-            );
-            setDemoSessions(merged);
+          const res = await apiFetch<any>("/api/demo-sessions?college_id=all");
+          if (res?.success && Array.isArray(res.records)) {
+            setDemoSessions(res.records);
+          } else {
+            toast("Session list may be stale — the refresh after that decision failed.", "error");
           }
-        } catch (_) { }
+        } catch (e: any) {
+          toast("Session list may be stale: " + (e?.message || "refresh failed"), "error");
+        }
       } else {
         toast(json.message || `Failed to ${decision} reallocation`, "error");
       }
@@ -157,17 +155,15 @@ export function LndAllocationDashboard() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>("All");
 
   // Date selection - defaults dynamically to current date
-  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => getLocalDateStr());
 
 
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLocalDateStr();
   const isCurrentWeek = selectedDateStr === todayStr;
 
   const setWeekOffset = (deltaWeeks: number) => {
-    const d = new Date(`${selectedDateStr}T00:00:00`);
-    d.setDate(d.getDate() + deltaWeeks * 7);
-    setSelectedDateStr(d.toISOString().slice(0, 10));
+    setSelectedDateStr(shiftDateStr(selectedDateStr, deltaWeeks * 7));
   };
 
   // Scheduling generation states
@@ -379,8 +375,19 @@ export function LndAllocationDashboard() {
   const handleQuickAllocateMentor = async (smeId: string, mentorId: string, dateStr: string, timeSlot: string, existingSessionId?: string) => {
     if (mentorId === "__CLEAR__") {
       if (existingSessionId) {
-        await deleteDemoSession(existingSessionId);
-        toast("Session cleared. Slot is now free.", "info");
+        const ok = await showConfirm({
+          title: "Clear This Session",
+          message: "Removing the assigned mentor will delete this booked session and free the slot. Continue?",
+          danger: true,
+          confirmLabel: "Clear Session"
+        });
+        if (!ok) return;
+        const res = await deleteDemoSession(existingSessionId);
+        if (res.success) {
+          toast("Session cleared. Slot is now free.", "info");
+        } else {
+          toast(res.message || "Failed to clear the session.", "error");
+        }
       }
       return;
     }
@@ -1160,7 +1167,7 @@ export function LndAllocationDashboard() {
             )}
 
             {/*REAL-TIME FACULTY WEEKLY L&D HOURS & QUOTA MONITOR (WEB UI) */}
-            <div className="bg-white/90 dark:bg-[#131317]/90 border border-slate-200/80 dark:border-slate-800/80 rounded-xl p-5 shadow-xs space-y-4 backdrop-blur-md">
+            <div className="bg-white/90 dark:bg-[#131317]/90 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-5 shadow-card space-y-4 backdrop-blur-md">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800/80 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
@@ -1417,6 +1424,7 @@ export function LndAllocationDashboard() {
             editSession={editSession}
             handleSaveEdit={handleSaveEdit}
             setEditSession={setEditSession}
+            showConfirm={showConfirm}
             smes={smes}
             toast={toast}
           />

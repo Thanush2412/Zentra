@@ -195,7 +195,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
   ];
 
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-6">
+    <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div className="flex items-center gap-2.5">
@@ -295,7 +295,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
       </div>
 
       {/* College logo status + upload */}
-      <div className="flex flex-wrap items-center gap-3 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+      <div className="flex flex-wrap items-center gap-3 p-3.5 bg-slate-50/70 border border-slate-100 rounded-xl">
         <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Report Logo:</span>
         {hasCollegeLogo === null ? (
           <span className="text-xs font-bold text-slate-400">Checking…</span>
@@ -341,7 +341,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
       </div>
 
       {/* Controls Bar */}
-      <div className="p-4 bg-slate-50/70 border border-slate-200/80 rounded-xl flex flex-wrap items-end gap-3">
+      <div className="p-4 bg-slate-50/70 border border-slate-100 rounded-xl flex flex-wrap items-end gap-3">
         <div>
           <label className="text-[9px] font-black uppercase text-slate-400 block mb-1">Report Month</label>
           <select
@@ -395,7 +395,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
         <div className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* 1. Classroom Observations */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-2">
+            <div className="p-4 rounded-2xl border border-slate-100 bg-white space-y-2 shadow-card">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
                   <Camera className="h-3.5 w-3.5 text-amber-500" /> Classroom Observations
@@ -417,7 +417,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
             </div>
 
             {/* 2. Help Desk & Tickets */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-2">
+            <div className="p-4 rounded-2xl border border-slate-100 bg-white space-y-2 shadow-card">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
                   <LifeBuoy className="h-3.5 w-3.5 text-blue-500" /> Help Desk &amp; Ticketing
@@ -441,7 +441,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
             </div>
 
             {/* 3. Daily Activity & KAM Logs */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-2">
+            <div className="p-4 rounded-2xl border border-slate-100 bg-white space-y-2 shadow-card">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
                   <ClipboardList className="h-3.5 w-3.5 text-indigo-500" /> Daily Activity &amp; KAM Logs
@@ -483,7 +483,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
 
           {/* Toggle Daily Activity Log Feed */}
           {workflow.dailyLogs && workflow.dailyLogs.total > 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
+            <div className="rounded-2xl border border-slate-100 bg-white overflow-hidden shadow-card">
               <button
                 type="button"
                 onClick={() => setShowDailyLogs(!showDailyLogs)}
@@ -643,7 +643,7 @@ export function SkillReportPanel({ collegeId, collegeName }: { collegeId: string
           </div>
 
           {batches.map((b) => (
-            <div key={b.batchName} className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
+            <div key={b.batchName} className="p-4 rounded-2xl border border-slate-100 bg-white space-y-3 shadow-card">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-indigo-500" />

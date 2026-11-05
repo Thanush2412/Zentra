@@ -33,7 +33,10 @@ const ROUTES: Record<string, string[]> = {
   "src/app/api/audit/placement/route.ts": ["GET"],
   // Department criteria drive the compliance checklist and the escalation mail,
   // so an anonymous caller could rewrite what every SME is graded against.
-  "src/app/api/demo-eval-criteria/route.ts": ["GET", "POST"]
+  "src/app/api/demo-eval-criteria/route.ts": ["GET", "POST"],
+  // The survey writes against the signed-in student's own profile and the report
+  // exposes another campus's sentiment, so neither leg may run anonymously.
+  "src/app/api/audit/student-nps/route.ts": ["GET", "POST"]
 };
 
 /** Returns the source of each `export async function <NAME>` block. */

@@ -36,7 +36,7 @@ export function StatCard({
 }: StatCardProps) {
   if (isLoading) {
     return (
-      <div className="p-4 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#131317] space-y-3">
+      <div className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white dark:bg-[#131317] space-y-3 shadow-card">
         <div className="flex items-center justify-between">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="h-8 w-8 rounded-lg" />
@@ -60,8 +60,8 @@ export function StatCard({
     <div
       onClick={onClick}
       className={cn(
-        "p-4 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#131317]",
-        "shadow-xs hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200",
+        "p-4 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white dark:bg-[#131317]",
+        "shadow-card hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200",
         onClick && "cursor-pointer active:scale-[0.99]",
         className
       )}

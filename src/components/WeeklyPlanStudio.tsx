@@ -1225,7 +1225,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
   return (
     <div ref={studioTopRef} className="space-y-5 font-sans">
       {/* ─── Top Header Card with Non-Wrapping Single-Row Toolbar ─── */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -1344,7 +1344,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
           const verdict = plans.find(p => p.week_number === selectedWeek)?.skill_verdict;
           if (!verdict || verdict.verdict === "pending") {
             return (
-              <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2.5">
+              <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center gap-2.5">
                 <Clock3 className="h-4 w-4 text-slate-400 shrink-0" />
                 <div className="text-xs text-slate-600">
                   <span className="font-bold">Skill Development Verdict: </span>
@@ -1693,7 +1693,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       </div>
 
       {/* ─── Spreadsheet-Grade Interactive Teaching Period Table ─── */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
         {/* Table Toolbar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-100 bg-slate-50/70">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1899,7 +1899,7 @@ export const MentorWeeklyPlanStudio: React.FC<MentorWeeklyPlanStudioProps> = ({
       </div>
 
       {/* ─── Mentor's Weekly Plan Archive & History (Read & Update All Plans) ─── */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-5">
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-card p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
@@ -2321,7 +2321,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
   return (
     <div className="space-y-5 font-sans">
       {/* ─── Top Role & Scope Banner ─── */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
             <div
@@ -2398,7 +2398,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
 
         {/* ─── Infographics / Visual KPI Summary Cards ─── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-4">
-          <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1">
+          <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Plans</span>
               <FileSpreadsheet className="h-4 w-4 text-slate-400" />
@@ -2434,7 +2434,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
             <span className="text-[10px] font-bold text-amber-700 block">Backlog / Upcoming</span>
           </div>
 
-          <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+          <div className="p-3 bg-white border border-slate-100 rounded-2xl space-y-1 shadow-card">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Completion</span>
               <TrendingUp className="h-4 w-4 text-emerald-500" />
@@ -2448,7 +2448,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
             </div>
           </div>
 
-          <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+          <div className="p-3 bg-white border border-slate-100 rounded-2xl space-y-1 shadow-card">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">SME Verified</span>
               <ShieldCheck className="h-4 w-4 text-purple-600" />
@@ -2549,7 +2549,7 @@ export const WeeklyPlanViewer: React.FC<WeeklyPlanViewerProps> = ({
       </div>
 
       {/* ─── Plans Table ─── */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <Table className="w-full text-left border-collapse text-xs min-w-[850px]">
             <TableHeader>

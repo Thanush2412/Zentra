@@ -85,29 +85,29 @@ export const KAMFinanceAndWelfare: React.FC<{
       {subTab === "fees" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Total Invoiced Fees</span>
               <p className="text-2xl font-black text-slate-900 mt-2">{fmtCurrency(fees.totalFees)}</p>
               <p className="text-[10px] font-bold text-slate-400 mt-1">Tuition, lab & training dues</p>
             </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Total Collected (YTD)</span>
               <p className="text-2xl font-black text-emerald-700 mt-2">{fmtCurrency(fees.totalPaid)}</p>
               <p className="text-[10px] font-bold text-emerald-600 mt-1">{fees.collectionRate}% Portfolio Collection</p>
             </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Outstanding Dues</span>
               <p className="text-2xl font-black text-amber-700 mt-2">{fmtCurrency(fees.totalOutstanding)}</p>
               <p className="text-[10px] font-bold text-slate-400 mt-1">Pending student balances</p>
             </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Aging Dues (&gt;30 Days)</span>
               <p className="text-2xl font-black text-rose-700 mt-2">{fmtCurrency(fees.agingOverdue30d)}</p>
               <p className="text-[10px] font-bold text-rose-500 mt-1">High-priority recovery</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-sm font-black text-slate-900">Campus Fee Recovery & Collection Rate</h3>
@@ -117,7 +117,7 @@ export const KAMFinanceAndWelfare: React.FC<{
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(fees.campusFeeBreakdown || []).map((c: any) => (
-                <div key={c.collegeId} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-2">
+                <div key={c.collegeId} className="bg-slate-50/70 p-4 rounded-xl border border-slate-100 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-slate-800">{c.collegeName}</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -142,24 +142,24 @@ export const KAMFinanceAndWelfare: React.FC<{
       {subTab === "leaves" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Total Student Leaves Today</span>
               <p className="text-2xl font-black text-slate-900 mt-2">{welfare.totalStudentLeavesToday}</p>
               <p className="text-[10px] font-bold text-slate-400 mt-1">Medical & Casual student leaves</p>
             </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Authorized On-Duty (OD)</span>
               <p className="text-2xl font-black text-indigo-700 mt-2">{welfare.totalStudentOdToday}</p>
               <p className="text-[10px] font-bold text-indigo-600 mt-1">Symposiums, Sports & Hackathons</p>
             </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Pending CM/Advisor Review</span>
               <p className="text-2xl font-black text-amber-700 mt-2">{welfare.pendingApprovals}</p>
               <p className="text-[10px] font-bold text-amber-600 mt-1">Applications awaiting sign-off</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-black text-slate-900">Recent Student Leave & OD Log Feed</h3>
               <p className="text-xs text-slate-400 font-medium">Monitoring attendance dispensation patterns across departments</p>
@@ -167,7 +167,7 @@ export const KAMFinanceAndWelfare: React.FC<{
 
             <div className="space-y-2.5">
               {(welfare.recentRequests || []).map((r: any) => (
-                <div key={r.id} className="bg-slate-50/80 p-3 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                <div key={r.id} className="bg-slate-50/80 p-3 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
                   <div>
                     <span className="font-black text-slate-900">{r.student_name || r.studentName}</span>
                     <span className="text-[10px] text-slate-400 ml-2">({r.department || "General"} • {r.college_name || "Campus"})</span>
@@ -189,24 +189,24 @@ export const KAMFinanceAndWelfare: React.FC<{
       {subTab === "issues" && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Total Reported Issues</span>
               <p className="text-2xl font-black text-slate-900 mt-2">{issues.totalIssues}</p>
               <p className="text-[10px] font-bold text-slate-400 mt-1">Student & faculty tickets</p>
             </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Resolved SLA</span>
               <p className="text-2xl font-black text-emerald-700 mt-2">{issues.resolutionRate}%</p>
               <p className="text-[10px] font-bold text-emerald-600 mt-1">{issues.resolvedIssues} / {issues.totalIssues} closed</p>
             </div>
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <span className="text-[10px] font-black uppercase text-slate-400">Escalated to KAM</span>
               <p className="text-2xl font-black text-rose-700 mt-2">{issues.escalatedIssues}</p>
               <p className="text-[10px] font-bold text-rose-500 mt-1">High-priority operational blockers</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-black text-slate-900">Category-wise Grievance & SLA Heatmap</h3>
               <p className="text-xs text-slate-400 font-medium">Average resolution speed and risk level by issue classification</p>
@@ -214,7 +214,7 @@ export const KAMFinanceAndWelfare: React.FC<{
 
             <div className="space-y-3">
               {(issues.categories || []).map((cat: any, idx: number) => (
-                <div key={idx} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                <div key={idx} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
                   <div>
                     <h4 className="font-black text-slate-900">{cat.category}</h4>
                     <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
@@ -238,7 +238,7 @@ export const KAMFinanceAndWelfare: React.FC<{
 
       {/* ── 4. SUB-TAB: REGIONAL ACADEMIC EVENTS CALENDAR ── */}
       {subTab === "events" && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-5 space-y-4">
           <div className="border-b border-slate-100 pb-3">
             <h3 className="text-sm font-black text-slate-900">Regional Academic Events, Hackathons & Tech Fests</h3>
             <p className="text-xs text-slate-400 font-medium">Coordinated multi-campus calendar for technical competitions, workshops, and guest lectures</p>
@@ -246,7 +246,7 @@ export const KAMFinanceAndWelfare: React.FC<{
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {events.map((e: any) => (
-              <div key={e.id} className="bg-slate-50/80 p-4 rounded-xl border border-slate-200 space-y-2">
+              <div key={e.id} className="bg-slate-50/80 p-4 rounded-xl border border-slate-100 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-900">{e.name}</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700">

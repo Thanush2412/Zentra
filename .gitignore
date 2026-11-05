@@ -79,6 +79,8 @@ scripts/*
 !scripts/sync_db.mjs
 !scripts/migrate_sqlite_to_postgres.mjs
 !scripts/performance-indexes.sql
+!scripts/dump_prod_data.mjs
+!scripts/seed_db.mjs
 
 # Python Cache & Environments
 __pycache__/

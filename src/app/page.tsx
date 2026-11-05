@@ -16,16 +16,9 @@ import {
   Lock,
   Mail,
   AlertCircle,
-  Building2,
   ArrowRight,
   Eye,
-  EyeOff,
-  GraduationCap,
-  Layers,
-  IndianRupee,
-  Award,
-  Calendar,
-  X
+  EyeOff
 } from "lucide-react";
 
 
@@ -82,26 +75,6 @@ export default function Home() {
     }
   }, [appLoading, isAuthenticated, currentUser, currentRole, router]);
 
-  // Master Role Access Modal — shown when the server reports a super-admin role
-  const [showMasterRoleModal, setShowMasterRoleModal] = useState(false);
-  const [sessionUserName, setSessionUserName] = useState("");
-  const superAdminUserIdRef = React.useRef<string | undefined>(undefined);
-
-  const handleExitMasterModal = async () => {
-    setShowMasterRoleModal(false);
-    try {
-      // Revoke the cookie-issued session even though no workspace was chosen yet.
-      await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "logout" }),
-      });
-    } catch {
-      // Offline logout still clears local state below.
-    }
-    logout();
-  };
-
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
@@ -135,25 +108,16 @@ export default function Home() {
         } else {
           localStorage.removeItem("fp_user_college_id");
         }
-        setSessionUserName(resolvedName);
 
-        // A forced password change applies to every account, super admins included,
-        // so this must run before the master-role modal early return below.
+        // A forced password change applies to every account, super admins included
         if (data.mustChangePassword) {
           localStorage.setItem("fp_must_change_pass", "true");
         } else {
           localStorage.removeItem("fp_must_change_pass");
         }
 
-        // Super-admin access is decided server-side from the stored role — never from the email
         const isSuperAdmin = !!data.isSuperAdmin;
         setSuperAdminSession(isSuperAdmin);
-
-        if (isSuperAdmin) {
-          superAdminUserIdRef.current = data.userId || undefined;
-          setShowMasterRoleModal(true);
-          return;
-        }
 
         setRole(data.role, data.userId, {
           collegeId: data.collegeId,
@@ -224,7 +188,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex font-sans overflow-hidden bg-white relative">
       {/* ── LEFT HERO PANEL (LIGHT UI) ── */}
-      <div className="hidden lg:flex lg:w-[50%] xl:w-[54%] flex-col relative overflow-hidden bg-slate-50 border-r border-slate-200">
+      <div className="hidden lg:flex lg:w-[50%] xl:w-[54%] flex-col relative overflow-hidden bg-slate-50 border-r border-slate-100">
         {/* Shifting dynamic glowing orb backdrops (extremely soft for Light Mode) */}
         <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-slate-200/20 blur-[120px] pointer-events-none animate-float-slow" />
         <div className="absolute bottom-[-10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-slate-300/10 blur-[120px] pointer-events-none animate-float-reverse" />
@@ -307,7 +271,7 @@ export default function Home() {
             </div>
 
             {/* Form Card */}
-            <div className="bg-white border border-slate-200/80 rounded-xl shadow-[0_15px_30px_rgba(0,0,0,0.02)] p-8 space-y-6">
+            <div className="bg-white border border-slate-100 rounded-xl shadow-[0_15px_30px_rgba(0,0,0,0.02)] p-8 space-y-6">
               {isSignupMode ? (
                 // --- SIGNUP FORM ---
                 <form onSubmit={handleSignupSubmit} className="space-y-4">
@@ -538,70 +502,6 @@ export default function Home() {
           </div>
         </div>
       </div>
-
-      {/* ── MASTER ROLE ACCESS SELECTION MODAL (super-admin accounts only) ── */}
-      {showMasterRoleModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
-          <div className="relative bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 sm:p-8 space-y-6 animate-scaleUp max-h-[90vh] overflow-y-auto">
-            <button
-              type="button"
-              onClick={handleExitMasterModal}
-              aria-label="Cancel and sign out"
-              className="absolute top-3.5 right-3.5 h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            {/* Modal Header */}
-            <div className="text-center space-y-2 border-b border-slate-100 pb-5">
-              <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-[#D528A2] text-white shadow-md mx-auto">
-                <Sparkles className="h-6 w-6 text-amber-300 animate-pulse" />
-              </div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Master Role Access Activated</h2>
-              <p className="text-xs font-semibold text-slate-500 max-w-md mx-auto">
-                Welcome <span className="text-indigo-600 font-extrabold">{sessionUserName || (typeof window !== "undefined" ? localStorage.getItem("fp_user_name") : "") || "Administrator"}</span>! You have full access to all 8 system workspaces. Choose a dashboard to launch:
-              </p>
-            </div>
-
-            {/* Grid of Workspaces */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-              {[
-                { id: "admin", label: "Super Admin", desc: "System control & global settings", path: "/admin", icon: ShieldCheck, color: "from-[#D528A2] to-pink-600" },
-                { id: "cm", label: "CM Dashboard", desc: "Campus operations & timetables", path: "/cm", icon: Building2, color: "from-indigo-600 to-purple-600" },
-                { id: "mentor", label: "Faculty Workspace", desc: "Schedules, logs & permissions", path: "/mentor", icon: GraduationCap, color: "from-emerald-600 to-teal-600" },
-                { id: "kam", label: "KAM Portfolio", desc: "Multi-campus account oversight", path: "/kam", icon: Layers, color: "from-purple-600 to-indigo-600" },
-                { id: "student", label: "Student Portal", desc: "Class schedule & task tracker", path: "/student", icon: User, color: "from-blue-600 to-sky-600" },
-                { id: "fee_manager", label: "Fee Collections", desc: "Student fee dues & receipts", path: "/fee-manager", icon: IndianRupee, color: "from-teal-600 to-emerald-600" },
-                { id: "sme", label: "SME Evaluation", desc: "Mock interviews & grading", path: "/sme", icon: Award, color: "from-rose-600 to-pink-600" },
-                { id: "L and D", label: "Learning & Development (L&D)", desc: "L&D sessions & faculty slots", path: "/l-and-d", icon: Calendar, color: "from-amber-600 to-orange-600" },
-              ].map(w => {
-                const Icon = w.icon;
-                return (
-                  <button
-                    key={w.id}
-                    type="button"
-                    onClick={() => {
-                      setRole(w.id as any, superAdminUserIdRef.current, { isSuperAdmin: true, userName: sessionUserName });
-                      localStorage.setItem("fp_current_role", w.id);
-                      localStorage.setItem("fp_logged_in", "true");
-                    }}
-                    className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left flex flex-col justify-between group cursor-pointer relative overflow-hidden"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`h-9 w-9 rounded-xl bg-gradient-to-tr ${w.color} flex items-center justify-center text-white shadow-xs shrink-0 group-hover:scale-110 transition-transform`}>
-                        <Icon className="h-4.5 w-4.5" />
-                      </div>
-                      <div>
-                        <span className="block text-xs font-black text-slate-800 group-hover:text-indigo-600 transition-colors">{w.label}</span>
-                        <span className="block text-[9.5px] font-medium text-slate-500 mt-0.5 line-clamp-1">{w.desc}</span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -131,7 +131,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   onTabChange
 }) => {
   const { colleges: ctxColleges, coursesList: ctxCourses, slots: ctxSlots, subjectsList: ctxSubjects } = useApp();
-  const { toast: toastFe } = useToast();
+  const { toast: toastFe, confirm: showConfirm } = useToast();
 
   const [localActiveTab, setLocalActiveTab] = useState<TabType>("overview");
   const activeTab = propActiveTab || localActiveTab;
@@ -185,6 +185,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
   const [editStatus, setEditStatus] = useState<string>("unpaid");
   const [editProofLink, setEditProofLink] = useState<string>("");
   const [savingFeeId, setSavingFeeId] = useState<string | null>(null);
+  const [deletingFeeId, setDeletingFeeId] = useState<string | null>(null);
 
   // Add New Semester Fee Form State
   const [addingStudentFeeId, setAddingStudentFeeId] = useState<string | null>(null);
@@ -666,7 +667,14 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
 
   // Delete Fee Record
   const handleDeleteFee = async (feeId: string) => {
-    if (!confirm("Are you sure you want to delete this semester fee record?")) return;
+    const ok = await showConfirm({
+      message: "Delete this semester fee record? Payments recorded against it cannot be recovered.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
+    if (deletingFeeId) return;
+    setDeletingFeeId(feeId);
     try {
       const res = await fetch("/api/fees", {
         method: "POST",
@@ -681,6 +689,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
       }
     } catch (err: any) {
       toastFe("Error deleting fee: " + err.message);
+    } finally {
+      setDeletingFeeId(null);
     }
   };
 
@@ -1011,7 +1021,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                   }`}
                 >
                   <div className="relative flex items-center justify-center">
-                    <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-650"}`} />
+                    <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-[#4F46E5]" : "text-slate-400 group-hover:text-slate-600"}`} />
                   </div>
                   {!isCollapsed && <span>{label}</span>}
                 </button>
@@ -1030,7 +1040,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                 localStorage.setItem("fp_sidebar_collapsed", String(next));
                 return next;
               })}
-              className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-850 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
+              className="h-8.5 w-8.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 shadow-xs transition-all cursor-pointer"
               title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >
               {isCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
@@ -1743,7 +1753,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                   {studentFees.map((fee) => {
                                     const isEditingThis = editingFeeId === fee.id;
                                     return (
-                                      <div key={fee.id} className="p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#131317] space-y-3">
+                                      <div key={fee.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-[#131317] space-y-3 shadow-card">
                                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                           <div className="flex items-center gap-3">
                                             <div className="h-8 w-8 rounded-lg bg-[#D528A2]/10 flex items-center justify-center text-[#D528A2] font-black text-xs">
@@ -1794,7 +1804,8 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
                                                 </Button>
                                                 <button
                                                   onClick={() => handleDeleteFee(fee.id)}
-                                                  className="text-slate-400 hover:text-rose-500 p-1 transition-colors"
+                                                  disabled={deletingFeeId === fee.id}
+                                                  className="text-slate-400 hover:text-rose-500 p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                                   title="Delete Fee Record"
                                                 >
                                                   <Trash2 className="h-4 w-4" />
@@ -2073,7 +2084,7 @@ export const FeeManagerDashboard: React.FC<FeeManagerDashboardProps> = ({
             </div>
           ) : (
             <div className="space-y-4 text-xs font-semibold">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#181820] border border-slate-200/80 dark:border-slate-800 space-y-3">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#181820] border border-slate-100 dark:border-slate-800 space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black text-[#D528A2] uppercase tracking-wider">Excel Field Mapping</span>
                   <span className="text-[9px] text-slate-400 font-bold">Auto-matched columns</span>

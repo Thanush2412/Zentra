@@ -197,20 +197,39 @@ export async function validateSession(
     return { isValid: false, reason: "idle_timeout" };
   }
 
-  // 3. Touch last_activity_at (throttle to update at most once every 30 seconds to minimize DB writes)
-  if (nowMs - lastActivityMs > 30 * 1000) {
-    await db.run(
-      "UPDATE user_sessions SET last_activity_at = ? WHERE session_id_hash = ?",
-      [new Date().toISOString(), hash]
-    ).catch(() => {});
-  }
-
+  // The activity stamp is NOT taken here. It used to be an awaited UPDATE on the
+  // validation path, which put a database round trip in front of every single
+  // authenticated request. Callers in request scope schedule it through after()
+  // instead (see authGuard.loadSession), so the write still lands reliably without
+  // the user waiting for it.
   return {
     isValid: true,
     session,
     userId: session.user_id,
     csrfSecret: session.csrf_secret
   };
+}
+
+/** Sessions are stamped at most once per this window, so an active click stream
+ *  does not turn into one write per click. */
+export const SESSION_TOUCH_THROTTLE_MS = 30 * 1000;
+
+/**
+ * True when `last_activity_at` is stale enough to deserve a fresh stamp. A value
+ * the driver could not parse (undefined/NaN) returns false rather than stamping.
+ */
+export function shouldStampActivity(lastActivityAt: unknown, nowMs = Date.now()): boolean {
+  const lastMs = new Date(lastActivityAt as any).getTime();
+  if (!Number.isFinite(lastMs)) return false;
+  return nowMs - lastMs > SESSION_TOUCH_THROTTLE_MS;
+}
+
+/** Writes the new activity time for an already-validated session. */
+export async function stampSessionActivity(db: any, sessionIdHash: string): Promise<void> {
+  await db.run(
+    "UPDATE user_sessions SET last_activity_at = ? WHERE session_id_hash = ?",
+    [new Date().toISOString(), sessionIdHash]
+  );
 }
 
 /**

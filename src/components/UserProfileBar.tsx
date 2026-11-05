@@ -24,8 +24,6 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
   const {
     currentUser,
     currentRole,
-    isSuperAdmin,
-    setRole,
     currentMentor,
     currentHR,
     currentCAM,
@@ -224,13 +222,13 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
         ref={triggerRef}
         type="button"
         onClick={handleToggle}
-        className="flex h-9 items-center gap-2 px-2.5 sm:px-3 rounded-xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-all cursor-pointer shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+        className="flex h-9 items-center gap-2 px-2.5 sm:px-3 rounded-2xl bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-all cursor-pointer shadow-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-controls="profile-menu"
       >
         {/* Avatar / Initials Pill */}
-        <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-white text-[9px] shadow-xs shrink-0 overflow-hidden">
+        <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-white text-[10px] shadow-sm shrink-0 overflow-hidden">
           {userInfo.avatarUrl ? (
             <img src={userInfo.avatarUrl} alt={userInfo.name} className="h-full w-full object-cover" />
           ) : (
@@ -292,44 +290,6 @@ export function UserProfileBar({ onOpenChangePassword }: UserProfileBarProps) {
 
           {/* Actions List */}
           <div className="p-1.5 space-y-0.5">
-            {isSuperAdmin && (
-              <div className="pb-1 mb-1 border-b border-slate-100 dark:border-slate-700" role="group" aria-label="Switch workspace">
-                <span role="presentation" className="px-3 py-1 text-[9px] font-black uppercase tracking-wider text-slate-400 block">
-                  Switch Workspace
-                </span>
-                <div className="grid grid-cols-2 gap-1 px-1">
-                  {[
-                    { label: "Admin", role: "admin", path: "/admin" },
-                    { label: "CM", role: "cm", path: "/cm" },
-                    { label: "L&D", role: "L and D", path: "/l-d" },
-                    { label: "Faculty", role: "mentor", path: "/mentor" },
-                    { label: "KAM", role: "kam", path: "/kam" },
-                    { label: "Student", role: "student", path: "/student" },
-                    { label: "Fee Mgr", role: "fee_manager", path: "/fee-manager" },
-                    { label: "SME", role: "sme", path: "/sme" },
-                  ].map(w => (
-                    <button
-                      key={w.path}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setRole(w.role as any, undefined, { isSuperAdmin: true });
-                        router.push(w.path);
-                        setIsOpen(false);
-                      }}
-                      className={`text-left px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer truncate ${
-                        normalizeRoleValue(currentRole) === normalizeRoleValue(w.role)
-                          ? "bg-indigo-50 text-indigo-700 font-black dark:bg-indigo-950/60 dark:text-indigo-300"
-                          : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
-                      }`}
-                    >
-                      {w.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <button
               type="button"
               role="menuitem"

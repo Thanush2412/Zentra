@@ -147,7 +147,7 @@ export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: 
       </div>
 
       {/* ── 2. Subject-wise Lab Completion Progress ── */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-card space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-black text-slate-900">Technical Skill & Lab Subject Completion</h3>
@@ -158,7 +158,7 @@ export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: 
         {subjectProgress.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {subjectProgress.map((s, idx) => (
-              <div key={idx} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 space-y-2.5">
+              <div key={idx} className="bg-slate-50/70 p-4 rounded-xl border border-slate-100 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-800">{s.subject}</span>
                   <Badge variant="brand" className="text-[10px] font-black">
@@ -186,7 +186,7 @@ export const KAMPracticalSkills: React.FC<{ selectedCollegeId?: string; kamId?: 
       </div>
 
       {/* ── 3. Mentor Grading Backlog & Turnaround with Shadcn Table & Pagination ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden space-y-4 p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-black text-slate-900">Mentor Lab Grading Turnaround & Backlog</h3>

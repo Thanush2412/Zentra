@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useApp, Subject } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -20,8 +21,16 @@ import {
   Search,
   BookOpen,
   Edit,
-  Trash2
+  Trash2,
+  MoreVertical
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
 import { SubjectDialog, type SubjectFormState, type DynamicSubjectRow } from "@/components/admin/dialogs/SubjectDialog";
 import { MentorGroupDialog, type MentorGroupFormState } from "@/components/admin/dialogs/MentorGroupDialog";
 
@@ -45,10 +54,19 @@ export const SubjectsTab: React.FC = () => {
   } = useApp();
   const { toast, confirm: showConfirm } = useToast();
 
+  const searchParams = useSearchParams();
+  const campusParam = searchParams?.get("campus") || null;
+
   const [subjectsSubTab, setSubjectsSubTab] = useState<"catalog" | "groups">("catalog");
   const [subjectSearchQuery, setSubjectSearchQuery] = useState("");
-  const [subjectCollegeFilter, setSubjectCollegeFilter] = useState("all");
+  const [subjectCollegeFilter, setSubjectCollegeFilter] = useState(() => campusParam || "all");
   const [subjectSemesterFilter, setSubjectSemesterFilter] = useState("all");
+
+  useEffect(() => {
+    if (campusParam) {
+      setSubjectCollegeFilter(campusParam);
+    }
+  }, [campusParam]);
 
   // Subject modal state
   const [showSubjectModal, setShowSubjectModal] = useState(false);
@@ -65,9 +83,9 @@ export const SubjectsTab: React.FC = () => {
     mentorIds: []
   });
   const [dynamicSubjects, setDynamicSubjects] = useState<DynamicSubjectRow[]>([
-    { id: "row_1", name: "", type: "SKILL", weekly_hours: 4 },
-    { id: "row_2", name: "", type: "ACADEMIC", weekly_hours: 4 },
-    { id: "row_3", name: "", type: "LAB", weekly_hours: 2 }
+    { id: "row_1", name: "", type: "SKILL", weekly_hours: 4, mentor_group: "" },
+    { id: "row_2", name: "", type: "ACADEMIC", weekly_hours: 4, mentor_group: "" },
+    { id: "row_3", name: "", type: "LAB", weekly_hours: 2, mentor_group: "" }
   ]);
   const [lockDeptAndYear, setLockDeptAndYear] = useState(false);
   const [subjectModalError, setSubjectModalError] = useState<string | null>(null);
@@ -125,12 +143,17 @@ export const SubjectsTab: React.FC = () => {
       setEditingSubject(sub);
       setLockDeptAndYear(false);
     } else {
+      setDynamicSubjects([
+        { id: "row_1", name: "", type: "SKILL", weekly_hours: 4, mentor_group: "" },
+        { id: "row_2", name: "", type: "ACADEMIC", weekly_hours: 4, mentor_group: "" },
+        { id: "row_3", name: "", type: "LAB", weekly_hours: 2, mentor_group: "" }
+      ]);
       setSubjectForm({
         name: "",
         department: defaultDept || (coursesList[0]?.name || ""),
         semester: defaultYear === "Year 2" ? "Semester 3" : defaultYear === "Year 3" ? "Semester 5" : defaultYear === "Year 4" ? "Semester 7" : "Semester 1",
         type: "SKILL",
-        college_id: colleges[0]?.id || "",
+        college_id: (subjectCollegeFilter !== "all" ? subjectCollegeFilter : "") || campusParam || colleges[0]?.id || "",
         year: defaultYear || "Year 1",
         weekly_hours: 4,
         mentor_group: "",
@@ -184,17 +207,22 @@ export const SubjectsTab: React.FC = () => {
       } else {
         const validSubjects = dynamicSubjects.filter(s => s.name && s.name.trim() !== "");
         if (validSubjects.length > 0) {
-          const payload = validSubjects.map(p => ({
-            name: p.name.trim(),
-            department: subjectForm.department.trim(),
-            semester: subjectForm.semester,
-            type: p.type || "SKILL",
-            college_id: subjectForm.college_id || undefined,
-            year: subjectForm.year,
-            weekly_hours: Number(p.weekly_hours) || 4,
-            subject_group: subjectForm.mentor_group,
-            mentor_group: subjectForm.mentor_group
-          }));
+          const payload = validSubjects.map(p => {
+            const group = (p.mentor_group && p.mentor_group.trim() !== "")
+              ? p.mentor_group.trim()
+              : (subjectForm.mentor_group || "General");
+            return {
+              name: p.name.trim(),
+              department: subjectForm.department.trim(),
+              semester: subjectForm.semester,
+              type: p.type || "SKILL",
+              college_id: subjectForm.college_id || undefined,
+              year: subjectForm.year,
+              weekly_hours: Number(p.weekly_hours) || 4,
+              subject_group: group,
+              mentor_group: group
+            };
+          });
 
           const res = await createSubject(payload as any);
           if (res.success) {
@@ -552,23 +580,33 @@ export const SubjectsTab: React.FC = () => {
                         <Badge variant={coverageVariant}>{coverageLabel}</Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => handleOpenSubjectModal(sub)}
-                            title="Edit Subject"
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="icon"
-                            onClick={() => handleDeleteSubject(sub.id)}
-                            title="Delete Subject"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                        <div className="flex justify-end">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer"
+                                title="Subject Actions"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              <DropdownMenuItem onClick={() => handleOpenSubjectModal(sub)}>
+                                <Edit className="h-3.5 w-3.5 mr-2 text-indigo-600" />
+                                Edit Subject
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteSubject(sub.id)}
+                                className="text-rose-600 focus:bg-rose-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 mr-2 text-rose-600" />
+                                Delete Subject
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -580,10 +618,10 @@ export const SubjectsTab: React.FC = () => {
         </>
       ) : (
         <div className="space-y-6">
-          <div className="flex justify-between items-center bg-white p-4 border border-slate-200/80 rounded-xl shadow-xs">
+          <div className="flex justify-between items-center bg-white p-5 border border-slate-100 rounded-2xl shadow-card">
             <div>
-              <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Configured Mentor Groups</h3>
-              <p className="text-[10px] text-gray-400 font-semibold mt-0.5">
+              <h3 className="text-sm font-bold text-slate-900 tracking-tight">Configured Mentor Groups</h3>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
                 Create custom groups to cluster mentors and SMEs (e.g. Technical, Aptitude, Soft Skills) and allocate
                 demo sessions.
               </p>
@@ -598,7 +636,7 @@ export const SubjectsTab: React.FC = () => {
             </Button>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-200/80 shadow-sm bg-white">
+          <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-card bg-white">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -637,23 +675,33 @@ export const SubjectsTab: React.FC = () => {
                       <TableCell className="text-gray-600">{g.description || "—"}</TableCell>
                       <TableCell className="text-center font-bold">{count}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => handleOpenGroupModal(g)}
-                            title="Edit Group"
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="icon"
-                            onClick={() => handleDeleteGroup(g.id)}
-                            title="Delete Group"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                        <div className="flex justify-end">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer"
+                                title="Group Actions"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-40">
+                              <DropdownMenuItem onClick={() => handleOpenGroupModal(g)}>
+                                <Edit className="h-3.5 w-3.5 mr-2 text-indigo-600" />
+                                Edit Group
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteGroup(g.id)}
+                                className="text-rose-600 focus:bg-rose-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 mr-2 text-rose-600" />
+                                Delete Group
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>

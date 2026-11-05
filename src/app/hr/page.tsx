@@ -19,7 +19,7 @@ export default function HRPortalPage() {
     <DashboardLayout requiredRole="hr">
       <div className="flex-1 overflow-y-auto p-4 md:p-6">
         <div className="mx-auto max-w-7xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-4 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-100 rounded-2xl px-5 py-4 shadow-card">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100">
                 <ShieldCheck className="h-5 w-5" />
@@ -59,7 +59,7 @@ export default function HRPortalPage() {
               userName={currentHR?.name || "HR Manager"}
             />
           ) : (
-            <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-sm text-slate-500">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-sm text-slate-500">
               No campuses are configured yet. Ask an administrator to add a campus.
             </div>
           )}

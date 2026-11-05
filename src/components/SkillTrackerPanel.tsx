@@ -278,7 +278,7 @@ export const SkillTrackerPanel: React.FC<SkillTrackerPanelProps> = ({
   return (
     <div className="space-y-5 font-sans">
       {/* Header */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
             <div className={`h-11 w-11 rounded-xl flex items-center justify-center shrink-0 border ${
@@ -339,7 +339,7 @@ export const SkillTrackerPanel: React.FC<SkillTrackerPanelProps> = ({
         {/* KPI Cards */}
         {summary && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-4">
-            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1">
+            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mentors</span>
                 <BookOpen className="h-4 w-4 text-slate-400" />
@@ -374,7 +374,7 @@ export const SkillTrackerPanel: React.FC<SkillTrackerPanelProps> = ({
               </div>
               <div className="text-xl font-black text-amber-900">{summary.pending + summary.needs_revision}</div>
             </div>
-            <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-1">
+            <div className="p-3 bg-white border border-slate-100 rounded-2xl space-y-1 shadow-card">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Clearance</span>
                 <TrendingUp className="h-4 w-4 text-emerald-500" />
@@ -446,7 +446,7 @@ export const SkillTrackerPanel: React.FC<SkillTrackerPanelProps> = ({
       </div>
 
       {/* Rows */}
-      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <Table className="w-full text-left border-collapse text-xs min-w-[900px]">
             <TableHeader>

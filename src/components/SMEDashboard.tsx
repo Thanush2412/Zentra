@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { prefetchRoleTab } from "@/lib/prefetch";
+import { getLocalDateStr } from "@/lib/localDate";
 import { Card } from "@/components/Card";
 import { Panel } from "@/components/Panel";
 import { Pagination } from "@/components/ui/Pagination";
@@ -163,6 +164,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   const [swapReason, setSwapReason] = useState<string>("CM Approved Mentor Leave");
   const [swapRemarks, setSwapRemarks] = useState<string>("");
   const [swapStep, setSwapStep] = useState<number>(1);
+  const [resolvingSwapId, setResolvingSwapId] = useState<string | null>(null);
   const [selectedProposedMentor, setSelectedProposedMentor] = useState<any | null>(null);
   const [selectedProposedTime, setSelectedProposedTime] = useState<any | null>(null);
 
@@ -330,7 +332,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
   });
 
   // demo_sessions.dateStr is stored as YYYY-MM-DD (see /api/demo-sessions book + getWeekDates)
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLocalDateStr();
   const todayDemos = myDemos.filter(ds => ds.dateStr === todayStr);
 
   const confirmedDemos = myDemos.filter(ds => ds.status === "confirmed" || ds.status === "scheduled");
@@ -733,7 +735,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
         <div className="p-3 md:p-6 space-y-6 max-w-[1400px] mx-auto animate-in fade-in slide-in-from-bottom-3 duration-250">
 
           {/* Top Header Banner & Profile Card */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-card">
             <div className="flex items-center gap-3.5">
               <div className="h-10 w-10 rounded-lg bg-pink-50 dark:bg-pink-950/30 flex items-center justify-center text-pink-600 dark:text-pink-400 shrink-0 border border-pink-100 dark:border-pink-900">
                 <Sparkles className="h-5 w-5" />
@@ -892,7 +894,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 {todayDemos.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {todayDemos.map(demo => (
-                      <div key={demo.id} className="p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 shadow-2xs">
+                      <div key={demo.id} className="p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 shadow-card">
                         <div className="space-y-0.5">
                           <div className="font-black text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
                             <User className="h-3.5 w-3.5 text-pink-500 shrink-0" />
@@ -956,7 +958,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 </div>
 
                 {/* Filter Toolbar */}
-                <div className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 p-3.5 rounded-xl">
+                <div className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 p-3.5 rounded-xl">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <select aria-label="College filter" value={filterCollege} onChange={e => { setFilterCollege(e.target.value); setPage(1); }}
                       className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
@@ -985,7 +987,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                 <div className="grid grid-cols-1 gap-4">
                   {paginatedDemos.length > 0 ? (
                     paginatedDemos.map(demo => (
-                      <div key={demo.id} className="p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3.5 hover:border-pink-300/80 dark:hover:border-pink-800 transition-all">
+                      <div key={demo.id} className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-card space-y-3.5 hover:border-pink-300/80 dark:hover:border-pink-800 transition-all">
                         {/* Sub-boxes Grid */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                           <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-800">
@@ -1053,7 +1055,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                       </div>
                     ))
                   ) : (
-                    <div className="p-10 text-center text-slate-400 text-xs font-bold italic bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl">
+                    <div className="p-10 text-center text-slate-400 text-xs font-bold italic bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-card">
                       No L&D sessions found matching your filters.
                     </div>
                   )}
@@ -1109,7 +1111,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
           {activeTab === "availability" && (
             <div className="space-y-6">
               {/* Top Banner Card: Clean Summary */}
-              <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="p-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-card flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
                     <SlidersHorizontal className="h-5 w-5 text-[#D528A2]" />
@@ -1158,7 +1160,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               >
                 <div className="space-y-6">
                   {/* Legend & Action Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs font-bold">
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 text-xs font-bold">
                     <div className="flex flex-wrap items-center gap-2.5">
                       <span className="text-[10px] font-black uppercase text-slate-400">Legend:</span>
                       <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-md text-[10px] font-bold">Free L&D Slot</span>
@@ -1277,7 +1279,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               <div className="space-y-6">
                 {/* Quick Action Bar to initiate swap */}
                 {confirmedDemos.length > 0 && (
-                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
                     <div className="text-xs text-slate-600 dark:text-slate-300 font-bold">
                       Need to reschedule an upcoming demo due to emergency or clash?
                     </div>
@@ -1307,7 +1309,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                             <span className="px-2 py-0.5 bg-violet-100 text-violet-800 font-extrabold rounded-md text-[9px] uppercase">Reallocation Proposal</span>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-3 text-xs p-3 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-lg">
+                          <div className="grid grid-cols-2 gap-3 text-xs p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-card">
                             <div>
                               <span className="text-[8.5px] font-black uppercase text-slate-400 block mb-0.5">Faculty & Group</span>
                               <span className="font-bold text-slate-800 dark:text-slate-200 block">{req.mentorName}</span>
@@ -1325,22 +1327,38 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
 
                           <div className="flex gap-3 pt-1">
                             <button
+                              disabled={resolvingSwapId === req.id}
                               onClick={async () => {
-                                const res = await resolveDemoSwap(req.id, "rejected");
-                                if (res.success) toast("Reallocation request rejected. Session remains in reallocation_required.", "success");
+                                if (resolvingSwapId) return;
+                                setResolvingSwapId(req.id);
+                                try {
+                                  const res = await resolveDemoSwap(req.id, "rejected");
+                                  if (res.success) toast("Reallocation request rejected. Session remains in reallocation_required.", "success");
+                                  else toast(res.message || "Failed to reject the reallocation request.", "error");
+                                } finally {
+                                  setResolvingSwapId(null);
+                                }
                               }}
-                              className="flex-1 py-2 text-xs font-extrabold border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              className="flex-1 py-2 text-xs font-extrabold border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-lg transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               Reject
                             </button>
                             <button
+                              disabled={resolvingSwapId === req.id}
                               onClick={async () => {
-                                const res = await resolveDemoSwap(req.id, "approved");
-                                if (res.success) toast("Reallocation request accepted and demo booked!", "success");
+                                if (resolvingSwapId) return;
+                                setResolvingSwapId(req.id);
+                                try {
+                                  const res = await resolveDemoSwap(req.id, "approved");
+                                  if (res.success) toast("Reallocation request accepted and demo booked!", "success");
+                                  else toast(res.message || "Failed to accept the reallocation request.", "error");
+                                } finally {
+                                  setResolvingSwapId(null);
+                                }
                               }}
-                              className="flex-1 py-2 text-xs font-extrabold bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-all shadow-2xs cursor-pointer"
+                              className="flex-1 py-2 text-xs font-extrabold bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-all shadow-2xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              Accept & Confirm
+                              Accept &amp; Confirm
                             </button>
                           </div>
                         </div>
@@ -1490,7 +1508,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
 
                 {swapStep === 1 ? (
                   <div className="space-y-4">
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-350 space-y-1">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
                       <p><strong>Faculty Candidate:</strong> {swapModalSession.mentorName} ({swapModalSession.subject})</p>
                       <p><strong>Scheduled:</strong> {swapModalSession.dateStr} • {swapModalSession.timeSlot}</p>
                       <p><strong>College:</strong> {getMentorCollege(swapModalSession.mentorId)}</p>
@@ -1498,7 +1516,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     <div>
                       <label className="text-[9px] font-black uppercase text-slate-400 block mb-1.5">Reason for Reallocation</label>
                       <select value={swapReason} onChange={e => setSwapReason(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
                         aria-label="Reason for Reallocation">
                         <option value="CM Approved Mentor Leave">CM Approved Mentor Leave</option>
                         <option value="SME Unavailable">SME Unavailable</option>
@@ -1509,7 +1527,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     <div>
                       <label className="text-[9px] font-black uppercase text-slate-400 block mb-1.5">Remarks (Optional)</label>
                       <textarea rows={3} value={swapRemarks} onChange={e => setSwapRemarks(e.target.value)} placeholder="Provide context..."
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         aria-label="Remarks (Optional)" />
                     </div>
                     <div className="flex gap-3 pt-2">
@@ -1591,7 +1609,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     </div>
                   </div>
 
-                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800">
                     <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block mb-2">Evaluation Criteria</span>
                     {EVAL_CRITERIA.map(crit => (
                       <div key={crit.key} className="flex items-center justify-between gap-3">
@@ -1610,7 +1628,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     ))}
                   </div>
 
-                  <div className="flex justify-between items-center p-3 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-150 rounded-xl text-xs font-bold">
+                  <div className="flex justify-between items-center p-3 bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-100 rounded-xl text-xs font-bold">
                     <span className="text-slate-800 dark:text-slate-200">Calculated Total Marks:</span>
                     <span className={`text-sm font-black ${marks >= 80 ? "text-emerald-600" : marks >= 60 ? "text-amber-600" : "text-rose-600"}`}>{marks} / 100</span>
                   </div>
@@ -1632,7 +1650,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                       value={comments}
                       onChange={e => setComments(e.target.value)}
                       placeholder="Provide feedback on course knowledge, presentation delivery, confidence, student interaction..."
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-750 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-pink-500"
                       aria-label="Pedagogical Comments &amp; Feedback"
                     />
                   </div>
@@ -1685,13 +1703,13 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                     </div>
                   </div>
 
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-350 space-y-1">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
                     <p><strong>Subject:</strong> {viewEvalSession.subject}</p>
                     <p><strong>Date/Time:</strong> {viewEvalSession.dateStr} • {viewEvalSession.timeSlot}</p>
                     <p><strong>Stream:</strong> {viewEvalSession.stream}</p>
                   </div>
 
-                  <div className="p-3 bg-emerald-50/30 dark:bg-emerald-950/10 border border-emerald-150 rounded-xl">
+                  <div className="p-3 bg-emerald-50/30 dark:bg-emerald-950/10 border border-emerald-100 rounded-xl">
                     <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Feedback Comments</span>
                     <p className="text-xs text-slate-600 dark:text-slate-300 italic">&quot;{viewEvalSession.comments || "No comments recorded."}&quot;</p>
                   </div>
@@ -1703,7 +1721,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                       if (Array.isArray(list)) flagged = list.filter((c: any) => c && c.met === false && c.label).map((c: any) => c.label);
                     } catch (_) {}
                     return flagged.length > 0 ? (
-                      <div className="p-3 bg-rose-50/30 dark:bg-rose-950/10 border border-rose-150 rounded-xl">
+                      <div className="p-3 bg-rose-50/30 dark:bg-rose-950/10 border border-rose-100 rounded-xl">
                         <span className="text-[9px] font-black uppercase text-slate-400 block mb-1">Unmet Compliance Criteria (escalated)</span>
                         <div className="flex flex-wrap gap-1.5">
                           {flagged.map((label: string, i: number) => (
@@ -1734,7 +1752,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
               }}
               ariaLabel="Configure working windows and slot timings"
               overlayClassName="bg-black/60 backdrop-blur-xs overflow-y-auto"
-              panelClassName="max-w-2xl rounded-3xl p-0 space-y-0 overflow-hidden bg-white dark:bg-slate-900 my-8 max-h-[90vh]"
+              panelClassName="max-w-2xl rounded-2xl p-0 space-y-0 overflow-hidden bg-white dark:bg-slate-900 my-8 max-h-[90vh]"
             >
                 {/* Modal Header */}
                 <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
@@ -1799,7 +1817,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   </div>
 
                   {/* Context Help Banner */}
-                  <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs flex items-center justify-between gap-2">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 text-xs flex items-center justify-between gap-2">
                     <span className="text-slate-600 dark:text-slate-300 font-bold">
                       {selectedAvailDay === "ALL" ? (
                         <span>Standard Schedule Mode: Setting once applies to <strong>all 5 weekdays (Monday – Friday)</strong>.</span>
@@ -1813,7 +1831,7 @@ export function SMEDashboard({ activeTab: propTab, onTabChange }: SMEDashboardPr
                   </div>
 
                   {/* Quick Presets */}
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[11px] font-extrabold text-slate-600 dark:text-slate-300">Quick Schedule Presets:</span>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <button

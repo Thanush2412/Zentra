@@ -181,7 +181,7 @@ export function CMApprovalsHub() {
 
       {activeTab === "history" ? (
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
             <Table className="w-full border-collapse text-left text-sm">
               <TableHeader>
                 <TableRow className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs tracking-wider hover:bg-slate-50">
@@ -228,7 +228,7 @@ export function CMApprovalsHub() {
           </div>
 
           {campusApproved.length > 0 && (
-            <div className="bg-white p-3 rounded-xl border border-slate-200">
+            <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-card">
               <Pagination
                 currentPage={historyPage}
                 totalItems={campusApproved.length}
@@ -307,7 +307,7 @@ export function CMApprovalsHub() {
             {selectedRequest ? (
               <div className="max-w-3xl mx-auto p-8 space-y-6">
                 
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
                   <div className="border-b border-slate-100 bg-slate-50/50 p-6">
                     <div className="flex items-center justify-between mb-2">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-black uppercase border ${getStatusColor(selectedRequest.reasonCategory)}`}>
@@ -348,7 +348,7 @@ export function CMApprovalsHub() {
                 </div>
 
                 {/* CM Action Panel */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-6 space-y-6">
                   <h3 className="text-lg font-black text-slate-900">Campus Manager Action</h3>
                   
                   {selectedRequest.reasonCategory === "Substitution" && (
@@ -430,7 +430,7 @@ export function CMApprovalsHub() {
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-4">
+                <div className="w-16 h-16 rounded-2xl bg-white border border-slate-100 shadow-card flex items-center justify-center mb-4">
                   <Search className="w-8 h-8 opacity-40" />
                 </div>
                 <h3 className="text-lg font-black text-slate-600">Select a request</h3>

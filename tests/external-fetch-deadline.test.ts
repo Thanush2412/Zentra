@@ -72,8 +72,10 @@ describe("server-side outbound fetches have a deadline", () => {
     expect(leg!).toMatch(/fetchWithTimeout\(/);
     expect(leg!).toMatch(/\.catch\(\(\) => null\)/);
     // The observations photo upload must answer 502, not leak an AbortError message.
+    // Each stage names itself in the message, so assert the shape + the status it maps to.
     const obs = readFileSync(resolve(process.cwd(), "src/app/api/audit/observations/route.ts"), "utf8");
     expect(obs).toMatch(/UPLOAD_FETCH_TIMEOUT_MS/);
-    expect(obs).toMatch(/Photo upload timed out/);
+    expect(obs).toMatch(/photo upload timed out[^\n]*,\s*502\)/);
+    expect(obs).toMatch(/instanceof PhotoUploadError/);
   });
 });

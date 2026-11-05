@@ -64,7 +64,6 @@ export async function GET(
                 FROM student_attendance sa
                 LEFT JOIN slots s ON sa.slotId = s.id
                 WHERE sa.studentId IN (${placeholders})
-                GROUP BY sa.id
                 ORDER BY sa.dateStr ASC, s.time ASC`,
           params: validIds,
         },

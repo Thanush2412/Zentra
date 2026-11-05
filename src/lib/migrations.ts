@@ -660,6 +660,40 @@ const migrations: Migration[] = [
     }
   },
   {
+    // Monthly student sentiment survey. Kept apart from student_mentor_feedback, which
+    // is a once-per-student external form: this one is answered again every month, so
+    // the month is part of the identity and a re-submit edits instead of duplicating.
+    name: "student_nps_responses_table",
+    run: async (db) => {
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS student_nps_responses (
+          id TEXT PRIMARY KEY,
+          month_key TEXT NOT NULL,
+          student_id TEXT NOT NULL,
+          student_name TEXT,
+          college_id TEXT,
+          college_name TEXT,
+          department TEXT,
+          class_group TEXT,
+          score INTEGER NOT NULL,
+          likes TEXT,
+          improve TEXT,
+          submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `).catch(() => {});
+      await db.exec(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_student_nps_month ON student_nps_responses(month_key, student_id)"
+      ).catch(() => {});
+      await db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_student_nps_college_month ON student_nps_responses(college_id, month_key)"
+      ).catch(() => {});
+      await db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_student_nps_month ON student_nps_responses(month_key DESC)"
+      ).catch(() => {});
+    }
+  },
+  {
     // Credential-stuffing guard for /api/login: failed attempts have to outlive the
     // isolate that saw them, so the counter lives in the database, not in memory.
     name: "login_attempts",

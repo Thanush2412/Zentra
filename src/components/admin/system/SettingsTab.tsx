@@ -17,6 +17,7 @@ import {
   Loader2,
   Power
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { ClearAttendanceSection } from "@/components/admin/operations/ClearAttendanceSection";
 
 export const SettingsTab: React.FC = () => {
@@ -106,9 +107,9 @@ export const SettingsTab: React.FC = () => {
       />
 
       {/* Grid Layout for Settings Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         {/* Master Email Control Card */}
-        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm flex flex-col justify-between space-y-4">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-col justify-between space-y-4">
           <div>
             <div className="flex items-start justify-between gap-4 mb-3">
               <div className="flex items-center gap-3">
@@ -158,33 +159,34 @@ export const SettingsTab: React.FC = () => {
           {/* Action Row */}
           <div className="pt-4 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => handleToggleMailing(!systemSettings.mailing_enabled)}
+              <Switch
+                checked={systemSettings.mailing_enabled}
                 disabled={isUpdatingSettings}
-                className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm border ${
-                  systemSettings.mailing_enabled
-                    ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-700"
-                    : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
-                } disabled:opacity-50`}
-              >
+                onCheckedChange={checked => handleToggleMailing(checked)}
+                size="md"
+                aria-label="Toggle Global Mailing System"
+              />
+              <span className="text-xs font-bold text-slate-800">
                 {isUpdatingSettings ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="inline-flex items-center gap-1.5 text-slate-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating…
+                  </span>
+                ) : systemSettings.mailing_enabled ? (
+                  "Global Mailing Enabled"
                 ) : (
-                  <Power className="h-4 w-4" />
+                  "Global Mailing Paused"
                 )}
-                {systemSettings.mailing_enabled ? "Turn Mailing OFF" : "Turn Mailing ON"}
-              </button>
+              </span>
             </div>
 
             <span className="text-[10px] text-gray-400 font-semibold">
-              Status: {systemSettings.mailing_enabled ? "Enabled" : "Paused"}
+              Status: {systemSettings.mailing_enabled ? "Active" : "Paused"}
             </span>
           </div>
         </div>
 
         {/* Email Service Diagnostic Card */}
-        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm flex flex-col justify-between space-y-4">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-col justify-between space-y-4">
           <div>
             <div className="flex items-center gap-3 mb-3">
               <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
@@ -232,7 +234,7 @@ export const SettingsTab: React.FC = () => {
         </div>
 
         {/* Attendance Marking Lock Policy Card */}
-        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm flex flex-col justify-between space-y-4 md:col-span-2">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-col justify-between space-y-4 md:col-span-2">
           <div>
             <div className="flex items-start justify-between gap-4 mb-3">
               <div className="flex items-center gap-3">
@@ -299,27 +301,24 @@ export const SettingsTab: React.FC = () => {
           {/* Action Row */}
           <div className="pt-4 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => handleToggleAttendanceLock(systemSettings.attendance_lock_enabled === false)}
+              <Switch
+                checked={systemSettings.attendance_lock_enabled !== false}
                 disabled={isUpdatingSettings}
-                className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm border ${
-                  systemSettings.attendance_lock_enabled !== false
-                    ? "bg-rose-600 hover:bg-rose-700 text-white border-rose-700"
-                    : "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
-                } disabled:opacity-50`}
-              >
+                onCheckedChange={checked => handleToggleAttendanceLock(checked)}
+                size="md"
+                aria-label="Toggle Attendance Lock Policy"
+              />
+              <span className="text-xs font-bold text-slate-800">
                 {isUpdatingSettings ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="inline-flex items-center gap-1.5 text-slate-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Updating…
+                  </span>
                 ) : systemSettings.attendance_lock_enabled !== false ? (
-                  <Unlock className="h-4 w-4" />
+                  "Strict Lockout Active (Period Expiration Enforced)"
                 ) : (
-                  <Lock className="h-4 w-4" />
+                  "Flexible Mode (Retroactive Marking Allowed)"
                 )}
-                {systemSettings.attendance_lock_enabled !== false
-                  ? "Disable Attendance Lock"
-                  : "Enable Attendance Lock"}
-              </button>
+              </span>
             </div>
 
             <span className="text-[10px] text-gray-400 font-semibold">

@@ -333,78 +333,94 @@ export async function GET(req: NextRequest) {
       }
 
       /* ─────────────────────────────────────────────────────────────────
-         SINGLE STUDENT MODE: Targeted query for specific student
+         SINGLE STUDENT MODE: Targeted queries executed in parallel via pool
          ───────────────────────────────────────────────────────────────── */
-      // 1. LeetCode student lookup
-      let lcRow: any = null;
-      if (regClean || emailClean || lcUserExtracted || name) {
-        const lcQuery = `
-          SELECT s.id, s.name, s.register_number, s.email, s.username, s.profile_url,
-                 s.ranking, s.solved_easy, s.solved_medium, s.solved_hard, s.solved_total,
-                 s.last_synced_at, c.name as college_name
-          FROM lc_students s
-          LEFT JOIN lc_colleges c ON s.college_id = c.id
-          WHERE 
-            ($1 != '' AND LOWER(REPLACE(s.register_number, ' ', '')) = $1)
-            OR ($2 != '' AND LOWER(TRIM(s.email)) = $2)
-            OR ($3 != '' AND LOWER(TRIM(s.username)) = $3)
-            OR ($4 != '' AND LOWER(TRIM(s.name)) = LOWER(TRIM($4)))
-          ORDER BY 
-            CASE 
-              WHEN $1 != '' AND LOWER(REPLACE(s.register_number, ' ', '')) = $1 THEN 1
-              WHEN $2 != '' AND LOWER(TRIM(s.email)) = $2 THEN 2
-              WHEN $3 != '' AND LOWER(TRIM(s.username)) = $3 THEN 3
-              ELSE 4
-            END,
-            s.solved_total DESC NULLS LAST
-          LIMIT 1;
-        `;
-        const lcRes = await client.query(lcQuery, [regClean, emailClean, lcUserExtracted.toLowerCase(), name]);
-        lcRow = lcRes.rows[0] || null;
-      }
+      const lcQuery = `
+        SELECT s.id, s.name, s.register_number, s.email, s.username, s.profile_url,
+               s.ranking, s.solved_easy, s.solved_medium, s.solved_hard, s.solved_total,
+               s.last_synced_at, c.name as college_name
+        FROM lc_students s
+        LEFT JOIN lc_colleges c ON s.college_id = c.id
+        WHERE 
+          ($1 != '' AND LOWER(REPLACE(s.register_number, ' ', '')) = $1)
+          OR ($2 != '' AND LOWER(TRIM(s.email)) = $2)
+          OR ($3 != '' AND LOWER(TRIM(s.username)) = $3)
+          OR ($4 != '' AND LOWER(TRIM(s.name)) = LOWER(TRIM($4)))
+        ORDER BY 
+          CASE 
+            WHEN $1 != '' AND LOWER(REPLACE(s.register_number, ' ', '')) = $1 THEN 1
+            WHEN $2 != '' AND LOWER(TRIM(s.email)) = $2 THEN 2
+            WHEN $3 != '' AND LOWER(TRIM(s.username)) = $3 THEN 3
+            ELSE 4
+          END,
+          s.solved_total DESC NULLS LAST
+        LIMIT 1;
+      `;
 
-      // 2. HackerRank student & contest lookup
-      let hcRow: any = null;
-      if (regClean || emailClean || hrUserExtracted || name) {
-        const hcQuery = `
-          SELECT id, name, college, department, email, register_no, hr_username
-          FROM hc_students
-          WHERE 
-            ($1 != '' AND LOWER(REPLACE(register_no, ' ', '')) = $1)
-            OR ($2 != '' AND LOWER(TRIM(email)) = $2)
-            OR ($3 != '' AND LOWER(TRIM(hr_username)) = $3)
-            OR ($4 != '' AND LOWER(TRIM(name)) = LOWER(TRIM($4)))
-          ORDER BY 
-            CASE 
-              WHEN $1 != '' AND LOWER(REPLACE(register_no, ' ', '')) = $1 THEN 1
-              WHEN $2 != '' AND LOWER(TRIM(email)) = $2 THEN 2
-              WHEN $3 != '' AND LOWER(TRIM(hr_username)) = $3 THEN 3
-              ELSE 4
-            END
-          LIMIT 1;
-        `;
-        const hcRes = await client.query(hcQuery, [regClean, emailClean, hrUserExtracted.toLowerCase(), name]);
-        hcRow = hcRes.rows[0] || null;
-      }
+      const hcQuery = `
+        SELECT id, name, college, department, email, register_no, hr_username
+        FROM hc_students
+        WHERE 
+          ($1 != '' AND LOWER(REPLACE(register_no, ' ', '')) = $1)
+          OR ($2 != '' AND LOWER(TRIM(email)) = $2)
+          OR ($3 != '' AND LOWER(TRIM(hr_username)) = $3)
+          OR ($4 != '' AND LOWER(TRIM(name)) = LOWER(TRIM($4)))
+        ORDER BY 
+          CASE 
+            WHEN $1 != '' AND LOWER(REPLACE(register_no, ' ', '')) = $1 THEN 1
+            WHEN $2 != '' AND LOWER(TRIM(email)) = $2 THEN 2
+            WHEN $3 != '' AND LOWER(TRIM(hr_username)) = $3 THEN 3
+            ELSE 4
+          END
+        LIMIT 1;
+      `;
 
-      // 3. Search contest scrape leaderboard for student's contest rank and score
-      let hrContestPerformance: any = null;
       const scrapeQuery = `
         SELECT s.id, s.slug, s.contest_name, s.total_questions, s.payload, s.created_at
         FROM hc_scrapes s
         LEFT JOIN hc_contests c ON LOWER(c.slug) = LOWER(s.slug)
         WHERE 
-          LOWER(c.college) = LOWER($1)
-          OR LOWER(c.college) ILIKE '%' || LOWER($1) || '%'
-          OR LOWER($1) ILIKE '%' || LOWER(c.college) || '%'
-          OR LOWER(s.slug) ILIKE '%' || LOWER($1) || '%'
-          OR LOWER(s.contest_name) ILIKE '%' || LOWER($1) || '%'
-          OR $1 = ''
+          ($1 != '' AND (
+            LOWER(c.college) = LOWER($1)
+            OR LOWER(c.college) ILIKE '%' || LOWER($1) || '%'
+            OR LOWER($1) ILIKE '%' || LOWER(c.college) || '%'
+            OR LOWER(s.slug) ILIKE '%' || LOWER($1) || '%'
+            OR LOWER(s.contest_name) ILIKE '%' || LOWER($1) || '%'
+          ))
         ORDER BY s.id DESC
-        LIMIT 10;
+        LIMIT 5;
       `;
-      const scrapeRes = await client.query(scrapeQuery, [resolvedCollege]);
 
+      const shouldQueryLc = Boolean(regClean || emailClean || lcUserExtracted || name);
+      const shouldQueryHc = Boolean(regClean || emailClean || hrUserExtracted || name);
+      const shouldQueryScrapes = Boolean(resolvedCollege);
+
+      const [lcRes, hcRes, scrapeRes] = await Promise.all([
+        shouldQueryLc
+          ? pool.query(lcQuery, [regClean, emailClean, lcUserExtracted.toLowerCase(), name]).catch((err) => {
+              console.warn("LeetCode lookup warning:", err?.message);
+              return { rows: [] };
+            })
+          : Promise.resolve({ rows: [] }),
+        shouldQueryHc
+          ? pool.query(hcQuery, [regClean, emailClean, hrUserExtracted.toLowerCase(), name]).catch((err) => {
+              console.warn("HackerRank lookup warning:", err?.message);
+              return { rows: [] };
+            })
+          : Promise.resolve({ rows: [] }),
+        shouldQueryScrapes
+          ? pool.query(scrapeQuery, [resolvedCollege]).catch((err) => {
+              console.warn("Scrapes lookup warning:", err?.message);
+              return { rows: [] };
+            })
+          : Promise.resolve({ rows: [] })
+      ]);
+
+      const lcRow = lcRes.rows[0] || null;
+      const hcRow = hcRes.rows[0] || null;
+
+      // Search contest scrape leaderboard for student's contest rank and score
+      let hrContestPerformance: any = null;
       const candidateUsernames = [
         hrUserExtracted.toLowerCase(),
         hcRow?.hr_username?.toLowerCase(),

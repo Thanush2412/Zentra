@@ -246,7 +246,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
   }));
 
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-5">
+    <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-5">
       {/* ──────────────────────── HEADER (MATCHING ATTENDANCE TAB EXACTLY) ──────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
@@ -303,7 +303,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
 
       {/* ──────────────────────── 4 KPI SUMMARY CARDS (MATCHING ATTENDANCE TAB EXACTLY) ──────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-200">
+        <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-100">
           <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Registered</span>
           <p className="text-xl font-black text-slate-900 mt-1">{summary.totalStudents}</p>
           <span className="text-[10px] text-slate-500 font-bold">{summary.activeParticipants} Active in Drives</span>
@@ -332,7 +332,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
       {/* ──────────────────────── VISUAL ANALYTICS CHARTS GRID (MATCHING ATTENDANCE TAB EXACTLY) ──────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Chart 1: Placement Salary Tiers Donut */}
-        <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+        <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-100 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
               <span>Salary Package Tier Distribution</span>
@@ -375,7 +375,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
         </div>
 
         {/* Chart 2: Top Recruiting Companies Bar Chart */}
-        <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200 space-y-3">
+        <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-100 space-y-3">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
               <span>Top Recruiting Partners (Offers Released)</span>
@@ -628,7 +628,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
         </div>
 
         {filteredRoster.length > 0 && (
-          <div className="bg-white p-3 rounded-xl border border-slate-200">
+          <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-card">
             <Pagination
               currentPage={currentPage}
               totalItems={filteredRoster.length}
@@ -676,7 +676,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
             </div>
 
             {/* Quick Metrics */}
-            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
               <div className="text-center">
                 <span className="text-[10px] font-black uppercase text-slate-400">CGPA</span>
                 <p className="text-xl font-black text-blue-700 mt-0.5">
@@ -731,7 +731,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
             {(() => {
               const { lc, hr } = getStudentCoding(selectedStudentForModal);
               return (
-                <div className="space-y-2 p-3.5 rounded-xl border border-slate-200 bg-slate-50/50">
+                <div className="space-y-2 p-3.5 rounded-xl border border-slate-100 bg-slate-50/50">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <span>💻 Algorithmic &amp; Contest Standing</span>
@@ -832,7 +832,7 @@ export const CAMPlacementPanel: React.FC<CAMPlacementPanelProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 text-center font-medium">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 text-center font-medium">
                   Candidate is currently active in the on-campus interview pipeline with zero finalized offers yet.
                 </div>
               )}

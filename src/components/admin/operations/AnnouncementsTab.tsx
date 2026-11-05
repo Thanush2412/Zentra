@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Megaphone, Plus, Trash2, Loader2 } from "lucide-react";
+import { Megaphone, Plus, Trash2, Loader2, MoreVertical, Copy } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/Pagination";
@@ -11,6 +11,13 @@ import { apiFetch } from "@/lib/apiFetch";
 import { College, useApp } from "@/context/AppContext";
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/queryKeys";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { AnnouncementDialog } from "@/components/admin/dialogs/AnnouncementDialog";
 import { AnnouncementFormState } from "@/components/admin/types";
 import { useToast } from "@/context/ToastContext";
@@ -42,7 +49,7 @@ export const AnnouncementsTab: React.FC<AnnouncementsTabProps> = ({
   loadingActions: propLoadingActions
 }) => {
   const app = useApp();
-  const { toast } = useToast();
+  const { toast, confirm: showConfirm } = useToast();
   const colleges = propColleges ?? app.colleges ?? [];
 
   const annQuery = useQuery({
@@ -101,6 +108,7 @@ export const AnnouncementsTab: React.FC<AnnouncementsTabProps> = ({
         toast("Announcement published successfully.", "success");
         setDialogOpen(false);
         annQuery.refetch();
+        app.notifyDataChanged("announcements");
       } else {
         toast(data.message || "Failed to publish announcement.", "error");
       }
@@ -113,7 +121,12 @@ export const AnnouncementsTab: React.FC<AnnouncementsTabProps> = ({
 
   const handleDeleteAnnouncement = async (id: string) => {
     if (propOnDeleteAnnouncement) return propOnDeleteAnnouncement(id);
-    if (!window.confirm("Are you sure you want to delete this announcement?")) return;
+    const ok = await showConfirm({
+      message: "Delete this announcement? Everyone who can see it will lose access.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
     setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`announcement_${id}`]: true }));
     try {
       const res = await fetch(`/api/announcements?id=${id}`, { method: "DELETE" });
@@ -121,6 +134,7 @@ export const AnnouncementsTab: React.FC<AnnouncementsTabProps> = ({
       if (data.success) {
         toast("Announcement deleted successfully.", "success");
         annQuery.refetch();
+        app.notifyDataChanged("announcements");
       } else {
         toast(data.message || "Failed to delete announcement.", "error");
       }
@@ -159,9 +173,9 @@ export const AnnouncementsTab: React.FC<AnnouncementsTabProps> = ({
           <p className="text-sm font-semibold">Loading announcements…</p>
         </div>
       ) : announcements.length === 0 ? (
-        <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
-          <Megaphone className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 font-semibold">No announcements published yet.</p>
+        <div className="text-center py-16 border border-slate-100 rounded-2xl bg-white shadow-card">
+          <Megaphone className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 font-semibold">No announcements published yet.</p>
         </div>
       ) : (
         <>
@@ -171,22 +185,42 @@ export const AnnouncementsTab: React.FC<AnnouncementsTabProps> = ({
               return (
                 <div
                   key={ann.id}
-                  className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-sm hover:shadow-md transition-all relative flex flex-col justify-between"
+                  className="p-5 bg-white border border-slate-100 rounded-2xl shadow-card hover:shadow-md hover:border-indigo-100 transition-all relative flex flex-col justify-between"
                 >
                   <div className="space-y-3">
                     <div className="flex justify-between items-start gap-4">
                       <h3 className="text-sm font-bold text-gray-900 leading-snug">{ann.title}</h3>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteAnnouncement(ann.id)}
-                        isLoading={loadingActions[`announcement_${ann.id}`]}
-                        loadingText=" "
-                        className="h-7 w-7 text-gray-400 hover:bg-rose-50 hover:text-rose-600"
-                        title="Delete Announcement"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-900 cursor-pointer"
+                            title="Announcement Options"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Announcement</DropdownMenuLabel>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              navigator.clipboard.writeText(`${ann.title}\n\n${ann.description}`);
+                              toast("Announcement text copied to clipboard!", "success");
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                            Copy Text
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-rose-600 focus:text-rose-700 focus:bg-rose-50"
+                            onClick={() => handleDeleteAnnouncement(ann.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     <p className="text-xs text-gray-600 font-semibold leading-relaxed whitespace-pre-line">{ann.description}</p>
                   </div>

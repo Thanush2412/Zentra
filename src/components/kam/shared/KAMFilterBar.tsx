@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Building2, Layers, Users, Clock, Calendar, Filter, RotateCcw } from "lucide-react";
+import { getLocalDateStr, shiftDateStr } from "@/lib/localDate";
 
 export interface GlobalFilterState {
   collegeId: string;
@@ -43,8 +44,7 @@ export const KAMFilterBar: React.FC<KAMFilterBarProps> = ({
   ];
 
   const handlePresetClick = (presetKey: string) => {
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = getLocalDateStr();
     let start = "2026-06-01";
     let end = todayStr;
 
@@ -52,15 +52,11 @@ export const KAMFilterBar: React.FC<KAMFilterBarProps> = ({
       start = todayStr;
       end = todayStr;
     } else if (presetKey === "7d") {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      start = d.toISOString().slice(0, 10);
+      start = shiftDateStr(todayStr, -7);
     } else if (presetKey === "30d") {
-      const d = new Date();
-      d.setDate(d.getDate() - 30);
-      start = d.toISOString().slice(0, 10);
+      start = shiftDateStr(todayStr, -30);
     } else if (presetKey === "this_month") {
-      start = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`;
+      start = `${todayStr.slice(0, 7)}-01`;
     } else if (presetKey === "jun") {
       start = "2026-06-01";
       end = "2026-06-30";
@@ -76,7 +72,7 @@ export const KAMFilterBar: React.FC<KAMFilterBarProps> = ({
   };
 
   return (
-    <div className="bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-4 shadow-sm space-y-3">
+    <div className="bg-white/95 backdrop-blur-md border border-slate-100 rounded-2xl p-4 shadow-card space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-indigo-900">
           <Filter className="h-4 w-4 text-indigo-600" />

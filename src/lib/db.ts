@@ -470,7 +470,7 @@ export function getDb(): Promise<PostgresDbAdapter> {
         // the project's max_client_connections.
         max: resolvePoolMax(),
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: resolveIntEnv("DB_CONNECT_TIMEOUT_MS", 10000, 1000, 60000),
+        connectionTimeoutMillis: resolveIntEnv("DB_CONNECT_TIMEOUT_MS", 25000, 1000, 60000),
         statement_timeout: resolveIntEnv("DB_STATEMENT_TIMEOUT_MS", 60000, 1000, 300000),
         application_name: process.env.DB_APP_NAME || "fp-timetable"
       });
@@ -484,16 +484,35 @@ export function getDb(): Promise<PostgresDbAdapter> {
         console.error("[PostgreSQL Pool] Error on idle connection (client evicted):", err?.message || err);
       });
 
-      // Verify connection directly
-      try {
-        await pool.query("SELECT 1");
-      } catch (connErr: any) {
-        console.error("❌ [PostgreSQL Error] Connection failed:", connErr.message);
+      // Verify connection directly with retry for transient cold-starts
+      const maxConnectAttempts = resolveIntEnv("DB_CONNECT_MAX_RETRIES", 3, 1, 5);
+      let connectAttempt = 0;
+      let lastConnectErr: any = null;
+
+      while (connectAttempt < maxConnectAttempts) {
+        connectAttempt++;
+        try {
+          await pool.query("SELECT 1");
+          lastConnectErr = null;
+          break;
+        } catch (connErr: any) {
+          lastConnectErr = connErr;
+          console.warn(`⚠️ [PostgreSQL Connect] Probe attempt ${connectAttempt}/${maxConnectAttempts} failed: ${connErr.message}`);
+          if (connectAttempt >= maxConnectAttempts || !isTransientError(connErr)) {
+            break;
+          }
+          const delayMs = connectAttempt * 1200;
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      }
+
+      if (lastConnectErr) {
+        console.error("❌ [PostgreSQL Error] Connection failed:", lastConnectErr.message);
         // A failed boot must not be cached. Without this the rejected promise stays
         // in dbPromise for the life of the instance and every subsequent request
         // 500s with the same stale error even after the pooler comes back.
         await pool.end().catch(() => {});
-        throw new Error(`Failed to connect to PostgreSQL: ${connErr.message}`);
+        throw new Error(`Failed to connect to PostgreSQL: ${lastConnectErr.message}`);
       }
 
       dbInstance = createPostgresAdapter(pool);

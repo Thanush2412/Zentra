@@ -653,6 +653,52 @@ function getSemesterFromLabel(label: string): string {
   return "Semester 1";
 }
 
+export interface SeedAdminOptions {
+  email?: string;
+  name?: string;
+  password?: string;
+}
+
+/**
+ * Seeds only the primary administrator account into admin_users and users.
+ * Does not insert any mock/dummy curriculum, student, timetable, or mentor data.
+ */
+export async function seedAdminOnly(
+  dbAdapter?: any,
+  options?: SeedAdminOptions
+) {
+  const db = dbAdapter || (await getDb());
+  const adminEmail = (options?.email || process.env.ADMIN_EMAIL || "admin@university.edu").trim().toLowerCase();
+  const adminName = (options?.name || process.env.ADMIN_NAME || "System Admin").trim();
+  const adminPass = options?.password || process.env.ADMIN_PASSWORD || DEFAULT_PASSWORD;
+  const adminId = "admin_1";
+
+  // 1. Ensure admin_users record exists
+  await db.run(
+    `INSERT INTO admin_users (id, name, email)
+     VALUES (?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email`,
+    [adminId, adminName, adminEmail]
+  );
+
+  // 2. Ensure users auth record exists with hashed password
+  const passwordHash = hashPassword(adminPass);
+  const now = new Date().toISOString();
+
+  await db.run(
+    `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at)
+     VALUES (?, ?, ?, 'admin', ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET
+       email = EXCLUDED.email,
+       password_hash = CASE WHEN users.password_hash IS NULL OR users.password_hash = '' THEN EXCLUDED.password_hash ELSE users.password_hash END,
+       role = 'admin',
+       updated_at = EXCLUDED.updated_at`,
+    [adminId, adminEmail, passwordHash, adminId, now, now]
+  );
+
+  return { success: true, email: adminEmail, role: "admin", id: adminId };
+}
+
 export async function seedDatabase() {
   if (process.env.NODE_ENV === "production" && !process.env.ALLOW_SEED_IN_PROD) {
     console.warn("Seed skipped in production. Set ALLOW_SEED_IN_PROD=true to override.");

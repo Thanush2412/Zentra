@@ -20,7 +20,7 @@ export function AdminTabSkeleton({ message = "Loading…" }: { message?: string 
       </div>
 
       {/* Surface Card Skeleton */}
-      <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-xs space-y-4">
+      <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-card space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="h-4 w-36 rounded bg-slate-200/70" />
           <div className="h-8 w-48 rounded-xl bg-slate-100" />

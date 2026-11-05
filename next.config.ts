@@ -46,6 +46,7 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "50mb",
     },
+    hideLogsAfterAbort: true,
   },
   async headers() {
     return [

@@ -143,9 +143,9 @@ async function noteLoginAttempt(db: PostgresDbAdapter, emailKey: string, ip: str
 
 export async function POST(request: Request) {
   try {
-    // Normalize legacy DB role tokens before any user lookup.
-    await ensureMigration("cm_role_rename_tokens").catch(() => { });
-    await ensureMigration("lnd_role_rename_tokens").catch(() => { });
+    // Legacy role-token cleanup moved into the post-auth after() block below. It used to
+    // be awaited here, which cost two cold-start round trips before the credentials were
+    // even looked at, and normalizeRole() already maps the old tokens in JS.
     const db = await getDb();
     const body = await request.json();
 
@@ -324,11 +324,16 @@ export async function POST(request: Request) {
     // Super admin is derived purely from the stored role — never from the email address
     const isSuperAdmin = roleGrantsSuperAdmin(user.role);
 
-    // College scope and the header display name both live on the role's profile row, so
-    // one read answers both instead of two sequential round trips after the password.
-    const profile = await resolveProfile(db, user);
+    // College scope and the header display name live on the role's profile row, and the
+    // session row is keyed only by user.id - so the profile read and the session insert
+    // go out together instead of one waiting on the other.
+    const [profile, session] = await Promise.all([
+      resolveProfile(db, user),
+      createUserSession(db, user.id, { ip, userAgent })
+    ]);
     const collegeId = profile.collegeId;
     const userName = profile.name;
+    const { rawToken, csrfToken, expiresAt } = session;
 
     // Check if password change is explicitly enforced
     const mustChangePassword = Boolean(user.must_change_password);
@@ -361,17 +366,13 @@ export async function POST(request: Request) {
     }
 
     after(async () => {
+      await ensureMigration("cm_role_rename_tokens").catch(() => { });
+      await ensureMigration("lnd_role_rename_tokens").catch(() => { });
       const failures: any[] = [];
       await db.multiQuery(loginWrites, failures).catch((err: any) => failures.push({ error: err?.message || String(err) }));
       if (failures.length > 0) {
         console.warn("[login] post-login writes failed:", failures.map((f: any) => f.error || f.sql).join(" | "));
       }
-    });
-
-    // Create persistent opaque session in DB (storing only SHA-256 hash)
-    const { rawToken, csrfToken, expiresAt } = await createUserSession(db, user.id, {
-      ip,
-      userAgent
     });
 
     const response = NextResponse.json({

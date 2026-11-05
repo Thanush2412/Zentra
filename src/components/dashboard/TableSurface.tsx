@@ -25,7 +25,7 @@ export function TableSurface({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-slate-200/80 bg-white dark:border-slate-800/80 dark:bg-[#131317]",
+        "overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-card dark:border-slate-800/80 dark:bg-[#131317]",
         className
       )}
     >

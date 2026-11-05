@@ -183,7 +183,7 @@ export const KAMStudentAcademicRisk: React.FC<{
       </div>
 
       {/* ── 2. Composite Academic Risk Matrix Table with Shadcn Table & Pagination ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden space-y-4 p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-black text-slate-900">Holistic Student Academic Risk Matrix</h3>

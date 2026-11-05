@@ -20,11 +20,11 @@ export function PageHeader({
 }: PageHeaderProps) {
   return (
     <div
-      className={`flex flex-col gap-3 pb-4 mb-2 border-b border-slate-200/80 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${className}`}
+      className={`flex flex-col gap-3 pb-4 mb-3 border-b border-slate-100 sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${className}`}
     >
       <div className="flex min-w-0 items-center gap-3">
         {Icon && (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/70 border border-indigo-200/70 text-indigo-600 shadow-2xs">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-50/80 border border-indigo-100/80 text-indigo-600 shadow-card">
             <Icon className="h-5 w-5" />
           </div>
         )}

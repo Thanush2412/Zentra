@@ -120,7 +120,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
       {/* ── 1. Top Executive KPI Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Total Students */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm relative overflow-hidden group hover:border-indigo-300 transition-all">
+        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-card relative overflow-hidden group hover:border-indigo-300 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Students</span>
             <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
@@ -137,7 +137,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
         </div>
 
         {/* Avg Attendance */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm relative overflow-hidden group hover:border-emerald-300 transition-all">
+        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-card relative overflow-hidden group hover:border-emerald-300 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Avg Attendance</span>
             <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -154,7 +154,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
         </div>
 
         {/* Active Faculty */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm relative overflow-hidden group hover:border-blue-300 transition-all">
+        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-card relative overflow-hidden group hover:border-blue-300 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Faculty Deployed</span>
             <div className="h-8 w-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
@@ -169,7 +169,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
         </div>
 
         {/* At Risk Students */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm relative overflow-hidden group hover:border-amber-300 transition-all">
+        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-card relative overflow-hidden group hover:border-amber-300 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Attention Needed</span>
             <div className="h-8 w-8 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
@@ -184,7 +184,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
         </div>
 
         {/* Campus Operational Health */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/90 shadow-sm relative overflow-hidden group hover:border-rose-300 transition-all">
+        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-card relative overflow-hidden group hover:border-rose-300 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Portfolio Health</span>
             <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
@@ -202,7 +202,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
       {/* ── 2. Middle Row: Attendance Trend + Risk Distribution ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Attendance Trend Chart */}
-        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm space-y-4">
+        <div className="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-card space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-black text-slate-900 tracking-tight">Portfolio Attendance Trend (30-Day Moving Average)</h3>
@@ -226,7 +226,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
         </div>
 
         {/* Student Risk Stratification Card */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-card flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -323,7 +323,7 @@ export const KAMOverview: React.FC<KAMOverviewProps> = ({
             <div
               key={c.id}
               onClick={() => onSelectCampus(c.id)}
-              className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer flex flex-col justify-between group"
+              className="bg-white rounded-2xl p-5 border border-slate-100 shadow-card hover:shadow-card-lg hover:border-indigo-300 transition-all cursor-pointer flex flex-col justify-between group"
             >
               <div>
                 {/* Header */}

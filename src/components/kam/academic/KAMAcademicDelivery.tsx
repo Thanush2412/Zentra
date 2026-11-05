@@ -184,7 +184,7 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
 
       {/* ── 2. Campus Benchmark Breakdown ── */}
       {selectedCollegeId === "all" && campuses.length > 0 && (
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-card space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-black text-slate-900">Campus Syllabus Delivery Benchmark</h3>
@@ -194,7 +194,7 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {campuses.map(c => (
-              <Card key={c.id} className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80 shadow-none">
+              <Card key={c.id} className="bg-slate-50/70 p-4 rounded-xl border border-slate-100 shadow-none">
                 <CardContent className="p-0 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-slate-800">{c.name}</span>
@@ -220,7 +220,7 @@ export const KAMAcademicDelivery: React.FC<{ selectedCollegeId?: string; kamId?:
       )}
 
       {/* ── 3. Subject-wise Syllabus Delivery Table with Shadcn Table & Pagination ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-5">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden space-y-4 p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-black text-slate-900">Subject-by-Subject Syllabus Progress</h3>

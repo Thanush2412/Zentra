@@ -110,7 +110,7 @@ export default function LndFilterBar({
   ], [smes]);
 
   return (
-    <div className="relative z-30 bg-white/90 dark:bg-[#131317]/90 border border-slate-200/80 dark:border-slate-800/80 p-4 rounded-xl shadow-xs backdrop-blur-md flex flex-col gap-3.5 w-full">
+    <div className="relative z-30 bg-white/90 dark:bg-[#131317]/90 border border-slate-100 dark:border-slate-800/80 p-4 rounded-xl shadow-card backdrop-blur-md flex flex-col gap-3.5 w-full">
       {/* Row 1 — filters: labelled, searchable, keyboard-operable comboboxes */}
       <div className="flex flex-col lg:flex-row lg:items-end gap-3">
         <div className="flex flex-1 flex-col sm:flex-row flex-wrap gap-3">

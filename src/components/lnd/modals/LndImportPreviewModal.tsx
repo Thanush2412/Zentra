@@ -34,7 +34,7 @@ export default function LndImportPreviewModal({
       >
   
           {/* Modal Header */}
-          <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-slate-900/60 backdrop-blur-xs">
+          <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/70 dark:bg-slate-900/60 backdrop-blur-xs">
             <div className="flex items-center gap-3">
               <div className="p-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20">
                 <FileSpreadsheet className="h-5 w-5" />
@@ -61,7 +61,7 @@ export default function LndImportPreviewModal({
   
             {/* Metric Summary Cards */}
             <div className="grid grid-cols-3 gap-4">
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl">
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl">
                 <span className="text-[10px] font-black uppercase text-slate-400 block">Total Rows Parsed</span>
                 <span className="text-lg font-black text-slate-800 dark:text-white">{demoImportPreview?.parsed.length || 0}</span>
               </div>
@@ -96,7 +96,7 @@ export default function LndImportPreviewModal({
   
             {/* Parsed Sessions Table */}
             <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                 <span className="text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">
                   Parsed Schedule Matrix
                 </span>
@@ -153,7 +153,7 @@ export default function LndImportPreviewModal({
           </div>
   
           {/* Modal Footer */}
-          <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-3">
+          <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">
             <Button
               type="button"
               variant="outline"

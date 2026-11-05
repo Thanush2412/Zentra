@@ -21,9 +21,12 @@ export async function GET(request: Request) {
     const studentId = searchParams.get("studentId") || searchParams.get("student_id");
 
     if (studentId) {
-      // Fetch achievements where studentId is in the student_ids JSON array or string
-      const allRows = await db.all("SELECT * FROM student_achievements ORDER BY date_str DESC, created_at DESC");
-      const matched = allRows.filter((row: any) => {
+      // Fast indexed/targeted query before validating parsed json
+      const candidateRows = await db.all(
+        "SELECT * FROM student_achievements WHERE student_ids LIKE ? ORDER BY date_str DESC, created_at DESC",
+        [`%${studentId}%`]
+      );
+      const matched = candidateRows.filter((row: any) => {
         if (!row.student_ids) return false;
         try {
           const ids = typeof row.student_ids === "string" ? JSON.parse(row.student_ids) : row.student_ids;

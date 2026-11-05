@@ -76,13 +76,17 @@ export async function POST(request: Request) {
     if (errorResponse) return errorResponse;
     const db = await getDb();
     const body = await request.json();
-    const { id, name, email, college_id, kam_id } = body;
+    const { id, name, email, college_id, kam_id, password } = body;
     if (!id || !name || !email || !college_id || !kam_id) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
     const cleanId = id.trim();
     const cleanEmail = email.trim().toLowerCase();
-    
+    const initialPassword = String(password || "").trim() || DEFAULT_PASSWORD;
+    if (String(password || "").trim() && initialPassword.length < 6) {
+      return NextResponse.json({ success: false, message: "Initial password must be at least 6 characters." }, { status: 400 });
+    }
+
     // Profile row, stale-credential sweep and the new login must land together.
     // Autocommitted, a failure between them leaves a Campus Manager with no users
     // row at all — i.e. an account that cannot sign in and shows up in the list.
@@ -95,13 +99,13 @@ export async function POST(request: Request) {
       // Clean old credentials associated with this email
       await tx.run("DELETE FROM users WHERE LOWER(email) = ?", cleanEmail);
 
-      // Create corresponding entry in centralized users table with hashed default password
+      // Create corresponding entry in centralized users table with hashed password
       const now = new Date().toISOString();
-      const defaultHashed = hashPassword(DEFAULT_PASSWORD);
+      const initialHashed = hashPassword(initialPassword);
       await tx.run(
         `INSERT INTO users (id, email, password_hash, role, reference_id, status, must_change_password, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [cleanId, cleanEmail, defaultHashed, "cm", cleanId, "Active", 1, now, now]
+        [cleanId, cleanEmail, initialHashed, "cm", cleanId, "Active", 1, now, now]
       );
     });
 

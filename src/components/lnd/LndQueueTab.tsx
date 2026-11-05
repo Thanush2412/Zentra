@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Panel } from "../Panel";
 
@@ -15,7 +16,7 @@ interface LndQueueTabProps {
   decideDemoReallocation: (requestId: string, decision: "approved" | "rejected") => Promise<void>;
   swapRequestsTab: "pending" | "resolved";
   setSwapRequestsTab: (tab: "pending" | "resolved") => void;
-  resolveDemoSwap: (id: string, decision: "approved" | "rejected") => Promise<{ success: boolean }>;
+  resolveDemoSwap: (id: string, decision: "approved" | "rejected") => Promise<{ success: boolean; message?: string }>;
   toast: (m: string, k?: any) => void;
 }
 
@@ -34,6 +35,7 @@ export default function LndQueueTab({
   resolveDemoSwap,
   toast
 }: LndQueueTabProps) {
+  const [resolvingSwapId, setResolvingSwapId] = useState<string | null>(null);
   return (
     <Panel
       title="Reallocation Queue & Diagnostics"
@@ -90,7 +92,7 @@ export default function LndQueueTab({
             </div>
           ) : (
             demoReallocations.filter(r => r.status === "pending").map(req => (
-              <div key={req.id} className="p-4 rounded-xl bg-white/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3 shadow-xs">
+              <div key={req.id} className="p-4 rounded-2xl bg-white/80 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 space-y-3 shadow-card">
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -201,7 +203,7 @@ export default function LndQueueTab({
             {swapRequestsTab === "pending" ? (
               demoSwapRequests.filter((r: any) => r.status === "pending").length > 0 ? (
                 demoSwapRequests.filter((r: any) => r.status === "pending").map((req: any) => (
-                  <div key={req.id} className="p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div key={req.id} className="p-4 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-black text-slate-900 dark:text-white">{req.smeName}</span>
@@ -218,20 +220,36 @@ export default function LndQueueTab({
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        disabled={resolvingSwapId === req.id}
                         onClick={async () => {
-                          const res = await resolveDemoSwap(req.id, "rejected");
-                          if (res.success) toast("Swap request rejected.", "info");
+                          if (resolvingSwapId) return;
+                          setResolvingSwapId(req.id);
+                          try {
+                            const res = await resolveDemoSwap(req.id, "rejected");
+                            if (res.success) toast("Swap request rejected.", "info");
+                            else toast(res.message || "Failed to reject the swap request.", "error");
+                          } finally {
+                            setResolvingSwapId(null);
+                          }
                         }}
-                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Reject
                       </button>
                       <button
+                        disabled={resolvingSwapId === req.id}
                         onClick={async () => {
-                          const res = await resolveDemoSwap(req.id, "approved");
-                          if (res.success) toast("Swap approved and schedule updated!", "success");
+                          if (resolvingSwapId) return;
+                          setResolvingSwapId(req.id);
+                          try {
+                            const res = await resolveDemoSwap(req.id, "approved");
+                            if (res.success) toast("Swap approved and schedule updated!", "success");
+                            else toast(res.message || "Failed to approve the swap request.", "error");
+                          } finally {
+                            setResolvingSwapId(null);
+                          }
                         }}
-                        className="btn-gradient px-4 py-1.5 text-white rounded-xl text-xs font-extrabold shadow-xs transition-all cursor-pointer"
+                        className="btn-gradient px-4 py-1.5 text-white rounded-xl text-xs font-extrabold shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Approve Swap
                       </button>

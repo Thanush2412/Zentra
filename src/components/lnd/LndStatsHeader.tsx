@@ -49,7 +49,7 @@ export default function LndStatsHeader({
       aria-label="L&D allocation summary"
       className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
     >
-      <div className="rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#131317]/80 p-4 flex flex-col gap-2 shadow-xs">
+      <div className="rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white/80 dark:bg-[#131317]/80 p-4 flex flex-col gap-2 shadow-card">
         <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">
           Demo Allocation Progress
         </span>
@@ -75,7 +75,7 @@ export default function LndStatsHeader({
         </span>
       </div>
 
-      <div className="rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#131317]/80 p-4 flex flex-col gap-2 shadow-xs">
+      <div className="rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white/80 dark:bg-[#131317]/80 p-4 flex flex-col gap-2 shadow-card">
         <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">
           Evaluator Capacity
         </span>
@@ -116,7 +116,7 @@ export default function LndStatsHeader({
         </span>
       </div>
 
-      <div className="rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#131317]/80 p-4 flex flex-col gap-2 shadow-xs">
+      <div className="rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white/80 dark:bg-[#131317]/80 p-4 flex flex-col gap-2 shadow-card">
         <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">
           Faculty Quota Status
         </span>

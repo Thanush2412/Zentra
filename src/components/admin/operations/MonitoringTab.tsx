@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { Clock, Download, Loader2, Search } from "lucide-react";
+import { Clock, Download, Loader2, Search, MoreVertical, Copy, Check } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,13 @@ import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagination } from "@/hooks/usePagination";
 import { College, Student, useApp } from "@/context/AppContext";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 
 export interface MonitoringTabProps {
   students?: Student[];
@@ -42,6 +49,14 @@ export const MonitoringTab: React.FC<MonitoringTabProps> = ({
   const [attSortField, setAttSortField] = useState<"name" | "present" | "absent" | "total" | "pct">("pct");
   const [attSortAsc, setAttSortAsc] = useState(false);
   const [isExportingAtt, setIsExportingAtt] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = (key: string, text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
   const attSetPreset = (preset: string) => {
     const today = new Date();
@@ -206,20 +221,20 @@ export const MonitoringTab: React.FC<MonitoringTabProps> = ({
         subtitle="Per-student attendance summary across all campuses for the selected date range."
         actions={
           <Button
-            variant="ghost"
-            type="button"
+            variant="outline"
+            size="sm"
             onClick={handleExportAttendance}
             disabled={isExportingAtt}
-            className="h-auto inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer active:scale-95 disabled:opacity-50"
+            className="border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-extrabold"
           >
-            {isExportingAtt ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {isExportingAtt ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
             <span>{isExportingAtt ? "Exporting…" : "Export Excel"}</span>
           </Button>
         }
       />
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
         {[
           { label: "Students Tracked", value: attStats.total, cls: "text-indigo-600" },
           { label: "Average %", value: `${attStats.avg}%`, cls: "text-violet-600" },
@@ -227,9 +242,9 @@ export const MonitoringTab: React.FC<MonitoringTabProps> = ({
           { label: "At Risk (65–74%)", value: attStats.atRisk, cls: "text-amber-600" },
           { label: "Critical (<65%)", value: attStats.critical, cls: "text-rose-600" }
         ].map((card) => (
-          <div key={card.label} className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
-            <div className={`text-xl font-black ${card.cls}`}>{card.value}</div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mt-0.5">{card.label}</div>
+          <div key={card.label} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-card">
+            <div className={`text-2xl font-black ${card.cls}`}>{card.value}</div>
+            <div className="text-xs font-semibold text-slate-500 mt-1">{card.label}</div>
           </div>
         ))}
       </div>
@@ -336,9 +351,9 @@ export const MonitoringTab: React.FC<MonitoringTabProps> = ({
 
       {/* Data table */}
       {attRows.length === 0 ? (
-        <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
-          <Clock className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 font-semibold">No attendance records found for this filter and date range.</p>
+        <div className="text-center py-16 border border-slate-100 rounded-2xl bg-white shadow-card">
+          <Clock className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 font-semibold">No attendance records found for this filter and date range.</p>
         </div>
       ) : (
         <TableSurface
@@ -390,6 +405,7 @@ export const MonitoringTab: React.FC<MonitoringTabProps> = ({
               >
                 %
               </TableHead>
+              <TableHead className="w-10 text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -417,6 +433,62 @@ export const MonitoringTab: React.FC<MonitoringTabProps> = ({
                   <Badge variant={row.pct >= 75 ? "success" : row.pct >= 65 ? "warning" : "destructive"}>
                     {row.pct}%
                   </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg cursor-pointer"
+                        title="Student Options"
+                      >
+                        <MoreVertical className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48 text-xs">
+                      <DropdownMenuLabel>Student Options</DropdownMenuLabel>
+                      {(row.student.roll_number || row.student.register_number) && (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            handleCopy(
+                              `roll_${row.student.id}`,
+                              (row.student.roll_number || row.student.register_number)!
+                            )
+                          }
+                        >
+                          {copiedKey === `roll_${row.student.id}` ? (
+                            <Check className="h-3.5 w-3.5 mr-2 text-emerald-600" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                          )}
+                          Copy Roll No
+                        </DropdownMenuItem>
+                      )}
+                      {row.student.email && (
+                        <DropdownMenuItem
+                          onClick={() => handleCopy(`email_${row.student.id}`, row.student.email)}
+                        >
+                          {copiedKey === `email_${row.student.id}` ? (
+                            <Check className="h-3.5 w-3.5 mr-2 text-emerald-600" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                          )}
+                          Copy Email
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        onClick={() => handleCopy(`name_${row.student.id}`, row.student.name)}
+                      >
+                        {copiedKey === `name_${row.student.id}` ? (
+                          <Check className="h-3.5 w-3.5 mr-2 text-emerald-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                        )}
+                        Copy Name
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))}

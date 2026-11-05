@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useDeferredValue, useMemo, useState } from "react";
+import React, { useDeferredValue, useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Grid, Search, X } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FilterBar } from "@/components/ui/FilterBar";
@@ -22,6 +23,7 @@ import {
   slotCollegeName
 } from "@/lib/slotFilters";
 import { College, Mentor, Slot, useApp } from "@/context/AppContext";
+import { SundayScheduleCard } from "@/components/admin/operations/SundayScheduleCard";
 
 export interface SchedulesTabProps {
   slots?: Slot[];
@@ -45,10 +47,19 @@ export const SchedulesTab: React.FC<SchedulesTabProps> = ({
       window.location.hash = `#campus-${collegeId}`;
     }
   });
-  const [collegeFilter, setCollegeFilter] = useState("all");
+  const searchParams = useSearchParams();
+  const campusParam = searchParams?.get("campus") || null;
+
+  const [collegeFilter, setCollegeFilter] = useState(() => campusParam || "all");
   const [dayFilter, setDayFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (campusParam) {
+      setCollegeFilter(campusParam);
+    }
+  }, [campusParam]);
 
   // /api/data can hand this tab tens of thousands of slots, so the filter pass runs
   // against the deferred query and only the current page reaches the DOM.
@@ -157,8 +168,10 @@ export const SchedulesTab: React.FC<SchedulesTabProps> = ({
         )}
       </FilterBar>
 
+      {collegeFilter !== "all" && <SundayScheduleCard collegeId={collegeFilter} readOnly />}
+
       {filteredSlots.length === 0 ? (
-        <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
+        <div className="text-center py-16 border border-slate-100 rounded-2xl bg-white shadow-card">
           <Grid className="h-10 w-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500 font-semibold">
             {slots.length === 0

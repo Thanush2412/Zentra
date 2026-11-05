@@ -150,7 +150,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
 
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl shadow-xs border border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl shadow-card border border-slate-100">
         <div className="flex items-center gap-3.5">
           <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-600 shadow-2xs">
             <Bell className="w-5 h-5" />
@@ -183,7 +183,7 @@ export function NotificationsView({ userId, portalType }: { userId?: string; por
       </div>
 
       {notifications.length === 0 ? (
-        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-16 text-center space-y-3">
+        <div className="bg-white rounded-2xl shadow-card border border-slate-100 p-16 text-center space-y-3">
           <div className="h-12 w-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto text-slate-300">
             <Bell className="w-6 h-6" />
           </div>

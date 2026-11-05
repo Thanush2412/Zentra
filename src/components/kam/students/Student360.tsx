@@ -191,13 +191,67 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
-        <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center space-y-3 border border-slate-100">
-          <div className="h-10 w-10 border-3 border-[#D528A2] border-t-transparent rounded-full animate-spin mx-auto" />
-          <h3 className="text-sm font-black text-slate-900">Loading Student 360° Profile</h3>
-          <p className="text-[11px] font-bold text-slate-400">Fetching attendance logs and trajectory…</p>
+      <Dialog
+        open={true}
+        onOpenChange={(next) => { if (!next) onClose(); }}
+        ariaLabel="Loading student 360 profile"
+        overlayClassName="bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto"
+        panelClassName="max-w-3xl my-auto w-full flex flex-col overflow-hidden rounded-2xl border border-slate-100/80 bg-white/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 duration-200 p-0 space-y-0"
+      >
+        {/* Soft UI Header Skeleton */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white relative shrink-0">
+          <div className="absolute top-4 right-4">
+            <button
+              onClick={onClose}
+              aria-label="Close student profile"
+              className="h-8 w-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center transition-all cursor-pointer backdrop-blur-md"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-4 pr-12">
+            <div className="h-12 w-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0 animate-pulse">
+              <User className="h-6 w-6 text-white/40" />
+            </div>
+            <div className="space-y-2 flex-1">
+              <div className="h-5 w-48 bg-white/20 rounded-lg animate-pulse" />
+              <div className="h-3 w-64 bg-white/15 rounded-md animate-pulse" />
+            </div>
+          </div>
+
+          {/* 4 Soft KPI Skeleton Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-3 border-t border-white/10">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-2.5 space-y-1.5 animate-pulse text-center">
+                <div className="h-2.5 w-16 bg-white/20 rounded mx-auto" />
+                <div className="h-5 w-12 bg-white/30 rounded-lg mx-auto" />
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+
+        {/* Soft Tab Bar Skeleton */}
+        <div className="p-3 bg-slate-50/80 border-b border-slate-100 flex gap-2">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-7 w-24 bg-slate-200/70 rounded-xl animate-pulse" />
+          ))}
+        </div>
+
+        {/* Soft Content Area Skeleton */}
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-24 bg-slate-100/80 rounded-2xl border border-slate-200/50 animate-pulse" />
+            ))}
+          </div>
+          <div className="h-48 bg-slate-100/60 rounded-2xl border border-slate-200/50 animate-pulse flex flex-col items-center justify-center gap-2">
+            <div className="h-6 w-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-bold text-slate-500">Loading Student 360° Profile & Analytics…</span>
+            <span className="text-[11px] text-slate-400">Fetching attendance logs, trajectory, and coding metrics</span>
+          </div>
+        </div>
+      </Dialog>
     );
   }
 
@@ -207,18 +261,34 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
         open={true}
         onOpenChange={(next) => { if (!next) onClose(); }}
         ariaLabel="Error loading student profile"
-        overlayClassName="bg-slate-900/60 backdrop-blur-xs"
-        panelClassName="max-w-sm max-h-[90vh] rounded-2xl p-5 space-y-3 text-center border-slate-100"
+        overlayClassName="bg-slate-900/50 backdrop-blur-sm p-4"
+        panelClassName="max-w-md my-auto w-full rounded-2xl p-6 space-y-4 text-center border border-slate-100 bg-white shadow-2xl"
       >
-        <AlertTriangle className="h-8 w-8 text-rose-500 mx-auto" />
-        <h3 className="text-sm font-black text-slate-900">Error Loading Student Profile</h3>
-        <p role="alert" className="text-xs font-medium text-slate-500">{error || "Student not found"}</p>
-        <button
-          onClick={onClose}
-          className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
-        >
-          Close
-        </button>
+        <div className="h-12 w-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+          <AlertTriangle className="h-6 w-6" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-base font-black text-slate-900">Could Not Load Profile</h3>
+          <p role="alert" className="text-xs font-semibold text-slate-500 leading-relaxed">
+            {error || "Student record could not be loaded."}
+          </p>
+        </div>
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => progressQuery.refetch()}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+          >
+            Try Again
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
       </Dialog>
     );
   }
@@ -241,79 +311,79 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
       open={true}
       onOpenChange={(next) => { if (!next) onClose(); }}
       ariaLabel="Student 360 profile"
-      overlayClassName="bg-slate-900/60 backdrop-blur-xs p-3 overflow-y-auto"
-      panelClassName="max-w-3xl my-auto max-h-[92vh] flex flex-col overflow-hidden rounded-2xl border-slate-200 animate-in zoom-in-95 duration-150 p-0 space-y-0"
+      overlayClassName="bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto"
+      panelClassName="max-w-3xl my-auto max-h-[92vh] w-full flex flex-col overflow-hidden rounded-2xl border border-slate-100/80 bg-white/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 duration-200 p-0 space-y-0"
     >
-        {/* Compact Header Card with FacePrep Brand Gradient */}
-        <div className="bg-gradient-to-r from-[#D528A2] via-pink-600 to-indigo-700 p-4 text-white relative shrink-0">
-          <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5">
+        {/* Soft UI Executive Header Card */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 text-white relative shrink-0">
+          <div className="absolute top-4 right-4 flex items-center gap-2">
             <button
               type="button"
               onClick={handleExportExcel}
               title="Export 360° Excel Report"
-              className="h-7 px-2.5 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center gap-1 text-[10px] font-extrabold transition-all cursor-pointer shadow-2xs"
+              className="h-8 px-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white/90 hover:text-white backdrop-blur-md flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
               <span>Export</span>
             </button>
             <button
               onClick={onClose}
               aria-label="Close student profile"
-              className="h-7 w-7 rounded-lg bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer shadow-2xs"
+              className="h-8 w-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-95"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="flex items-center gap-3 pr-24">
-            <div className="h-11 w-11 rounded-xl bg-white/20 border border-white/30 backdrop-blur-md flex items-center justify-center text-white font-black text-lg shrink-0 shadow-inner">
-              <User className="h-5.5 w-5.5" />
+          <div className="flex items-center gap-3.5 pr-28">
+            <div className="h-12 w-12 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md flex items-center justify-center text-white/90 font-black text-lg shrink-0 shadow-inner">
+              <User className="h-6 w-6" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base font-black tracking-tight truncate">{student.name}</h2>
-                <span className={`px-2 py-0.2 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md ${
+                <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md ${
                   stats.risk === "HEALTHY"
-                    ? "bg-emerald-500/30 text-emerald-100 border border-emerald-400/40"
+                    ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/40"
                     : stats.risk === "AT RISK"
-                    ? "bg-amber-500/30 text-amber-100 border border-amber-400/40"
-                    : "bg-rose-500/30 text-rose-100 border border-rose-400/40"
+                    ? "bg-amber-500/25 text-amber-300 border border-amber-400/40"
+                    : "bg-rose-500/25 text-rose-300 border border-rose-400/40"
                 }`}>
                   {stats.risk}
                 </span>
               </div>
-              <p className="text-[11px] font-bold text-pink-100">
+              <p className="text-xs font-bold text-indigo-200 mt-0.5">
                 Roll: <span className="font-black text-white">{student.rollNumber}</span> • Reg: {student.registerNumber}
               </p>
-              <p className="text-[10px] text-white/80 font-medium truncate mt-0.5 max-w-lg">
+              <p className="text-[11px] text-white/70 font-medium truncate mt-0.5 max-w-lg">
                 {cleanSubtitle}
               </p>
             </div>
           </div>
 
-          {/* Compact 4-Card KPI Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-white/20 text-center">
-            <div className="bg-white/15 backdrop-blur-md rounded-xl p-1.5 border border-white/20">
-              <span className="text-[9px] font-black text-pink-100 uppercase tracking-wider block">Attendance</span>
-              <p className="text-sm font-black text-emerald-300">{stats.overallAttendancePct}%</p>
+          {/* 4 Soft Frosted Glass KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4 pt-3 border-t border-white/10 text-center">
+            <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-2.5 shadow-xs space-y-0.5">
+              <span className="text-[9px] font-black text-slate-300 uppercase tracking-wider block">Attendance</span>
+              <p className="text-base font-black text-emerald-300">{stats.overallAttendancePct}%</p>
             </div>
-            <div className="bg-white/15 backdrop-blur-md rounded-xl p-1.5 border border-white/20">
-              <span className="text-[9px] font-black text-pink-100 uppercase tracking-wider block">Present / Total</span>
-              <p className="text-sm font-black text-white">{stats.presentPeriods} / {stats.totalPeriods}</p>
+            <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-2.5 shadow-xs space-y-0.5">
+              <span className="text-[9px] font-black text-slate-300 uppercase tracking-wider block">Present / Total</span>
+              <p className="text-base font-black text-white">{stats.presentPeriods} / {stats.totalPeriods}</p>
             </div>
-            <div className="bg-white/15 backdrop-blur-md rounded-xl p-1.5 border border-white/20">
-              <span className="text-[9px] font-black text-pink-100 uppercase tracking-wider block">Interviews</span>
-              <p className="text-sm font-black text-white">{stats.interviewsCount} Evaluated</p>
+            <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-2.5 shadow-xs space-y-0.5">
+              <span className="text-[9px] font-black text-slate-300 uppercase tracking-wider block">Interviews</span>
+              <p className="text-base font-black text-white">{stats.interviewsCount} Evaluated</p>
             </div>
-            <div className="bg-white/15 backdrop-blur-md rounded-xl p-1.5 border border-white/20">
-              <span className="text-[9px] font-black text-pink-100 uppercase tracking-wider block">Absences</span>
-              <p className="text-sm font-black text-rose-200">{stats.absentPeriods}</p>
+            <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-2.5 shadow-xs space-y-0.5">
+              <span className="text-[9px] font-black text-slate-300 uppercase tracking-wider block">Absences</span>
+              <p className="text-base font-black text-rose-300">{stats.absentPeriods}</p>
             </div>
           </div>
         </div>
 
-        {/* Compact Navigation Tabs */}
-        <div className="flex border-b border-slate-200 bg-slate-50/90 px-4 gap-1 shrink-0 overflow-x-auto custom-scrollbar">
+        {/* Soft UI Pill Navigation Tabs */}
+        <div className="p-1.5 bg-slate-50/90 border-b border-slate-100 flex items-center gap-1.5 shrink-0 overflow-x-auto custom-scrollbar">
           {[
             { key: "overview", label: "Progress & Analytics", icon: Award },
             { key: "coding", label: `💻 Coding (${codingStats?.leetcode?.solvedTotal ? `${codingStats.leetcode.solvedTotal} LC` : "Stats"})`, icon: Sparkles },
@@ -328,13 +398,13 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
               <button
                 key={t.key}
                 onClick={() => setActiveTab(t.key as any)}
-                className={`flex items-center gap-1.5 py-2 px-2.5 text-[11px] font-extrabold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                className={`flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs transition-all cursor-pointer whitespace-nowrap ${
                   isActive
-                    ? "border-[#D528A2] text-[#D528A2] bg-white font-black"
-                    : "border-transparent text-slate-500 hover:text-slate-900"
+                    ? "bg-white text-indigo-950 font-black shadow-xs border border-slate-200/60"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 font-bold"
                 }`}
               >
-                <Icon className={`h-3 w-3 ${isActive ? "text-[#D528A2]" : "text-slate-400"}`} />
+                <Icon className={`h-3.5 w-3.5 ${isActive ? "text-indigo-600" : "text-slate-400"}`} />
                 <span>{t.label}</span>
               </button>
             );
@@ -342,19 +412,19 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
         </div>
 
         {/* Tab Contents - Scrollable with Controlled Height */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1">
+        <div className="p-5 overflow-y-auto space-y-4 flex-1">
           {/* 1. Overview Tab */}
           {activeTab === "overview" && (
             <div className="space-y-4">
               {/* Quick Coding Metrics Strip in Overview */}
               {codingStats && (
-                <div className="p-3 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-xl text-white flex items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-8 w-8 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-black text-xs">
+                <div className="p-3.5 bg-gradient-to-r from-slate-900 to-indigo-950 rounded-2xl text-white flex items-center justify-between gap-3 shadow-md border border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-black text-xs shrink-0">
                       &lt;/&gt;
                     </div>
                     <div>
-                      <span className="text-[9px] font-black uppercase text-pink-300 tracking-wider block">Competitive Coding Standing</span>
+                      <span className="text-[9px] font-black uppercase text-indigo-300 tracking-wider block">Competitive Coding Standing</span>
                       <p className="text-xs font-bold text-slate-200 mt-0.5">
                         {codingStats.leetcode?.found ? `LeetCode: ${codingStats.leetcode.solvedTotal} Solved` : "LeetCode: Active"}
                         {" • "}
@@ -365,37 +435,46 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
                   <button
                     type="button"
                     onClick={() => setActiveTab("coding")}
-                    className="px-2.5 py-1 bg-white/15 hover:bg-white/25 rounded-lg text-[10px] font-extrabold text-white border border-white/20 transition-all cursor-pointer whitespace-nowrap"
+                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 active:scale-95 rounded-xl text-xs font-bold text-white border border-white/20 transition-all cursor-pointer whitespace-nowrap backdrop-blur-md"
                   >
                     View Coding Dossier →
                   </button>
                 </div>
               )}
-              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 space-y-2">
+              <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-100 shadow-xs space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider">
+                  <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
                     Monthly Attendance Trajectory (%)
                   </h4>
-                  <span className="text-[10px] font-black text-[#D528A2] bg-[#D528A2]/10 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-full">
                     Overall: {stats.overallAttendancePct}%
                   </span>
                 </div>
 
-                <div className="h-32 w-full">
+                <div className="h-36 w-full">
                   {progressTrend && progressTrend.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={progressTrend} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
                         <defs>
                           <linearGradient id="colorStudentAtt" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#D528A2" stopOpacity={0.35}/>
-                            <stop offset="95%" stopColor="#D528A2" stopOpacity={0.0}/>
+                            <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#4F46E5" stopOpacity={0.0}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis dataKey="month" tick={{ fontSize: 8, fontWeight: 700 }} tickLine={false} />
-                        <YAxis domain={[0, 100]} tick={{ fontSize: 8 }} tickLine={false} tickFormatter={v => `${v}%`} />
-                        <Tooltip formatter={(v: any) => [`${v}%`, "Attendance"]} />
-                        <Area type="monotone" dataKey="attendancePct" stroke="#D528A2" strokeWidth={2.5} fillOpacity={1} fill="url(#colorStudentAtt)" />
+                        <XAxis dataKey="month" tick={{ fontSize: 9, fontWeight: 700 }} tickLine={false} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} tickLine={false} tickFormatter={v => `${v}%`} />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "1rem",
+                            border: "1px solid #e2e8f0",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                            fontSize: "11px",
+                            fontWeight: 700
+                          }}
+                          formatter={(v: any) => [`${v}%`, "Attendance"]}
+                        />
+                        <Area type="monotone" dataKey="attendancePct" stroke="#4F46E5" strokeWidth={2.5} fillOpacity={1} fill="url(#colorStudentAtt)" />
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
@@ -406,19 +485,19 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
 
               {/* Subject quick preview */}
               <div>
-                <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider mb-2">
+                <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider mb-2">
                   Subject-Wise Performance Snapshot
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {subjectAnalytics.map((s: any) => (
-                    <div key={s.subject} className="bg-slate-50 hover:bg-white rounded-xl p-2.5 border border-slate-200 shadow-2xs flex items-center justify-between transition-all">
+                    <div key={s.subject} className="bg-slate-50/70 hover:bg-white rounded-2xl p-3 border border-slate-100 shadow-card flex items-center justify-between transition-all">
                       <div className="min-w-0 pr-2">
-                        <p className="text-[11px] font-black text-slate-900 truncate">{s.subject}</p>
-                        <p className="text-[9px] text-slate-400 font-bold">
+                        <p className="text-xs font-black text-slate-900 truncate">{s.subject}</p>
+                        <p className="text-[10px] text-slate-500 font-medium">
                           {s.presentPeriods} of {s.totalPeriods} periods marked
                         </p>
                       </div>
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border shrink-0 ${
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border shrink-0 ${
                         s.attendancePct >= 75
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                           : s.attendancePct >= 60
@@ -437,27 +516,27 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
           {/* 2. Subject Breakdown Tab */}
           {activeTab === "subjects" && (
             <div className="space-y-3">
-              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+              <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-card bg-white">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200 text-slate-500 font-black uppercase text-[9px] tracking-wider">
-                      <TableHead className="py-2 px-3">Subject</TableHead>
-                      <TableHead className="py-2 px-2 text-center">Total</TableHead>
-                      <TableHead className="py-2 px-2 text-center text-emerald-700">Present</TableHead>
-                      <TableHead className="py-2 px-2 text-center text-rose-700">Absent</TableHead>
-                      <TableHead className="py-2 px-2 text-center text-purple-700">OD</TableHead>
-                      <TableHead className="py-2 px-3 text-right text-[#D528A2]">%</TableHead>
+                    <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b border-slate-100 text-slate-500 font-black uppercase text-[10px] tracking-wider">
+                      <TableHead className="py-2.5 px-3">Subject</TableHead>
+                      <TableHead className="py-2.5 px-2 text-center">Total</TableHead>
+                      <TableHead className="py-2.5 px-2 text-center text-emerald-700">Present</TableHead>
+                      <TableHead className="py-2.5 px-2 text-center text-rose-700">Absent</TableHead>
+                      <TableHead className="py-2.5 px-2 text-center text-purple-700">OD</TableHead>
+                      <TableHead className="py-2.5 px-3 text-right text-indigo-600">%</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700 bg-white text-[11px]">
+                  <TableBody className="divide-y divide-slate-100 font-semibold text-slate-700 bg-white text-xs">
                     {subjectAnalytics.map((s: any) => (
                       <TableRow key={s.subject} className="hover:bg-slate-50/80 transition-colors">
-                        <TableCell className="py-2 px-3 font-bold text-slate-900">{s.subject}</TableCell>
-                        <TableCell className="py-2 px-2 text-center font-bold">{s.totalPeriods}</TableCell>
-                        <TableCell className="py-2 px-2 text-center text-emerald-600 font-black">{s.presentPeriods}</TableCell>
-                        <TableCell className="py-2 px-2 text-center text-rose-500 font-bold">{s.absentPeriods}</TableCell>
-                        <TableCell className="py-2 px-2 text-center text-purple-600 font-bold">{s.odPeriods}</TableCell>
-                        <TableCell className="py-2 px-3 text-right font-black text-[#D528A2]">{s.attendancePct}%</TableCell>
+                        <TableCell className="py-2.5 px-3 font-bold text-slate-900">{s.subject}</TableCell>
+                        <TableCell className="py-2.5 px-2 text-center font-bold text-slate-600">{s.totalPeriods}</TableCell>
+                        <TableCell className="py-2.5 px-2 text-center text-emerald-600 font-black">{s.presentPeriods}</TableCell>
+                        <TableCell className="py-2.5 px-2 text-center text-rose-500 font-bold">{s.absentPeriods}</TableCell>
+                        <TableCell className="py-2.5 px-2 text-center text-purple-600 font-bold">{s.odPeriods}</TableCell>
+                        <TableCell className="py-2.5 px-3 text-right font-black text-indigo-600">{s.attendancePct}%</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -470,24 +549,24 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
           {activeTab === "timeline" && (
             <div className="space-y-3">
               {timeline.length === 0 ? (
-                <div className="text-center py-8 text-xs font-bold text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <div className="text-center py-8 text-xs font-bold text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                   No logged student activities or evaluations
                 </div>
               ) : (
-                <div className="relative pl-5 space-y-3.5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                <div className="relative pl-6 space-y-3.5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200/80">
                   {timeline.map((item: any) => (
                     <div key={item.id} className="relative">
-                      <div className="absolute -left-5 top-1 h-4 w-4 rounded-full bg-white border-2 border-[#D528A2] flex items-center justify-center text-[7px] font-black text-[#D528A2]">
+                      <div className="absolute -left-6 top-1 h-5 w-5 rounded-full bg-white border-2 border-indigo-600 flex items-center justify-center text-[8px] font-black text-indigo-600 shadow-xs">
                         •
                       </div>
-                      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 shadow-2xs space-y-0.5">
+                      <div className="bg-slate-50/70 hover:bg-white rounded-2xl p-3.5 border border-slate-100 shadow-card space-y-1 transition-all">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-black text-slate-900">{item.title}</span>
-                          <span className="text-[9px] font-bold text-slate-400">{item.date}</span>
+                          <span className="text-[10px] font-bold text-slate-400">{item.date}</span>
                         </div>
-                        <p className="text-[11px] font-medium text-slate-600">{item.desc}</p>
+                        <p className="text-xs font-medium text-slate-600">{item.desc}</p>
                         {item.status && (
-                          <span className="inline-block mt-1 text-[8.5px] font-black uppercase px-1.5 py-0.2 rounded bg-[#D528A2]/10 text-[#D528A2] border border-[#D528A2]/20">
+                          <span className="inline-block mt-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/70">
                             Status: {item.status}
                           </span>
                         )}
@@ -502,19 +581,19 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
           {/* 4. Recent Attendance Logs */}
           {activeTab === "attendance" && (
             <div className="space-y-2">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {dailyAttendance.map((rec: any) => (
-                  <div key={rec.id} className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[10px] flex justify-between items-center shadow-2xs">
+                  <div key={rec.id} className="bg-slate-50/80 hover:bg-white p-2.5 rounded-2xl border border-slate-100 text-xs flex justify-between items-center shadow-card transition-all">
                     <div>
                       <p className="font-bold text-slate-800">{rec.dateStr}</p>
-                      <p className="text-[8.5px] text-slate-400 truncate max-w-[90px]">{rec.subject || "Class"}</p>
+                      <p className="text-[9px] text-slate-400 truncate max-w-[95px]">{rec.subject || "Class"}</p>
                     </div>
-                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
                       rec.status === "present"
-                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                         : rec.status === "absent"
-                        ? "bg-rose-100 text-rose-800 border border-rose-200"
-                        : "bg-purple-100 text-purple-800 border border-purple-200"
+                        ? "bg-rose-50 text-rose-800 border-rose-200"
+                        : "bg-purple-50 text-purple-800 border-purple-200"
                     }`}>
                       {rec.status?.toUpperCase()}
                     </span>
@@ -555,7 +634,7 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
                     return (
                       <div
                         key={ach.id}
-                        className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs hover:shadow-xs transition-all space-y-3"
+                        className="bg-white border border-slate-100 rounded-2xl p-4 shadow-2xs hover:shadow-card transition-all space-y-3"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <span
@@ -812,20 +891,20 @@ export const Student360: React.FC<Student360Props> = ({ studentId, collegeId, on
           )}
         </div>
 
-        {/* Compact Footer with Actions */}
-        <div className="bg-slate-50 p-3 px-4 border-t border-slate-200 flex items-center justify-between shrink-0">
+        {/* Soft UI Footer with Actions */}
+        <div className="bg-slate-50/80 p-3.5 px-6 border-t border-slate-100 backdrop-blur-md flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={handleExportExcel}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl shadow-2xs transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
           >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
             <span>Export Dossier (.xlsx)</span>
           </button>
 
           <button
             onClick={onClose}
-            className="px-5 py-1.5 bg-gradient-to-r from-[#D528A2] to-pink-600 hover:opacity-95 text-white text-xs font-black rounded-xl transition-all shadow-sm shadow-[#D528A2]/25 cursor-pointer active:scale-95"
+            className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-500/20 cursor-pointer active:scale-95"
           >
             Close
           </button>

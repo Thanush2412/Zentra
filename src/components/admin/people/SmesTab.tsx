@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { BookOpen, Plus, Edit, Trash2, X } from "lucide-react";
+import { BookOpen, Plus, Edit, Trash2, X, MoreVertical } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { TableSurface } from "@/components/dashboard/TableSurface";
@@ -9,6 +9,14 @@ import { TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/compon
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagination } from "@/hooks/usePagination";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -40,7 +48,7 @@ export const SmesTab: React.FC<SmesTabProps> = ({
   onDeleteSme: propOnDeleteSme,
   loadingActions: propLoadingActions
 }) => {
-  const { toast } = useToast();
+  const { toast, confirm: showConfirm } = useToast();
   const app = useApp();
   const smes = propSmes ?? app.smes ?? [];
   const subjectGroups = propSubjectGroups ?? app.subjectGroups ?? [];
@@ -50,13 +58,20 @@ export const SmesTab: React.FC<SmesTabProps> = ({
 
   const handleDeleteSme = async (id: string) => {
     if (propOnDeleteSme) return propOnDeleteSme(id);
-    if (!window.confirm("Are you sure you want to delete this Subject Matter Expert?")) return;
+    const ok = await showConfirm({
+      message: "Delete this Subject Matter Expert? Their login and demo assignments are removed.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
     setLocalLoading(prev => ({ ...prev, [`sme_${id}`]: true }));
     try {
-      await app.deleteSmeUser(id);
+      const result = await app.deleteSmeUser(id);
+      if (!result.success) {
+        toast(result.message || "Failed to delete SME.", "error");
+        return;
+      }
       toast("SME deleted successfully.", "success");
-    } catch (err: any) {
-      toast(err.message || "Failed to delete SME.", "error");
     } finally {
       setLocalLoading(prev => ({ ...prev, [`sme_${id}`]: false }));
     }
@@ -113,14 +128,22 @@ export const SmesTab: React.FC<SmesTabProps> = ({
         if (propOnUpdateSme) {
           await propOnUpdateSme(form.id, form.name, form.email, form.subject);
         } else {
-          await app.updateSmeUser(form.id, form.name, form.email, form.subject);
+          const result = await app.updateSmeUser(form.id, form.name, form.email, form.subject);
+          if (!result.success) {
+            toast(result.message || "Failed to save SME.", "error");
+            return;
+          }
         }
         toast("SME updated successfully.", "success");
       } else {
         if (propOnCreateSme) {
           await propOnCreateSme(form.id, form.name, form.email, form.subject);
         } else {
-          await app.createSmeUser(form.id, form.name, form.email, form.subject);
+          const result = await app.createSmeUser(form.id, form.name, form.email, form.subject);
+          if (!result.success) {
+            toast(result.message || "Failed to save SME.", "error");
+            return;
+          }
         }
         toast("SME created successfully.", "success");
       }
@@ -182,20 +205,33 @@ export const SmesTab: React.FC<SmesTabProps> = ({
                   <Badge variant="secondary">{sme.subject || "Unassigned"}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1.5">
-                    <Button variant="outline" size="icon" onClick={() => handleOpenEdit(sme)} title="Edit SME">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() => handleDeleteSme(sme.id)}
-                      isLoading={loadingActions[`sme_${sme.id}`]}
-                      title="Delete SME"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 cursor-pointer"
+                        title="SME Options"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>SME Options</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => handleOpenEdit(sme)}>
+                        <Edit className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                        Edit Profile
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-rose-600 focus:text-rose-700 focus:bg-rose-50"
+                        onClick={() => handleDeleteSme(sme.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                        Delete SME
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))

@@ -50,3 +50,15 @@ export function parseLocalDate(dateStr: string): Date {
 export function getLocalDateStr(): string {
   return getInstitutionDateStr();
 }
+
+/**
+ * Calendar-day arithmetic on a YYYY-MM-DD string.
+ * Zone-independent: nothing here reads the machine's local clock, so paging
+ * weeks back and forth cannot land a day early the way Date#toISOString did.
+ */
+export function shiftDateStr(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d));
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}

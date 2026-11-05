@@ -28,8 +28,19 @@ import {
   Copy,
   Check,
   Edit,
-  Trash2
+  Trash2,
+  MoreVertical,
+  Key
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { UserCredentialDialog, type UserFormState } from "@/components/admin/dialogs/UserCredentialDialog";
 import { SignupApprovalDialog } from "@/components/admin/dialogs/SignupApprovalDialog";
 
@@ -460,7 +471,7 @@ export const UsersTab: React.FC = () => {
 
           {/* Directory Table */}
           {isUsersError ? (
-            <div className="text-center py-16 border border-rose-200 rounded-xl bg-rose-50/40">
+            <div className="text-center py-16 border border-rose-100 rounded-2xl bg-white shadow-card">
               <AlertTriangle className="h-10 w-10 text-rose-400 mx-auto mb-2" />
               <p className="text-sm text-rose-600 font-semibold">Could not load user credentials.</p>
               <Button variant="outline" size="sm" className="mt-3" onClick={() => usersQuery.refetch()} isLoading={isUsersLoading}>
@@ -468,14 +479,14 @@ export const UsersTab: React.FC = () => {
               </Button>
             </div>
           ) : isUsersLoading && usersList.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-16 text-gray-400">
+            <div className="flex flex-col items-center gap-2 py-16 text-slate-400">
               <Loader2 className="h-7 w-7 animate-spin text-indigo-500" />
               <p className="text-sm font-semibold">Loading user credentials…</p>
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
-              <Users className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500 font-semibold">No user credentials found matching your filter query.</p>
+            <div className="text-center py-16 border border-slate-100 rounded-2xl bg-white shadow-card">
+              <Users className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-500 font-semibold">No user credentials found matching your filter query.</p>
             </div>
           ) : (
             <TableSurface
@@ -570,57 +581,78 @@ export const UsersTab: React.FC = () => {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <button
-                          onClick={() => handleToggleUserStatus(user.id)}
-                          className="cursor-pointer"
-                          title="Click to toggle Active / Inactive status"
-                        >
-                          <Badge variant={user.status === "Active" ? "success" : "destructive"}>
+                        <div className="inline-flex items-center justify-center gap-1.5">
+                          <Switch
+                            checked={user.status === "Active"}
+                            onCheckedChange={() => handleToggleUserStatus(user.id)}
+                            size="sm"
+                            aria-label={`Toggle active status for ${user.email}`}
+                          />
+                          <span
+                            className={`text-[10px] font-bold ${
+                              user.status === "Active" ? "text-emerald-700" : "text-rose-600"
+                            }`}
+                          >
                             {user.status || "Active"}
-                          </Badge>
-                        </button>
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-[10px]">
                         {user.last_login ? formatDate(user.last_login) : "Never logged in"}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1.5">
-                          <Button
-                            variant="warning"
-                            size="sm"
-                            onClick={() => handleResetUserPassword(user.id, user.email)}
-                            title="Reset password to the institution default"
-                          >
-                            Reset Pass
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => {
-                              setEditingUser(user);
-                              setUserForm({
-                                email: user.email,
-                                role: normalizeRoleValue(user.role),
-                                password: "",
-                                reference_id: user.reference_id || "",
-                                status: user.status || "Active"
-                              });
-                              setUserModalError(null);
-                              setShowUserModal(true);
-                            }}
-                            title="Edit User Credential"
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="icon"
-                            onClick={() => handleDeleteUser(user.id, user.email)}
-                            title="Delete User"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900"
+                              title="User Options"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>User Options</DropdownMenuLabel>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setEditingUser(user);
+                                setUserForm({
+                                  email: user.email,
+                                  role: normalizeRoleValue(user.role),
+                                  password: "",
+                                  reference_id: user.reference_id || "",
+                                  status: user.status || "Active"
+                                });
+                                setUserModalError(null);
+                                setShowUserModal(true);
+                              }}
+                            >
+                              <Edit className="h-3.5 w-3.5 text-indigo-600" />
+                              <span>Edit User Details</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleResetUserPassword(user.id, user.email)}
+                            >
+                              <Key className="h-3.5 w-3.5 text-amber-600" />
+                              <span>Reset to Default Password</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleCopyPassword(user.id, userPass)}
+                            >
+                              <Copy className="h-3.5 w-3.5 text-slate-500" />
+                              <span>Copy Password</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              destructive
+                              onClick={() => handleDeleteUser(user.id, user.email)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>Delete User Credential</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   );

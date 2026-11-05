@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getDb, PostgresDbAdapter } from "@/lib/db";
-import { validateSession, SESSION_COOKIE_NAME, UserSessionRecord } from "@/lib/session";
+import { validateSession, shouldStampActivity, stampSessionActivity, SESSION_COOKIE_NAME, UserSessionRecord } from "@/lib/session";
 import { verifyCsrfToken, CSRF_HEADER_NAME, generateCsrfToken } from "@/lib/csrf";
 import { roleGrantsSuperAdmin } from "@/lib/superadmin";
 import { logger } from "@/lib/logger";
@@ -111,10 +111,43 @@ export function loadSession(rawToken: string) {
   return coalesce(`session:${rawToken}`, async () => {
     const db = await getDb();
     return validateSession(db, rawToken);
-  }).then((res) => ({
-    ...res,
-    session: res.session ? { ...res.session } : res.session
-  }));
+  }).then((res) => {
+    if (res.isValid && res.session && shouldStampActivity(res.session.last_activity_at)) {
+      scheduleActivityStamp(res.session.session_id_hash);
+    }
+    return {
+      ...res,
+      session: res.session ? { ...res.session } : res.session
+    };
+  });
+}
+
+/**
+ * Sessions stamped in the current instance and still waiting for their write.
+ * A dashboard burst coalesces onto one session read but every caller reaches the
+ * scheduling hook, so this keeps a burst to a single UPDATE. Entries are released
+ * when the write settles, which also means a failed stamp is retried by the next
+ * request instead of being remembered as done.
+ */
+const scheduledStamps = new Set<string>();
+
+function scheduleActivityStamp(sessionIdHash: string): void {
+  if (!sessionIdHash || scheduledStamps.has(sessionIdHash)) return;
+  scheduledStamps.add(sessionIdHash);
+
+  // after() owns when the write starts: a promise created here would run in
+  // parallel with the request and be frozen with the response on Vercel, which
+  // silently stops sessions ageing.
+  after(async () => {
+    try {
+      const db = await getDb();
+      await stampSessionActivity(db, sessionIdHash);
+    } catch (err: any) {
+      logger.warn("session activity stamp failed", { error: err?.message || String(err) });
+    } finally {
+      scheduledStamps.delete(sessionIdHash);
+    }
+  });
 }
 
 export function loadUser(userId: string) {
@@ -124,6 +157,71 @@ export function loadUser(userId: string) {
   }).then((user) => (user ? { ...user } : null));
 }
 
+/** Profile tables that also carry a college scope (mirrors postgres_schema.sql). */
+const PROFILE_COLLEGE_COLUMN: Record<string, string> = {
+  campus_managers: "college_id",
+  mentors: "college_id",
+  students: "college_id"
+};
+
+/** Every role profile table, deduped from the role map so the two cannot drift. */
+const PROFILE_TABLES: string[] = Array.from(new Set(Object.values(ROLE_PROFILE_TABLES)));
+
+/** One UNION branch: profile rows for this table that could belong to the user. */
+function profileLookupBranch(table: string): string {
+  const collegeColumn = PROFILE_COLLEGE_COLUMN[table] || "NULL::text";
+  return `SELECT id, '${table}' AS table_key, name AS profile_name, ${collegeColumn} AS profile_college_id FROM ${table} WHERE id = COALESCE(u.reference_id, u.id) OR LOWER(email) = LOWER(u.email)`;
+}
+
+/**
+ * The users row plus every candidate profile row in a single statement. Identity
+ * used to cost two sequential round trips (users, then the role's profile table),
+ * and this is the read every authenticated API request pays. Table names come from
+ * the whitelisted map above, never from input.
+ */
+export const IDENTITY_SQL = `WITH u AS (SELECT id, email, role, reference_id, status, must_change_password FROM users WHERE id = ?) SELECT u.id, u.email, u.role, u.reference_id, u.status, u.must_change_password, p.id AS profile_id, p.table_key, p.profile_name, p.profile_college_id FROM u LEFT JOIN LATERAL (${PROFILE_TABLES.map(profileLookupBranch).join(" UNION ALL ")}) p ON TRUE`;
+
+/** Shapes the users columns into the authenticated user both identity reads return. */
+function shapeAuthenticatedUser(user: any, profile: { profile_name?: string | null; profile_college_id?: string | null } | null): AuthenticatedUser {
+  const role = normalizeRole(user.role);
+  return {
+    id: user.id,
+    reference_id: user.reference_id || user.id,
+    role,
+    email: user.email || "",
+    name: profile?.profile_name || user.name || user.email || "User",
+    college_id: profile?.profile_college_id ?? null,
+    isSuperAdmin: roleGrantsSuperAdmin(role),
+    mustChangePassword: Boolean(user.must_change_password)
+  };
+}
+
+/**
+ * Picks the profile row belonging to the role's own table, preferring the row whose
+ * id matched over one found through the email fallback - the same precedence the
+ * two-step lookup had.
+ */
+export function pickProfileRow(rows: any[], profileTable: string | undefined, userId: string, referenceId: string | null): any | null {
+  if (!profileTable) return null;
+  const matches = rows.filter((row: any) => row && row.table_key === profileTable);
+  return matches.find(row => String(row.profile_id) === String(referenceId || userId)) || matches[0] || null;
+}
+
+/**
+ * Identity in one round trip: users row plus its candidate profile rows. Returns
+ * null only when the statement could not run (schema drift, pooler failure), which
+ * is when the caller drops to the per-table lookups. An empty array means the
+ * users row is genuinely not there - an answer, not a failure.
+ */
+async function readIdentityRows(db: PostgresDbAdapter, userId: string): Promise<any[] | null> {
+  try {
+    return await db.all(IDENTITY_SQL, [userId]);
+  } catch (err: any) {
+    logger.warn("combined identity read failed, falling back to per-table lookups", { error: err?.message || String(err) });
+    return null;
+  }
+}
+
 /**
  * Resolves current live user record and role details from the database
  */
@@ -131,6 +229,14 @@ export async function resolveLiveUser(
   db: PostgresDbAdapter,
   userId: string
 ): Promise<AuthenticatedUser | null> {
+  const rows = await readIdentityRows(db, userId);
+  if (rows && rows.length > 0) {
+    const user = rows[0];
+    if (isAccountDisabled(user.status)) return null;
+    const profile = pickProfileRow(rows, ROLE_PROFILE_TABLES[normalizeRole(user.role)], user.id, user.reference_id);
+    return shapeAuthenticatedUser(user, profile);
+  }
+
   // Session rows store users.id, so the primary-key lookup covers the hot path.
   let user = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
   if (!user) {

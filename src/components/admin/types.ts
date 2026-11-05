@@ -18,6 +18,15 @@ export type AdminTab =
   | "users"
   | "smes"
   | "settings"
+  | "interviews"
+  | "students"
+  | "fees"
+  | "examinations"
+  | "report_insight"
+  | "report_skills"
+  | "report_mentor_nps"
+  | "report_student_nps"
+  | "report_client_nps"
   | "more_menu";
 
 export interface AdminDashboardProps {
@@ -87,3 +96,16 @@ export interface SystemSettingsState {
   attendance_lock_enabled: boolean;
   [key: string]: any;
 }
+
+export type InsightSubTab =
+  | "attendance"
+  | "placement"
+  | "observations"
+  | "mentor_nps"
+  | "client_nps"
+  | "tickets"
+  | "demos"
+  | "workload"
+  | "syllabus"
+  | "achievements"
+  | "skill_report";

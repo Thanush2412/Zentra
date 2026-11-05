@@ -12,6 +12,25 @@ const h = vi.hoisted(() => {
 
 vi.mock("@/lib/db", () => ({
   getDb: async () => ({
+    // The combined identity read returns users + profile rows in one statement.
+    all: async () => {
+      h.userSelects++;
+      await h.gate;
+      return [
+        {
+          id: "u-1",
+          reference_id: "r-1",
+          role: "mentor",
+          email: "mentor@example.com",
+          status: "Active",
+          must_change_password: 0,
+          table_key: "mentors",
+          profile_id: "r-1",
+          profile_name: "Mentor One",
+          profile_college_id: "col-1"
+        }
+      ];
+    },
     get: async () => {
       h.userSelects++;
       await h.gate;
@@ -27,20 +46,24 @@ vi.mock("@/lib/db", () => ({
   })
 }));
 
-vi.mock("@/lib/session", () => ({
-  SESSION_COOKIE_NAME: "ecampus_session",
-  validateSession: async (_db: any, token: string) => {
-    h.sessionCalls++;
-    h.tokens.push(token);
-    await h.gate;
-    return {
-      isValid: true,
-      userId: "u-1",
-      csrfSecret: "secret",
-      session: { id: "s-1", token_hash: "hash", user_id: "u-1" }
-    };
-  }
-}));
+vi.mock("@/lib/session", async (importOriginal) => {
+  const real = await importOriginal<any>();
+  return {
+    ...real,
+    SESSION_COOKIE_NAME: "ecampus_session",
+    validateSession: async (_db: any, token: string) => {
+      h.sessionCalls++;
+      h.tokens.push(token);
+      await h.gate;
+      return {
+        isValid: true,
+        userId: "u-1",
+        csrfSecret: "secret",
+        session: { id: "s-1", token_hash: "hash", user_id: "u-1" }
+      };
+    }
+  };
+});
 
 import { loadSession, loadUser } from "../src/lib/authGuard";
 
@@ -78,9 +101,9 @@ describe("identity lookup coalescing", () => {
     expect((b as any).name).not.toBe("Tampered");
   });
 
-  it("costs one lookup when concurrent and two when sequential", async () => {
-    // resolveLiveUser reads the users row then the role profile row, so one
-    // coalesced call is exactly 2 selects and an uncoalesced pair is 4.
+  it("costs one read when concurrent and two when sequential", async () => {
+    // Identity is users + role profile in a single statement, so one coalesced
+    // call is exactly 1 round trip and an uncoalesced pair is 2.
     const before = h.userSelects;
     await Promise.all([loadUser("u-9"), loadUser("u-9")]);
     const concurrent = h.userSelects - before;
@@ -90,7 +113,7 @@ describe("identity lookup coalescing", () => {
     await loadUser("u-10");
     const sequential = h.userSelects - middle;
 
-    expect(concurrent).toBe(2);
-    expect(sequential).toBe(4);
+    expect(concurrent).toBe(1);
+    expect(sequential).toBe(2);
   });
 });

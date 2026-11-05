@@ -61,7 +61,7 @@ export default function LndMasterMatrix({
   const columnCount = slots.length + 1;
 
   return (
-    <div className="bg-white/90 dark:bg-[#131317]/90 border border-slate-200/80 dark:border-slate-800/80 rounded-xl shadow-xs overflow-hidden backdrop-blur-md">
+    <div className="bg-white/90 dark:bg-[#131317]/90 border border-slate-100 dark:border-slate-800/80 rounded-2xl shadow-card overflow-hidden backdrop-blur-md">
       <div className="px-5 py-3 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/90 dark:to-[#131317] border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-xs font-black text-slate-800 dark:text-white uppercase tracking-wider">

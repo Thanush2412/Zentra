@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRoleHomePath, normalizeRoleValue } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { resolveNotificationDestination } from "@/lib/notificationTarget";
 import { useApp, Role } from "@/context/AppContext";
 import { useToast } from "@/context/ToastContext";
 import { apiFetch, setClientCsrfToken } from "@/lib/apiFetch";
+import { describeCappedSections } from "@/lib/dataLoadStatus";
 import { qk } from "@/lib/queryKeys";
 import { UserProfileBar } from "./UserProfileBar";
 import { Dialog } from "./ui/dialog";
@@ -56,7 +57,6 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const {
     currentUser,
     isAuthenticated,
-    isSuperAdmin,
     currentRole,
     setRole,
     currentMentor,
@@ -70,6 +70,8 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     isLoading,
     isDataLoading,
     dataLoadError,
+    dataLoadMessage,
+    cappedSections: rawCappedSections,
     retryDataLoad,
     refreshData,
     lastSyncTime,
@@ -79,6 +81,26 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   const { toast: showToast } = useToast();
 
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+
+  // Routine operational logs and background telemetry (audit logs, handover requests)
+  // are bounded by design to the latest entries; they should not trigger the top alert banner.
+  const cappedSections = useMemo(() => {
+    const ignored = new Set(["auditlogs", "auditlog", "handoverrequests", "handoverrequest", "approvedhandovers", "approvedhandover"]);
+    return (rawCappedSections || []).filter((s) => {
+      const normalized = s.toLowerCase().replace(/[^a-z]/g, "");
+      return !ignored.has(normalized);
+    });
+  }, [rawCappedSections]);
+
+  // Dismissing the capped-lists notice lasts until the next load changes the list, so
+  // a new shortfall is never hidden behind an old dismissal.
+  const [isCappedNoticeDismissed, setIsCappedNoticeDismissed] = useState(false);
+  const cappedNoticeKey = cappedSections.join(",");
+  useEffect(() => {
+    setIsCappedNoticeDismissed(false);
+  }, [cappedNoticeKey]);
+
+  const displayCappedSections = cappedSections;
 
   const handleManualRefresh = async () => {
     if (isManualRefreshing || isDataLoading) return;
@@ -91,7 +113,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     }
   };
 
-  const isAuthorized = isAuthenticated && (isSuperAdmin || normalizeRoleValue(currentRole) === normalizeRoleValue(requiredRole));
+  const isAuthorized = isAuthenticated && normalizeRoleValue(currentRole) === normalizeRoleValue(requiredRole);
 
   /* ─── Notifications Bell ─── */
   const queryClient = useQueryClient();
@@ -505,7 +527,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
 
       const activeRole = currentRole || currentUser?.role;
 
-      if (!isSuperAdmin && activeRole && normalizeRoleValue(activeRole) !== normalizeRoleValue(requiredRole) && !isLoading && !isDataLoading) {
+      if (activeRole && normalizeRoleValue(activeRole) !== normalizeRoleValue(requiredRole) && !isLoading && !isDataLoading) {
         const targetPath = getRoleHomePath(activeRole);
         router.replace(targetPath);
       }
@@ -516,7 +538,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         clearTimeout(routeProtectionTimeoutRef.current);
       }
     };
-  }, [isLoading, isDataLoading, isAuthenticated, currentRole, currentUser, requiredRole, router, isSuperAdmin]);
+  }, [isLoading, isDataLoading, isAuthenticated, currentRole, currentUser, requiredRole, router]);
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const handleLogout = () => {
@@ -534,11 +556,15 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
   return (
     <div className="h-screen flex flex-col font-sans bg-warm-canvas text-gray-800 transition-colors duration-200 overflow-hidden relative">
       <QueryPrefetcher />
-      {/* Data-load failure retry banner — replaces the old silent empty-dashboard behavior */}
+      {/* Data-load failure retry banner — names the actual cause. The blanket
+          "couldn't reach the database" wording used to cover capped lists and an
+          expired session too, so it pointed at a healthy production database. */}
       {dataLoadError && (
         <div className="sticky top-0 z-[60] w-full bg-rose-50 border-b border-rose-200 px-4 py-2 flex items-center justify-center gap-3">
           <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
-          <span className="text-xs font-bold text-rose-700" role="alert">Couldn&apos;t reach the database — showing possibly stale data.</span>
+          <span className="text-xs font-bold text-rose-700" role="alert">
+            {dataLoadMessage || "Couldn't reach the database — showing possibly stale data."}
+          </span>
           <button
             type="button"
             onClick={() => retryDataLoad()}
@@ -551,16 +577,34 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         </div>
       )}
 
+      {/* Capped lists are a payload guard, not an outage: amber, dismissible, no retry. */}
+      {!dataLoadError && displayCappedSections.length > 0 && !isCappedNoticeDismissed && (
+        <div className="sticky top-0 z-[60] w-full bg-amber-50/90 backdrop-blur-md border-b border-amber-200/60 px-4 py-2 flex items-center justify-center gap-3 transition-all shadow-xs">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+          <span className="text-xs font-semibold text-amber-900 tracking-tight" role="status">
+            {describeCappedSections(cappedSections)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsCappedNoticeDismissed(true)}
+            aria-label="Dismiss the capped-lists notice"
+            className="p-1 rounded-xl text-amber-700 hover:bg-amber-100/80 transition-colors cursor-pointer"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Top indeterminate sync progress line */}
       {isDataLoading && (
         <div className="absolute top-0 left-0 right-0 h-0.5 z-50 overflow-hidden bg-indigo-100">
-          <div className="h-full bg-gradient-to-r from-indigo-500 via-[#D528A2] to-indigo-500 animate-pulse w-full" />
+          <div className="h-full bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 animate-pulse w-full" />
         </div>
       )}
 
       {/* Global Header — one width and one surface for every role */}
       <div className="relative w-[92%] sm:w-[82%] md:w-[74%] lg:w-[66%] max-w-[1040px] mx-auto self-center mt-3 md:mt-4 z-30 shrink-0">
-        <header className="floating-header w-full px-3 sm:px-6 py-2.5 md:py-4 flex items-center justify-between transition-all rounded-xl border border-slate-200/80 shadow-md bg-white/80 backdrop-blur-md">
+        <header className="floating-header w-full px-3 sm:px-6 py-2.5 md:py-3.5 flex items-center justify-between transition-all rounded-2xl border border-slate-100 shadow-card bg-white/95 backdrop-blur-md">
         {/* Left: Brand + Role Badge */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <img src="/E-Campus.png" alt="FACE Prep E-Campus Logo" className="h-7 sm:h-9 md:h-10 w-auto object-contain shrink-0 max-h-10" />
@@ -1074,7 +1118,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
         panelClassName="max-w-xl bg-white dark:bg-slate-900 rounded-2xl p-0 space-y-0 overflow-hidden flex flex-col max-h-[90vh]"
       >
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-150 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/30">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-900 dark:to-indigo-950/30">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-sm font-bold">
                   <AlertCircle className="h-5 w-5" />
@@ -1094,7 +1138,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex border-b border-slate-150 dark:border-slate-800 px-6 pt-2 bg-slate-50/50 dark:bg-slate-900/50">
+            <div className="flex border-b border-slate-100 dark:border-slate-800 px-6 pt-2 bg-slate-50/50 dark:bg-slate-900/50">
               <button
                 type="button"
                 onClick={() => setFeedbackModalTab("submit")}
@@ -1182,7 +1226,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                   {(() => {
                     const rep = getReporterDetails();
                     return (
-                      <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                      <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 p-3 text-[11px] flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2">
                           <User className="h-4 w-4 text-indigo-500" />
                           <span className="font-bold text-slate-800 dark:text-slate-200">
@@ -1303,7 +1347,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                       <p className="text-xs font-semibold">Loading your issues...</p>
                     </div>
                   ) : myFeedbackList.length === 0 ? (
-                    <div className="py-12 text-center bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-700 p-6">
+                    <div className="py-12 text-center bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
                       <MessageSquare className="h-10 w-10 text-slate-300 mx-auto mb-2" />
                       <p className="text-xs font-bold text-slate-700 dark:text-slate-200">No issues submitted yet</p>
                       <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
@@ -1326,7 +1370,7 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
                         return (
                           <div
                             key={item.id}
-                            className="bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2.5 shadow-xs"
+                            className="bg-white dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-2xl p-4 space-y-2.5 shadow-card"
                           >
                             <div className="flex items-center justify-between gap-2 flex-wrap">
                               <div className="flex items-center gap-2">

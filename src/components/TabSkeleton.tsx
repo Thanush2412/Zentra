@@ -9,7 +9,7 @@ export function TabSkeleton({ rows = 8, cards = 4 }: { rows?: number; cards?: nu
   return (
     <div className="space-y-4 animate-fadeIn" aria-busy="true" aria-label="Loading tab content">
       {/* Header line */}
-      <div className="flex items-center justify-between border-b border-gray-150 pb-3">
+      <div className="flex items-center justify-between border-b border-gray-100 pb-3">
         <div className="flex items-center gap-2">
           <div className="h-5 w-5 rounded bg-gray-200 animate-pulse" />
           <div>
@@ -24,7 +24,7 @@ export function TabSkeleton({ rows = 8, cards = 4 }: { rows?: number; cards?: nu
       {cards > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[...Array(cards)].map((_, i) => (
-            <div key={i} className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
+            <div key={i} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
               <div className="h-6 w-14 rounded bg-gray-200 animate-pulse" style={{ animationDelay: `${i * 80}ms` }} />
               <div className="h-2.5 w-20 rounded bg-gray-100 animate-pulse mt-2" />
             </div>
@@ -33,14 +33,14 @@ export function TabSkeleton({ rows = 8, cards = 4 }: { rows?: number; cards?: nu
       )}
 
       {/* Filter bar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-wrap items-center gap-3">
+      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex flex-wrap items-center gap-3">
         {[...Array(4)].map((_, i) => (
           <div key={i} className="h-8 rounded-xl bg-gray-100 animate-pulse" style={{ width: `${90 + i * 30}px`, animationDelay: `${i * 60}ms` }} />
         ))}
       </div>
 
       {/* Table rows */}
-      <div className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+      <div className="rounded-2xl border border-slate-100 overflow-hidden bg-white shadow-card">
         <div className="h-10 bg-gray-50 border-b border-gray-200" />
         {[...Array(rows)].map((_, i) => (
           <div key={i} className="h-11 border-b border-gray-100 flex items-center gap-6 px-4">

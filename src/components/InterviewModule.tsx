@@ -256,7 +256,7 @@ const CapacityMetricsBar = ({
 const ScoreSlider = ({
   label, value, onChange, color = "#D528A2"
 }: { label: string; value: number; onChange: (v: number) => void; color?: string }) => (
-  <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-3.5 space-y-2 shadow-xs">
+  <div className="bg-slate-50/70 border border-slate-100 rounded-xl p-3.5 space-y-2 shadow-xs">
     <div className="flex justify-between items-center">
       <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">{label}</span>
       <span className="text-xs font-black px-2 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs" style={{ color }}>
@@ -1101,7 +1101,7 @@ const StudentConductedRosterDrawer = ({
               </div>
             </div>
             {selectedEval.eval?.remarks && (
-              <p className="text-xs italic text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <p className="text-xs italic text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
                 &ldquo;{selectedEval.eval.remarks}&rdquo;
               </p>
             )}
@@ -1154,7 +1154,7 @@ const PrioritySplitPreviewDialog: React.FC<PrioritySplitPreviewDialogProps> = ({
       panelClassName="max-w-3xl w-full max-h-[85vh] p-0 space-y-0 overflow-hidden flex flex-col rounded-2xl bg-white shadow-2xl"
     >
       {/* Header */}
-      <div className="flex justify-between items-center px-6 py-4 border-b border-slate-150 bg-slate-50/90 shrink-0">
+      <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/90 shrink-0">
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700">
             <Sparkles className="h-5 w-5" />
@@ -1226,7 +1226,7 @@ const PrioritySplitPreviewDialog: React.FC<PrioritySplitPreviewDialogProps> = ({
               {allocations.map((alloc, idx) => (
                 <div
                   key={alloc.id || idx}
-                  className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-all space-y-2.5"
+                  className="p-4 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-slate-50 transition-all space-y-2.5"
                 >
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2">
@@ -1317,10 +1317,11 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   defaultCollegeId
 }) => {
   const { currentMentor, currentKAM, students, mentors, slots, colleges } = useApp();
-  const { toast } = useToast();
+  const { toast, confirm: showConfirm } = useToast();
   const queryClient = useQueryClient();
 
   const [dbColleges, setDbColleges] = useState<any[]>([]);
+  const [deletingInterviewId, setDeletingInterviewId] = useState<string | null>(null);
 
   useEffect(() => {
     if (colleges && colleges.length > 0) {
@@ -2099,7 +2100,14 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
   };
 
   const handleDeleteInterview = async (interviewId: string) => {
-    if (!window.confirm("Are you sure you want to delete this interview record?")) return;
+    const ok = await showConfirm({
+      message: "Delete this interview record? This cannot be undone.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
+    if (deletingInterviewId) return;
+    setDeletingInterviewId(interviewId);
     try {
       const data = await apiFetch(`/api/interviews?id=${encodeURIComponent(interviewId)}`, {
         method: "DELETE",
@@ -2115,6 +2123,8 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       }
     } catch {
       toast("Error deleting interview record.", "error");
+    } finally {
+      setDeletingInterviewId(null);
     }
   };
 
@@ -2445,7 +2455,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
     <div className="space-y-5 font-sans">
 
       {/* Header Container (Shadcn Card Style) */}
-      <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-[#D528A2] mb-1">
@@ -2558,7 +2568,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
       {/* ── MENTOR: Raise Request ── */}
       {isMentor && activeTab === "raise" && (
-        <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
           <div className="flex items-center gap-2 mb-5">
             <BookOpen className="w-4 h-4 text-[#D528A2]" />
             <h2 className="text-sm font-black text-slate-800">Raise New Interview Request</h2>
@@ -2646,7 +2656,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               </div>
 
               {/* Informative Roster & Scheduling Banner */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-700">
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-700">
                 <div className="flex items-center gap-2 font-bold">
                   <div className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
                     <Users className="w-4 h-4" />
@@ -2706,7 +2716,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       {/* ── INTERACTIVE CALENDAR VIEW ── */}
       {activeTab === "calendar" && (
         <div className="space-y-4">
-          <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs">
+          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
             {/* Calendar Controls */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
@@ -2896,7 +2906,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   ) : (
                     <div className="grid grid-cols-1 gap-3">
                       {scheduledInterviewsByDate[selectedCalendarDate].map((inv: any) => (
-                        <div key={inv.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 hover:border-indigo-200 transition-all space-y-2.5 shadow-2xs">
+                        <div key={inv.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50/60 hover:border-indigo-200 transition-all space-y-2.5 shadow-2xs">
                           <div className="flex items-center justify-between gap-2">
                             <StatusBadge status={inv.status} />
                             <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
@@ -2906,7 +2916,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                             </span>
                           </div>
                           <div className="font-extrabold text-slate-800 text-sm sm:text-base">{inv.subject}</div>
-                          <div className="text-xs text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-1.5 bg-white p-3 rounded-lg border border-slate-200/80">
+                          <div className="text-xs text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-1.5 bg-white p-3 rounded-2xl border border-slate-100 shadow-card">
                             <div>Cohort: <strong className="text-slate-800">{inv.class_group || "All Classes"}</strong></div>
                             <div>Requested By: <strong className="text-slate-800">{inv.mentor_name}</strong></div>
                             <div>Target Count: <strong className="text-slate-800">{inv.student_count || 10} Students</strong></div>
@@ -2986,7 +2996,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                   ) : splitPreviewResult ? (
                     <div className="space-y-3">
                       {/* Calculation Summary Card */}
-                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
                         <div>
                           <div className="text-[10px] uppercase font-bold text-slate-400">Total Duration Calculation</div>
                           <div className="text-sm font-black text-slate-800">
@@ -3004,7 +3014,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                       <div className="space-y-2">
                         <div className="text-xs font-black text-slate-700">Proposed Priority Split Segments:</div>
                         {splitPreviewResult.allocations.map((alloc: any, idx: number) => (
-                          <div key={idx} className="p-3.5 rounded-xl border border-slate-200 bg-white shadow-2xs space-y-1.5">
+                          <div key={idx} className="p-3.5 rounded-2xl border border-slate-100 bg-white shadow-card space-y-1.5">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-extrabold text-slate-800">Segment #{idx + 1}: {alloc.mentor_name}</span>
                               <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200">
@@ -3055,7 +3065,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               { label: "Assigned", value: interviewsList.filter(i => i.status === "assigned" || i.status === "pending_verification").length, color: "text-blue-700" },
               { label: "Completed", value: interviewsList.filter(i => i.status === "completed").length, color: "text-emerald-700" },
             ].map(stat => (
-              <div key={stat.label} className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs text-center">
+              <div key={stat.label} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card text-center">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
                 <div className={`text-2xl font-black mt-1 ${stat.color}`}>{stat.value}</div>
               </div>
@@ -3063,11 +3073,11 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           </div>
 
           {isLoading ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2 shadow-card">
               <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading session records...
             </div>
           ) : interviewsList.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center shadow-card">
               <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-semibold text-slate-500">No interview sessions found.</p>
               <p className="text-xs text-slate-400 mt-1">Use the "Raise Request" tab to create your first interview request.</p>
@@ -3092,7 +3102,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                 const canEvaluate = hasAssignedSlotsAsEvaluator || (!isExternal && isRaiser) || isCM || isKAM;
 
                 return (
-                  <div key={req.id} className="bg-white border border-slate-200/80 rounded-xl shadow-xs overflow-hidden">
+                  <div key={req.id} className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
                     <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -3168,8 +3178,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         {(req.status?.includes("pending") || isKAM || isCM) && (
                           <button
                             onClick={() => handleDeleteInterview(req.id)}
+                            disabled={deletingInterviewId === req.id}
                             title="Delete Request"
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-slate-200 hover:border-rose-200 cursor-pointer shadow-2xs"
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-slate-200 hover:border-rose-200 cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -3191,10 +3202,10 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                     {/* ── SHADCN-STYLE EVALUATION DRAWER (SIDE-BY-SIDE PANELS) ── */}
                     {isExpanded && isAssigned && (
-                      <div className="border-t border-slate-200 bg-slate-50/50 p-5 space-y-4">
+                      <div className="border-t border-slate-100 bg-slate-50/50 p-5 space-y-4">
 
                         {/* Session Progress Header */}
-                        <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+                        <div className="bg-white border border-slate-100 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-card">
                           <div>
                             <div className="text-xs font-black text-slate-800">
                               Evaluation Progress: {evaluatedCount} of {reqStudents.length} Students ({progressPct}%)
@@ -3209,7 +3220,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
 
                           {/* LEFT PANEL: Student Roster List with Search & Filter */}
-                          <div className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-2xs">
+                          <div className="lg:col-span-5 bg-white border border-slate-100 rounded-2xl p-4 space-y-3 shadow-card">
                             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                               <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                                 <Users className="w-3.5 h-3.5 text-[#D528A2]" /> Student Roster ({activeStudentsList.length})
@@ -3297,7 +3308,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                           </div>
 
                           {/* RIGHT PANEL: Question-by-Question Evaluation Form ("question should be") */}
-                          <div className="lg:col-span-7 bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
+                          <div className="lg:col-span-7 bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
                             {!selectedStudent ? (
                               <div className="py-20 text-center text-slate-400">
                                 <GraduationCap className="w-10 h-10 text-slate-200 mx-auto mb-2" />
@@ -3312,7 +3323,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                   <div>
                                     <h4 className="font-black text-slate-800 text-sm flex items-center gap-2 flex-wrap">
                                       Evaluating: {selectedStudent.name}
-                                      <span className="text-xs px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-150 text-indigo-700 font-mono font-bold">
+                                      <span className="text-xs px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-mono font-bold">
                                         {selectedStudent.register_number || selectedStudent.roll_number || selectedStudent.id}
                                       </span>
                                     </h4>
@@ -3347,7 +3358,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                 </div>
 
                                 {/* Scheduled Slot & Actual Timing Tracker */}
-                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2.5">
                                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                                     <div className="flex items-center gap-1.5 text-slate-700 font-bold">
                                       <Clock className="w-3.5 h-3.5 text-[#D528A2]" />
@@ -3431,7 +3442,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                   {/* List of Dynamic Typed Questions */}
                                   <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                                     {evalQuestions.map((qItem, idx) => (
-                                      <div key={qItem.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/80 space-y-2.5">
+                                      <div key={qItem.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50/80 space-y-2.5">
                                         <div className="flex items-center gap-2">
                                           <span className="w-6 h-6 rounded-lg bg-indigo-100 text-indigo-700 text-[10px] font-black flex items-center justify-center shrink-0">
                                             Q{idx + 1}
@@ -3545,11 +3556,11 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
       {isCM && activeTab === "pending" && (
         <div className="space-y-4">
           {isLoading ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2 shadow-card">
               <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading requests...
             </div>
           ) : pendingRequests.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center shadow-card">
               <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
               <p className="text-sm font-semibold text-slate-600">All caught up!</p>
               <p className="text-xs text-slate-400 mt-1">No pending interview allocation requests for your campus.</p>
@@ -3560,7 +3571,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               const subjectMentors = subjectMentorsForReq(req);
 
               return (
-                <div key={req.id} className="bg-white border border-slate-200/80 rounded-xl shadow-xs overflow-hidden">
+                <div key={req.id} className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
                   <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -3781,8 +3792,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                       </button>
                       <button
                         onClick={() => handleDeleteInterview(req.id)}
+                        disabled={deletingInterviewId === req.id}
                         title="Delete Request"
-                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-slate-200 hover:border-rose-200 cursor-pointer shadow-2xs"
+                        className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all border border-slate-200 hover:border-rose-200 cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -3803,7 +3815,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                   {/* Allocation Panel or Home CM Tracking Panel */}
                   {isOpen && (
-                    <div className="border-t border-slate-200 bg-slate-50/50 p-5 space-y-4">
+                    <div className="border-t border-slate-100 bg-slate-50/50 p-5 space-y-4">
                       {/* 1. If Raiser's Home CM on External Request: Show Zone Tracking & Broadcast Console */}
                       {isCM && req.type === "external" && (req.origin_college_id === defaultCollegeId || req.college_id === defaultCollegeId) ? (
                         <div className="space-y-4">
@@ -4276,7 +4288,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
 
                                                 {/* Selected Periods Configuration & Student Count Steppers */}
                                                 {isMentorActive && (
-                                                  <div className="mt-2 pt-2 border-t border-indigo-150 space-y-2 bg-white/90 p-2.5 rounded-xl border border-indigo-100">
+                                                  <div className="mt-2 pt-2 border-t border-indigo-100 space-y-2 bg-white/90 p-2.5 rounded-xl border border-indigo-100">
                                                     <div className="text-[9px] font-black uppercase text-indigo-900 flex items-center justify-between">
                                                       <span>Configured Period Batches for {m.name}:</span>
                                                       <span className="text-slate-500 font-bold">{activeSlotKeys.length} Period(s) • ~15m per Candidate</span>
@@ -4392,7 +4404,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                           </div>
                                           <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                                             {selectedList.map((st, idx) => (
-                                              <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-emerald-150 text-xs flex items-center justify-between">
+                                              <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-emerald-100 text-xs flex items-center justify-between">
                                                 <div className="flex items-center gap-1.5 min-w-0">
                                                   <span className="text-[9.5px] font-black font-mono text-emerald-700 bg-emerald-50 px-1 rounded">#{idx + 1}</span>
                                                   <span className="font-bold text-slate-800 truncate">{st.name}</span>
@@ -4414,7 +4426,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                                               <p className="text-[11px] text-emerald-700 italic py-3 text-center">All cohort students are allocated in this cycle!</p>
                                             ) : (
                                               remainingList.map((st, idx) => (
-                                                <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-amber-150 text-xs flex items-center justify-between">
+                                                <div key={st.id || idx} className="p-1.5 rounded-lg bg-white border border-amber-100 text-xs flex items-center justify-between">
                                                   <div className="flex items-center gap-1.5 min-w-0">
                                                     <span className="text-[9.5px] font-black font-mono text-amber-700 bg-amber-50 px-1 rounded">#{selectedList.length + idx + 1}</span>
                                                     <span className="font-semibold text-slate-700 truncate">{st.name}</span>
@@ -4488,7 +4500,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               { label: "Assigned", value: interviewsList.filter(i => i.status === "assigned" || i.status === "pending_verification").length, color: "text-blue-700" },
               { label: "Completed", value: interviewsList.filter(i => i.status === "completed").length, color: "text-emerald-700" },
             ].map(stat => (
-              <div key={stat.label} className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs text-center">
+              <div key={stat.label} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card text-center">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
                 <div className={`text-2xl font-black mt-1 ${stat.color}`}>{stat.value}</div>
               </div>
@@ -4496,16 +4508,16 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           </div>
 
           {isLoading ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2 shadow-card">
               <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading...
             </div>
           ) : interviewsList.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center shadow-card">
               <BarChart3 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-semibold text-slate-500">No interview sessions recorded.</p>
             </div>
           ) : (
-            <div className="bg-white border border-slate-200/80 rounded-xl shadow-2xs overflow-hidden">
+            <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
@@ -4566,8 +4578,9 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
                             ) : null}
                             <button
                               onClick={() => handleDeleteInterview(i.id)}
+                              disabled={deletingInterviewId === i.id}
                               title="Delete Interview"
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all border border-transparent hover:border-rose-200 cursor-pointer"
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all border border-transparent hover:border-rose-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -4593,7 +4606,7 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
               { label: "Assigned", value: interviewsList.filter(i => i.status === "assigned" || i.status === "pending_verification").length, color: "text-blue-700" },
               { label: "Completed", value: interviewsList.filter(i => i.status === "completed").length, color: "text-emerald-700" },
             ].map(stat => (
-              <div key={stat.label} className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-2xs text-center">
+              <div key={stat.label} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card text-center">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
                 <div className={`text-2xl font-black mt-1 ${stat.color}`}>{stat.value}</div>
               </div>
@@ -4601,16 +4614,16 @@ export const InterviewModule: React.FC<InterviewModuleProps> = ({
           </div>
 
           {isLoading ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2 shadow-card">
               <Loader2 className="w-4 h-4 animate-spin text-[#D528A2]" /> Loading region data...
             </div>
           ) : interviewsList.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-10 text-center">
+            <div className="bg-white border border-slate-100 rounded-2xl p-10 text-center shadow-card">
               <BarChart3 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
               <p className="text-sm font-semibold text-slate-500">No interview sessions recorded.</p>
             </div>
           ) : (
-            <div className="bg-white border border-slate-200/80 rounded-xl shadow-2xs overflow-hidden">
+            <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-200">
                 <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-[#D528A2]" />

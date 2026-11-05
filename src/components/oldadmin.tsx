@@ -3221,7 +3221,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("courses")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
                                     <Network className="h-5 w-5" />
@@ -3235,7 +3235,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("subjects")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0 group-hover:scale-105 transition-transform">
                                     <GraduationCap className="h-5 w-5" />
@@ -3249,7 +3249,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("kams")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shrink-0 group-hover:scale-105 transition-transform">
                                     <Briefcase className="h-5 w-5" />
@@ -3263,7 +3263,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("cams")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 group-hover:scale-105 transition-transform">
                                     <Users className="h-5 w-5" />
@@ -3277,7 +3277,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("smes")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500 shrink-0 group-hover:scale-105 transition-transform">
                                     <BookOpen className="h-5 w-5" />
@@ -3291,7 +3291,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("users")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 shrink-0 group-hover:scale-105 transition-transform">
                                     <ShieldCheck className="h-5 w-5" />
@@ -3305,7 +3305,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("holidays")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 shrink-0 group-hover:scale-105 transition-transform">
                                     <Calendar className="h-5 w-5" />
@@ -3319,7 +3319,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("announcements")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-pink-50 flex items-center justify-center text-pink-500 shrink-0 group-hover:scale-105 transition-transform">
                                     <Megaphone className="h-5 w-5" />
@@ -3333,7 +3333,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 type="button"
                                 onClick={() => setActiveTab("logs")}
-                                className="p-5 bg-white border border-slate-200 rounded-xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-xs cursor-pointer group sm:col-span-2"
+                                className="p-5 bg-white border border-slate-100 rounded-2xl text-left hover:border-[#D528A2] hover:ring-2 hover:ring-[#D528A2]/10 transition-all flex items-center gap-4 shadow-card cursor-pointer group sm:col-span-2"
                             >
                                 <div className="h-10 w-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                                     <History className="h-5 w-5" />
@@ -3364,7 +3364,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {/* ── KPI Stats Row ── */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
                             {/* Card 1 */}
-                            <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+                            <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-6 shadow-card flex flex-col justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="h-8 w-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
                                         <Building2 className="h-4 w-4 text-indigo-500" />
@@ -3376,7 +3376,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* Card 2 */}
-                            <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+                            <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-6 shadow-card flex flex-col justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="h-8 w-8 rounded-xl bg-teal-50 flex items-center justify-center shrink-0">
                                         <Users className="h-4 w-4 text-teal-600" />
@@ -3388,7 +3388,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* Card 3 */}
-                            <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+                            <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-6 shadow-card flex flex-col justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="h-8 w-8 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
                                         <Grid className="h-4 w-4 text-amber-500" />
@@ -3411,7 +3411,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* Card 4 */}
-                            <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 shadow-sm flex flex-col justify-between">
+                            <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-6 shadow-card flex flex-col justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
                                         <Layers className="h-4 w-4 text-rose-500" />
@@ -3433,7 +3433,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {/* Split Screen: Campuses Summary & Reporting Hierarchy */}
                             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                                 {/* Campuses Overview Card */}
-                                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs flex flex-col">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-col">
                                     <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
                                         <Building2 className="h-5 w-5 text-indigo-600" />
                                         <h3 className="text-sm font-bold text-gray-900">Campus Breakdown</h3>
@@ -3466,7 +3466,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </div>
 
                                 {/* Hierarchy Quick Tree */}
-                                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs flex flex-col">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-col">
                                     <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
                                         <Network className="h-5 w-5 text-indigo-600" />
                                         <h3 className="text-sm font-bold text-gray-900">System Hierarchy</h3>
@@ -3498,7 +3498,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                             <div key={kam.id} className="space-y-1">
                                                                 <div
                                                                     onClick={() => toggleNode(kamNodeId)}
-                                                                    className="flex items-center gap-2 p-2 bg-white border border-gray-200 rounded-xl shadow-xs cursor-pointer hover:border-indigo-200 transition-all"
+                                                                    className="flex items-center gap-2 p-2 bg-white border border-slate-100 rounded-2xl shadow-card cursor-pointer hover:border-indigo-200 transition-all"
                                                                 >
                                                                     {expandedNodes[kamNodeId] ? <ChevronDown className="h-3 w-3 text-gray-500 shrink-0" /> : <ChevronRight className="h-3 w-3 text-gray-500 shrink-0" />}
                                                                     <div className="h-5 w-5 rounded-full bg-amber-500 text-white flex items-center justify-center font-black text-[8px] shrink-0">KAM</div>
@@ -3610,7 +3610,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {/* ── UNFINISHED DRAFT CARD ── */}
                                 {draftLastSaved && (
-                                    <div className="lg:col-span-3 bg-white p-6 rounded-xl border-2 border-amber-200/90 shadow-sm space-y-4 relative overflow-hidden animate-fadeIn">
+                                    <div className="lg:col-span-3 bg-white p-6 rounded-xl border-2 border-amber-200/90 shadow-card space-y-4 relative overflow-hidden animate-fadeIn">
                                         <div className="flex items-center justify-between flex-wrap gap-4 border-b border-gray-100 pb-4">
                                             <div className="flex items-center gap-3.5">
                                                 <div className="p-3 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
@@ -3896,7 +3896,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {/* ── Charts Row ── */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 {/* Donut: Mentors Overview */}
-                                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm space-y-3">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
                                     <div className="flex items-center justify-between">
                                         <h3 className="text-sm font-bold text-gray-900">Mentors Overview</h3>
                                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">This Month</span>
@@ -3954,7 +3954,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </div>
 
                                 {/* Scheduled Slots by Day */}
-                                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm space-y-3">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
                                     <div className="flex items-center justify-between">
                                         <h3 className="text-sm font-bold text-gray-900">Scheduled Slots by Day</h3>
                                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold">{slots.length} Total Slots</span>
@@ -3989,7 +3989,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </div>
 
                                 {/* System Activity feed */}
-                                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm space-y-3">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
                                     <h3 className="text-sm font-bold text-gray-900">System Activity</h3>
                                     <div className="space-y-3">
                                         {auditLogs.length === 0 ? (
@@ -4394,7 +4394,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     });
 
                                     return (
-                                        <div key={col.id} className="border border-gray-200 rounded-xl bg-white shadow-sm overflow-hidden">
+                                        <div key={col.id} className="border border-slate-100 rounded-2xl bg-white shadow-card overflow-hidden">
                                             {/* College section header */}
                                             <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                                 <button
@@ -4526,7 +4526,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                         {isDeptExpanded && (
                                                                             <div className="p-3 bg-gray-50/50 space-y-4">
                                                                                 {/* Course Overview Details Card */}
-                                                                                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+                                                                                <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card flex flex-col md:flex-row justify-between gap-4">
                                                                                     <div className="space-y-2 flex-1">
                                                                                         <div className="flex items-center gap-3">
                                                                                             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">Course Details</span>
@@ -4582,7 +4582,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                                         const evenCount = semEvenSubjects.length;
 
                                                                                         return (
-                                                                                            <div key={yr} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col">
+                                                                                            <div key={yr} className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-card flex flex-col">
                                                                                                 {/* Year card header */}
                                                                                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 border-b border-gray-200 font-bold text-gray-800 text-xs gap-2">
                                                                                                     <button
@@ -4623,7 +4623,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                                                 {isYearExpanded && (
                                                                                                     <div className="p-3.5 flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50/30">
                                                                                                         {/* Odd Semester Column */}
-                                                                                                        <div className="flex flex-col border border-gray-200 rounded-xl p-3 bg-white shadow-xs">
+                                                                                                        <div className="flex flex-col border border-slate-100 rounded-2xl p-3 bg-white shadow-card">
                                                                                                             <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
                                                                                                                 <span className="font-extrabold text-[10px] uppercase tracking-wider text-indigo-700">{semOdd}</span>
                                                                                                                 <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{oddCount} subject(s)</span>
@@ -4683,7 +4683,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                                                         </div>
 
                                                                                                         {/* Even Semester Column */}
-                                                                                                        <div className="flex flex-col border border-gray-200 rounded-xl p-3 bg-white shadow-xs">
+                                                                                                        <div className="flex flex-col border border-slate-100 rounded-2xl p-3 bg-white shadow-card">
                                                                                                             <div className="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
                                                                                                                 <span className="font-extrabold text-[10px] uppercase tracking-wider text-purple-700">{semEven}</span>
                                                                                                                 <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{evenCount} subject(s)</span>
@@ -4801,7 +4801,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {subjectsSubTab === "catalog" ? (
                                 <>
                                     {/* Filters Bar */}
-                                    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-200 rounded-xl shadow-xs">
+                                    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-slate-100 rounded-2xl shadow-card">
                                         <div className="relative">
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                             <Input
@@ -4959,7 +4959,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </>
                             ) : (
                                 <div className="space-y-6">
-                                    <div className="flex justify-between items-center bg-white p-4 border border-gray-200 rounded-xl shadow-xs">
+                                    <div className="flex justify-between items-center bg-white p-4 border border-slate-100 rounded-2xl shadow-card">
                                         <div>
                                             <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Configured Mentor Groups</h3>
                                             <p className="text-[10px] text-gray-400 font-semibold mt-0.5">Create custom groups to cluster mentors and SMEs (e.g. Technical, Aptitude, Soft Skills) and allocate demo sessions.</p>
@@ -5192,7 +5192,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {/* Stat cards */}
                             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                                 {[{ label: "Students Tracked", value: attStats.total, cls: "text-indigo-600" }, { label: "Average %", value: `${attStats.avg}%`, cls: "text-violet-600" }, { label: "On Track (≥75%)", value: attStats.onTrack, cls: "text-emerald-600" }, { label: "At Risk (65–74%)", value: attStats.atRisk, cls: "text-amber-600" }, { label: "Critical (<65%)", value: attStats.critical, cls: "text-rose-600" }].map(card => (
-                                    <div key={card.label} className="bg-white p-4 rounded-xl border border-gray-200 shadow-2xs">
+                                    <div key={card.label} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card">
                                         <div className={`text-xl font-black ${card.cls}`}>{card.value}</div>
                                         <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mt-0.5">{card.label}</div>
                                     </div>
@@ -5200,7 +5200,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* Filter bar */}
-                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-wrap items-center gap-3">
+                            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-card flex flex-wrap items-center gap-3">
                                 <div className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
                                     <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">From:</span>
                                     <Input aria-label="Attendance from date" type="date" value={attStartDate} onChange={e => setAttStartDate(e.target.value)} className="text-xs font-bold text-gray-800 outline-none cursor-pointer bg-transparent" />
@@ -5315,7 +5315,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <div className="space-y-2">
                                     <div
                                         onClick={() => toggleNode("admin")}
-                                        className="flex items-center gap-2 p-3 bg-white border border-indigo-200 rounded-xl max-w-md shadow-sm cursor-pointer hover:border-indigo-400 transition-all"
+                                        className="flex items-center gap-2 p-3 bg-white border border-indigo-200 rounded-xl max-w-md shadow-card cursor-pointer hover:border-indigo-400 transition-all"
                                     >
                                         {expandedNodes["admin"] ? <ChevronDown className="h-4 w-4 text-indigo-600" /> : <ChevronRight className="h-4 w-4 text-indigo-600" />}
                                         <div className="h-7 w-7 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black">SU</div>
@@ -5336,7 +5336,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                     <div key={kam.id} className="space-y-2">
                                                         <div
                                                             onClick={() => toggleNode(kamNodeId)}
-                                                            className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-sm shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
+                                                            className="flex items-center gap-2 p-2.5 bg-white border border-slate-100 rounded-2xl max-w-sm shadow-card cursor-pointer hover:border-indigo-300 transition-all"
                                                         >
                                                             {expandedNodes[kamNodeId] ? <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-500" />}
                                                             <div className="h-6 w-6 rounded-full bg-amber-500 text-white flex items-center justify-center font-black">KAM</div>
@@ -5358,7 +5358,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                         <div key={col.id} className="space-y-2">
                                                                             <div
                                                                                 onClick={() => toggleNode(colNodeId)}
-                                                                                className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-xl max-w-xs shadow-sm cursor-pointer hover:border-indigo-300 transition-all"
+                                                                                className="flex items-center gap-2 p-2.5 bg-white border border-slate-100 rounded-2xl max-w-xs shadow-card cursor-pointer hover:border-indigo-300 transition-all"
                                                                             >
                                                                                 {expandedNodes[colNodeId] ? <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-500" />}
                                                                                 <div className="h-6 w-6 rounded-full bg-teal-500 text-white flex items-center justify-center font-black">CM</div>
@@ -5462,7 +5462,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* Filters Bar: Category Pills + Search */}
-                            <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white p-2.5 rounded-xl border border-gray-200 shadow-2xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white p-2.5 rounded-2xl border border-slate-100 shadow-card">
                                 {/* Category Pills */}
                                 <div className="flex items-center gap-1 flex-wrap">
                                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1 flex items-center gap-1">
@@ -5523,7 +5523,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     <p className="text-xs font-bold text-gray-500">Loading user feedback reports...</p>
                                 </div>
                             ) : filteredFeedbackReports.length === 0 ? (
-                                <div className="text-center py-12 bg-white rounded-xl border border-gray-200 p-6">
+                                <div className="text-center py-12 bg-white rounded-2xl border border-slate-100 p-6 shadow-card">
                                     <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-400 flex items-center justify-center mx-auto mb-2.5">
                                         <MessageSquare className="h-5 w-5" />
                                     </div>
@@ -5556,7 +5556,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         return (
                                             <div
                                                 key={r.id}
-                                                className="bg-white border border-gray-200/90 hover:border-indigo-300 rounded-xl p-3 shadow-2xs hover:shadow-xs transition-all space-y-2"
+                                                className="bg-white border border-slate-100 hover:border-indigo-300 rounded-2xl p-3 shadow-card hover:shadow-md transition-all space-y-2"
                                             >
                                                 {/* Top Row: Meta Badges + Actions */}
                                                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2">
@@ -6188,7 +6188,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 {userSubTab === "directory" ? (
                                     <div className="space-y-4">
                                         {/* Role Filter & Control Bar */}
-                                        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-gray-200 rounded-xl shadow-xs">
+                                        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-slate-100 rounded-2xl shadow-card">
                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                 {[
                                                     { id: "all", label: "All Roles" },
@@ -6543,7 +6543,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                                         <form onSubmit={handleApproveSignupSubmit} className="p-6 space-y-4 text-xs font-semibold">
                                             {/* User Details */}
-                                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/50 space-y-1">
+                                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1">
                                                 <div className="flex justify-between">
                                                     <span className="text-gray-500">Name:</span>
                                                     <span className="text-gray-900 font-bold">{approvingSignup.name}</span>
@@ -6900,7 +6900,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                                 {/* Master Email Control Card */}
-                                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-5">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card flex flex-col justify-between space-y-5">
                                     <div>
                                         <div className="flex items-start justify-between gap-4 mb-3">
                                             <div className="flex items-center gap-3">
@@ -6953,7 +6953,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </div>
 
                                 {/* Email Service Diagnostic Card */}
-                                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-4">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card flex flex-col justify-between space-y-4">
                                     <div>
                                         <div className="flex items-center gap-3 mb-3">
                                             <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
@@ -6999,7 +6999,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </div>
 
                                 {/* Attendance Marking Lock Policy Card */}
-                                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-5">
+                                <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card flex flex-col justify-between space-y-5">
                                     <div>
                                         <div className="flex items-start justify-between gap-4 mb-3">
                                             <div className="flex items-center gap-3">
@@ -7068,7 +7068,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
 
                             {/* ── Clear Attendance by Date Range ── */}
-                            <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-sm space-y-5">
+                            <div className="bg-white border border-rose-200 rounded-2xl p-6 shadow-card space-y-5">
                                 <div className="flex items-start gap-3 pb-4 border-b border-rose-100">
                                     <div className="h-10 w-10 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
                                         <ShieldAlert className="h-5 w-5" />
@@ -7695,7 +7695,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             )}
 
                                             {/* Add Course Sub-Form */}
-                                            <div className="bg-slate-50/60 p-4 rounded-xl border border-gray-200 space-y-3.5">
+                                            <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-100 space-y-3.5">
                                                 <div className="text-[10px] font-black text-gray-500 uppercase tracking-wider">+ Add Course</div>
 
                                                 {/* Course Name */}
@@ -7971,7 +7971,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                         </Select>
                                                     </div>
 
-                                                    <div className="bg-slate-50/50 p-4 border border-gray-200 rounded-xl space-y-3.5">
+                                                    <div className="bg-slate-50/50 p-4 border border-slate-100 rounded-xl space-y-3.5">
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                             <div className="space-y-1">
                                                                 <label className="text-[10px] text-gray-400 uppercase tracking-wider block font-bold">Shift Name / Label</label>
@@ -8168,7 +8168,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                     </div>
 
                                                     {/* Configured Breaks List */}
-                                                    <div className="space-y-3 bg-white p-4 border border-gray-200 rounded-xl">
+                                                    <div className="space-y-3 bg-white p-4 border border-slate-100 rounded-2xl shadow-card">
                                                         <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                                                             <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Configured Breaks</span>
                                                             <span className="text-[9px] text-indigo-500 font-bold bg-indigo-50 px-2 py-0.5 rounded-full">
@@ -8574,7 +8574,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             </div>
 
                                             {/* Courses Summary */}
-                                            <div className="bg-slate-50 border border-gray-200 rounded-xl p-4 space-y-2">
+                                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2">
                                                 <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">
                                                     Courses ({wizardCourses.length})
                                                 </div>
@@ -8583,7 +8583,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                 ) : (
                                                     <div className="space-y-2">
                                                         {wizardCourses.map((c, idx) => (
-                                                            <div key={idx} className="bg-white border border-gray-200 rounded-xl p-3 space-y-1">
+                                                            <div key={idx} className="bg-white border border-slate-100 rounded-2xl p-3 space-y-1 shadow-card">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className="font-extrabold text-xs text-gray-800">{c.name}</span>
                                                                     <span className="text-[8px] font-extrabold bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded uppercase">
@@ -8606,7 +8606,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             </div>
 
                                             {/* Shift Summary */}
-                                            <div className="bg-slate-50 border border-gray-200 rounded-xl p-4 space-y-2">
+                                            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-2">
                                                 <div className="text-[10px] font-black text-gray-700 uppercase tracking-wider mb-2">Shift Schedule</div>
                                                 {(campusForm.has_shifts === 1 ? (["shift_1", "shift_2", "general"] as const) : (["general"] as const)).map(sh => {
                                                     const p = shiftConfigsParams[sh];
@@ -10004,7 +10004,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         />
                                     </div>
 
-                                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/50 p-3 max-h-48 overflow-y-auto space-y-2 text-xs font-semibold">
+                                    <div className="border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/50 p-3 max-h-48 overflow-y-auto space-y-2 text-xs font-semibold">
                                         {(() => {
                                             const searchedMentors = (mentors || []).filter(m => {
                                                 const cName = (colleges.find(c => c.id === m.college_id)?.name || "").toLowerCase();
@@ -10023,7 +10023,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                         const isChecked = groupForm.mentorIds.includes(m.id);
                                                         const mentorCollegeName = colleges.find(c => c.id === m.college_id)?.name || "";
                                                         return (
-                                                            <label key={m.id} className="flex items-start gap-2.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-indigo-300 cursor-pointer transition-all text-slate-700 dark:text-slate-200 shadow-2xs">
+                                                            <label key={m.id} className="flex items-start gap-2.5 p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-indigo-300 cursor-pointer transition-all text-slate-700 dark:text-slate-200 shadow-card">
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isChecked}

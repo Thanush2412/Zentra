@@ -3,7 +3,7 @@ export const maxDuration = 60;
 import { NextResponse, after } from "next/server";
 import { getDb, chunkList, inPlaceholders, type QueryFailure } from "@/lib/db";
 import { deriveSubjectType } from "@/lib/skillTracker";
-import { requireRole, requireSession, apiAuthErrorResponse } from "@/lib/api-auth";
+import { requireRole, requireSession, apiAuthErrorResponse, normalizeRole } from "@/lib/api-auth";
 import { generateId } from "@/lib/id";
 import { ensureMigration } from "@/lib/migrations";
 
@@ -87,17 +87,36 @@ function preflightFailureResponse(failed: QueryFailure[], verb: string) {
 
 
 /**
- * GET /api/demo-sessions?college_id=…
+ * GET /api/demo-sessions?college_id=…  (or ?college_id=all)
  * Read-only listing for dashboards that only need to display demo data
  * (e.g. the CM's Mentor Demo & Evaluation ledger). Role-gated to staff.
+ *
+ * `all` is the institution-wide read the L&D allocator needs after resolving one
+ * reallocation: previously it fired one request per campus and merged the pages,
+ * which multiplied the round trips without changing the rows.
  */
+const INSTITUTION_WIDE_DEMO_ROLES = ["admin", "L and D", "head_sme"];
+
 export async function GET(request: Request) {
   try {
-    await requireRole(request, "admin", "L and D", "head_sme", "sme", "cm", "kam");
+    const session = await requireRole(request, "admin", "L and D", "head_sme", "sme", "cm", "kam");
     const db = await getDb();
     const collegeId = new URL(request.url).searchParams.get("college_id");
     if (!collegeId) {
       return NextResponse.json({ success: false, message: "Missing college_id" }, { status: 400 });
+    }
+    if (collegeId === "all") {
+      const role = normalizeRole(session.role);
+      if (!INSTITUTION_WIDE_DEMO_ROLES.includes(role)) {
+        return NextResponse.json(
+          { success: false, message: "Forbidden: college_id=all needs an institution-wide role." },
+          { status: 403 }
+        );
+      }
+      const records = await db.all(
+        `SELECT * FROM demo_sessions ORDER BY dateStr DESC, created_at DESC`
+      );
+      return NextResponse.json({ success: true, records });
     }
     const records = await db.all(
       `SELECT ds.* FROM demo_sessions ds

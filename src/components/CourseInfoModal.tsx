@@ -187,7 +187,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
         </button>
 
         {/* Modal Header */}
-        <div className="flex items-start gap-3.5 pr-8 border-b border-slate-150 pb-4 shrink-0">
+        <div className="flex items-start gap-3.5 pr-8 border-b border-slate-100 pb-4 shrink-0">
           <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
             <GraduationCap className="h-6 w-6" />
           </div>
@@ -197,7 +197,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                 {resolvedCourse.name}
               </h3>
               {resolvedCourse.code && (
-                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-150 font-bold text-[10px] tracking-wide uppercase">
+                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100 font-bold text-[10px] tracking-wide uppercase">
                   {resolvedCourse.code}
                 </span>
               )}
@@ -219,7 +219,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                 {collegeName}
               </span>
               {resolvedCourse.shift_based === 1 ? (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-150 rounded">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-100 rounded">
                   Shift-Based Course
                 </span>
               ) : (
@@ -232,7 +232,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 border-b border-slate-150 pb-2 shrink-0">
+        <div className="flex items-center gap-1 border-b border-slate-100 pb-2 shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab("overview")}
@@ -277,7 +277,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
             <div className="space-y-4">
               {/* 4 KPI Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
                   <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     <Clock className="h-3 w-3 text-indigo-500" />
                     <span>Duration</span>
@@ -290,7 +290,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                   </div>
                 </div>
 
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
                   <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     <Layers className="h-3 w-3 text-purple-500" />
                     <span>Shift Model</span>
@@ -303,7 +303,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                   </div>
                 </div>
 
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
                   <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     <Calendar className="h-3 w-3 text-emerald-500" />
                     <span>Batch Cycle</span>
@@ -318,7 +318,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                   </div>
                 </div>
 
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
                   <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     <Sparkles className="h-3 w-3 text-amber-500" />
                     <span>Schedule</span>
@@ -354,7 +354,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
               </div>
 
               {/* Course Leadership & Details */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
                   Course Metadata &amp; Leadership
                 </span>
@@ -403,7 +403,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                 </div>
               ) : (
                 semKeys.map(sem => (
-                  <div key={sem} className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                  <div key={sem} className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-card">
                     <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                       <span className="font-extrabold text-slate-800 text-xs">{sem}</span>
                       <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
@@ -426,7 +426,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                                 ? "bg-amber-50 text-amber-700 border border-amber-200"
                                 : sub.type === "LAB"
                                 ? "bg-teal-50 text-teal-700 border border-teal-200"
-                                : "bg-indigo-50 text-indigo-700 border border-indigo-150"
+                                : "bg-indigo-50 text-indigo-700 border border-indigo-100"
                             }`}>
                               {sub.type}
                             </span>
@@ -442,7 +442,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
 
           {activeTab === "classrooms" && (
             <div className="space-y-3">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
                   Classroom &amp; Room Allocations
                 </span>
@@ -451,9 +451,9 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {Object.entries(parsedRooms).map(([key, val]) => (
-                      <div key={key} className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
+                      <div key={key} className="p-2.5 bg-white border border-slate-100 rounded-2xl flex items-center justify-between shadow-card">
                         <span className="text-[11px] font-bold text-slate-600 truncate">{key.replace(/^Year\s*/i, "Yr ")}:</span>
-                        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-150 font-black text-xs">
+                        <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 font-black text-xs">
                           Room {String(val)}
                         </span>
                       </div>
@@ -462,7 +462,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
                 )}
               </div>
 
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
                   Active Cohorts / Batches ({activeCohorts.length})
                 </span>
@@ -483,7 +483,7 @@ export const CourseInfoModal: React.FC<CourseInfoModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-slate-150 pt-3 shrink-0">
+        <div className="flex items-center justify-between border-t border-slate-100 pt-3 shrink-0">
           <button
             type="button"
             onClick={handleCopyCode}

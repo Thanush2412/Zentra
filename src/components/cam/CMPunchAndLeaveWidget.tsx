@@ -307,7 +307,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
   return (
     <div className="space-y-6 font-sans">
       {/* Top Banner: Clean White Card matching dashboard style */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <div className="h-11 w-11 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-600 shrink-0 shadow-xs border border-teal-100">
@@ -400,8 +400,8 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
       </div>
 
       {/* Tabs & Records Section */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-card overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -434,7 +434,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
             type="button"
             onClick={loadData}
             title="Refresh logs"
-            className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 transition-all self-end sm:self-auto cursor-pointer"
+            className="p-2 rounded-2xl border border-slate-100 bg-white text-slate-600 hover:text-emerald-700 hover:border-emerald-300 transition-all self-end sm:self-auto cursor-pointer shadow-card"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
           </button>
@@ -650,7 +650,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
           panelClassName="max-w-lg max-h-[90vh] rounded-2xl border-slate-200 animate-scaleUp p-0 space-y-0"
         >
           <form onSubmit={handleSubmitLeave}>
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-teal-50 flex items-center justify-center text-teal-700 shrink-0 border border-teal-200">
                   <CalendarCheck2 className="h-4.5 w-4.5" />
@@ -787,7 +787,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowLeaveModal(false)}
@@ -818,7 +818,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
           panelClassName="max-w-md max-h-[90vh] rounded-2xl border-slate-200 animate-scaleUp p-0 space-y-0"
         >
           <form onSubmit={handleSubmitPunch}>
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-700 shrink-0 border border-emerald-200">
                   <UserCheck className="h-4.5 w-4.5" />
@@ -903,7 +903,7 @@ export const CMPunchAndLeaveWidget: React.FC<CMPunchAndLeaveWidgetProps> = ({
               )}
             </div>
 
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowPunchModal(false)}

@@ -60,7 +60,7 @@ export const LogsTab: React.FC<LogsTabProps> = ({ auditLogs: propLogs }) => {
       />
 
       {filteredLogs.length === 0 ? (
-        <div className="text-center py-16 border border-slate-200/80 rounded-xl bg-slate-50/60">
+        <div className="text-center py-16 border border-slate-100 rounded-2xl bg-white shadow-card">
           <ShieldAlert className="h-10 w-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500 font-semibold">No audit logs found matching your query.</p>
         </div>

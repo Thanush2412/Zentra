@@ -14,6 +14,7 @@ export interface LndOverrideModalProps {
   editSession: any;
   handleSaveEdit: (...args: any[]) => any;
   setEditSession: (v: any) => void;
+  showConfirm: (options: { title?: string; message: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
   smes: any[];
   toast: (m: string, k?: any) => void;
 }
@@ -26,6 +27,7 @@ export default function LndOverrideModal({
   editSession,
   handleSaveEdit,
   setEditSession,
+  showConfirm,
   smes,
   toast
 }: LndOverrideModalProps) {
@@ -152,11 +154,20 @@ export default function LndOverrideModal({
               <div className="flex justify-end pt-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm("Are you sure you want to cancel this L&D session?")) {
-                      deleteDemoSession(editSession.id);
-                      setEditSession(null);
+                  onClick={async () => {
+                    const ok = await showConfirm({
+                      title: "Cancel L&D Session",
+                      message: "Deleting this session frees the slot. This cannot be undone.",
+                      danger: true,
+                      confirmLabel: "Cancel Session"
+                    });
+                    if (!ok) return;
+                    const res = await deleteDemoSession(editSession.id);
+                    if (res?.success === false) {
+                      toast(res.message || "Failed to cancel the session.", "error");
+                      return;
                     }
+                    setEditSession(null);
                   }}
                   className="text-xs font-black text-rose-500 hover:text-rose-600 flex items-center gap-1 cursor-pointer"
                 >

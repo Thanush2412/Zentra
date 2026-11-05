@@ -68,6 +68,21 @@ export async function GET(request: Request) {
       ORDER BY st.roll_number ASC
     `;
 
+    let attWhere = "";
+    const attParams: any[] = [];
+    if (collegeId && collegeId !== "all") {
+      attWhere = "WHERE studentId IN (SELECT id FROM students WHERE college_id = ?)";
+      attParams.push(collegeId);
+    } else if (kamId) {
+      const kamColleges = await db.all("SELECT id FROM colleges WHERE kam_id = ?", kamId);
+      const kamCollegeIds = kamColleges.map((c: any) => c.id);
+      if (kamCollegeIds.length > 0) {
+        const inClause = `(${kamCollegeIds.map(() => "?").join(",")})`;
+        attWhere = `WHERE studentId IN (SELECT id FROM students WHERE college_id IN ${inClause})`;
+        attParams.push(...kamCollegeIds);
+      }
+    }
+
     // Fast indexed aggregate attendance query
     const [allStudents, attendanceAggregates] = await Promise.all([
       db.all(studentQuery, ...params),
@@ -78,8 +93,9 @@ export async function GET(request: Request) {
                SUM(CASE WHEN LOWER(status) = 'absent' THEN 1 ELSE 0 END) as absent_marks,
                SUM(CASE WHEN LOWER(status) = 'od' THEN 1 ELSE 0 END) as od_marks
         FROM student_attendance
+        ${attWhere}
         GROUP BY studentId
-      `)
+      `, ...attParams)
     ]);
 
     // Build fast O(1) lookup map for student attendance

@@ -261,20 +261,20 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
       }}
       ariaLabel={`Mentor profile — ${mentor.name}`}
       overlayClassName="bg-slate-900/40 backdrop-blur-xs p-2 sm:p-4"
-      panelClassName="max-w-4xl h-[90vh] max-h-[90vh] md:h-auto md:max-h-[90vh] p-0 space-y-0 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row border-gray-150 shadow-xl scroll-touch"
+      panelClassName="max-w-4xl h-[90vh] max-h-[90vh] md:h-auto md:max-h-[90vh] p-0 space-y-0 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row border-gray-100 shadow-xl scroll-touch"
     >
       {/* Close Button */}
       <button
         onClick={onClose}
         aria-label="Close profile"
-        className="absolute right-4 top-4 p-2 bg-white/80 hover:bg-red-50 hover:text-red-550 border border-gray-200/60 rounded-full transition-all text-gray-500 cursor-pointer z-10"
+        className="absolute right-4 top-4 p-2 bg-white/80 hover:bg-red-50 hover:text-red-500 border border-gray-200/60 rounded-full transition-all text-gray-500 cursor-pointer z-10"
         title="Close profile"
       >
         <X className="h-4 w-4" />
       </button>
 
         {/* Left Panel: Profile Detail Overview */}
-        <div className="w-full md:w-[32%] bg-slate-50 border-r border-slate-200/80 p-6 flex flex-col gap-5 select-none shrink-0">
+        <div className="w-full md:w-[32%] bg-slate-50 border-r border-slate-100 p-6 flex flex-col gap-5 select-none shrink-0">
           <div className="text-center space-y-3 pt-4">
             <div className="h-16 w-16 mx-auto rounded-xl btn-gradient flex items-center justify-center font-extrabold text-white text-xl shadow-md">
               {mentor.avatar}
@@ -318,7 +318,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
           {/* Key Workload Metrics */}
           <div className="grid grid-cols-1 gap-2.5 mt-auto">
             {/* Hours Split Card */}
-            <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs">
+            <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-card">
               {/* Total */}
               <div className="px-3 pt-3 pb-1 text-center">
                 <span className="block text-2xl font-black text-gradient">{toHrs(totalMinutes)} hrs</span>
@@ -355,12 +355,12 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-white border border-slate-200/80 p-2.5 rounded-xl text-center shadow-xs">
+              <div className="bg-white border border-slate-100 p-2.5 rounded-2xl text-center shadow-card">
                 <span className="block text-sm font-black text-slate-800">{allClassLabels.length}</span>
                 <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block truncate">Target Classes</span>
               </div>
 
-              <div className="bg-white border border-slate-200/80 p-2.5 rounded-xl text-center shadow-xs">
+              <div className="bg-white border border-slate-100 p-2.5 rounded-2xl text-center shadow-card">
                 <span className="block text-sm font-black text-slate-800">{allSubjects.length}</span>
                 <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block truncate">Subjects</span>
               </div>
@@ -371,13 +371,13 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
         {/* Right Panel: Content Tabs */}
         <div className="flex-grow flex flex-col min-w-0">
           {/* Tabs Navigation */}
-          <div className="flex border-b border-gray-150 bg-slate-50/50 p-2 gap-1.5 select-none shrink-0">
+          <div className="flex border-b border-gray-100 bg-slate-50/50 p-2 gap-1.5 select-none shrink-0">
             <button
               onClick={() => setActiveSubTab("workload")}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeSubTab === "workload"
                   ? "bg-white text-indigo-700 shadow-sm border border-gray-200/60"
-                  : "text-slate-550 hover:text-slate-800"
+                  : "text-slate-500 hover:text-slate-800"
               }`}
             >
               <Briefcase className="h-4 w-4" />
@@ -388,7 +388,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeSubTab === "schedule"
                   ? "bg-white text-indigo-700 shadow-sm border border-gray-200/60"
-                  : "text-slate-550 hover:text-slate-800"
+                  : "text-slate-500 hover:text-slate-800"
               }`}
             >
               <Calendar className="h-4 w-4" />
@@ -399,7 +399,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeSubTab === "handovers"
                   ? "bg-white text-indigo-700 shadow-sm border border-gray-200/60"
-                  : "text-slate-550 hover:text-slate-800"
+                  : "text-slate-500 hover:text-slate-800"
               }`}
             >
               <History className="h-4 w-4" />
@@ -422,18 +422,18 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                       const isTeaching = activeSubjectsList.includes(sub);
                       const isCovered = weeklyCoveredSubjectsList.includes(sub);
                       return (
-                        <div key={idx} className="flex items-center justify-between p-3 border border-slate-150 rounded-xl bg-slate-50/20 shadow-xs hover:border-slate-300 transition-colors">
+                        <div key={idx} className="flex items-center justify-between p-3 border border-slate-100 rounded-xl bg-slate-50/20 shadow-xs hover:border-slate-300 transition-colors">
                           <div className="space-y-1 max-w-[65%]">
                             <span className="font-bold text-slate-800 block truncate text-xs" title={sub}>{sub}</span>
                             <div className="flex gap-1.5 items-center">
                               {isMapped && (
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-150 text-[8px] font-black uppercase">Mapped</span>
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 text-[8px] font-black uppercase">Mapped</span>
                               )}
                               {isTeaching && (
-                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-150 text-[8px] font-black uppercase">Teaching</span>
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 text-[8px] font-black uppercase">Teaching</span>
                               )}
                               {isCovered && (
-                                <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-150 text-[8px] font-black uppercase">Covering</span>
+                                <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-100 text-[8px] font-black uppercase">Covering</span>
                               )}
                             </div>
                           </div>
@@ -444,7 +444,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                               </span>
                             )}
                             {coveredMins > 0 && (
-                              <span className="px-2 py-1 rounded-lg bg-teal-50 border border-teal-150 text-[10px] font-extrabold text-teal-600 whitespace-nowrap shadow-xs">
+                              <span className="px-2 py-1 rounded-lg bg-teal-50 border border-teal-100 text-[10px] font-extrabold text-teal-600 whitespace-nowrap shadow-xs">
                                 +{toHrs(coveredMins)} hr{toHrs(coveredMins) !== '1' ? 's' : ''} cover
                               </span>
                             )}
@@ -492,7 +492,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                             <span className="px-1.5 py-0.2 rounded bg-teal-200 text-teal-800 text-[7.5px] font-black uppercase">Active</span>
                           )}
                           {isCovered && (
-                            <span className="px-1.5 py-0.2 rounded bg-emerald-250 text-emerald-800 text-[7.5px] font-black uppercase">Cover</span>
+                            <span className="px-1.5 py-0.2 rounded bg-emerald-200 text-emerald-800 text-[7.5px] font-black uppercase">Cover</span>
                           )}
                         </span>
                       );
@@ -518,11 +518,11 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                       <TableRow className="bg-slate-50 hover:bg-slate-50 border-b border-slate-200">
                         <TableHead className="p-3 font-bold text-slate-500 uppercase text-[10px] w-[18%]">Hour / Time</TableHead>
                         {daysOfWeek.map((day) => (
-                          <TableHead key={day} className="p-3 font-bold text-slate-705 w-[16.4%]">{day}</TableHead>
+                          <TableHead key={day} className="p-3 font-bold text-slate-700 w-[16.4%]">{day}</TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
-                    <TableBody className="divide-y divide-slate-150 bg-white">
+                    <TableBody className="divide-y divide-slate-100 bg-white">
                       {mentorTimeSlots.map((time) => (
                         <TableRow key={time} className="hover:bg-slate-50/30 transition-colors">
                           <TableCell className="p-3 font-bold text-slate-700 border-r border-slate-100 bg-slate-50/5">
@@ -602,7 +602,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                   )
                                 ) : coverSlots.length > 0 ? (
                                   <div 
-                                    className="h-full bg-emerald-50/40 border border-emerald-250 rounded-lg p-1.5 flex flex-col justify-between text-[10px] leading-tight hover:border-emerald-400 transition-colors"
+                                    className="h-full bg-emerald-50/40 border border-emerald-200 rounded-lg p-1.5 flex flex-col justify-between text-[10px] leading-tight hover:border-emerald-400 transition-colors"
                                     title={`${coverSlots[0].slot.course} - Covered slot`}
                                   >
                                     <div className="font-extrabold text-emerald-950 truncate">
@@ -621,7 +621,7 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                   </div>
                                 ) : (
                                   <div className="h-full flex items-center justify-center border border-dashed border-slate-200 bg-slate-50/5 rounded-lg select-none">
-                                    <span className="text-[9px] text-slate-350 font-bold uppercase tracking-wider">Free</span>
+                                    <span className="text-[9px] text-slate-300 font-bold uppercase tracking-wider">Free</span>
                                   </div>
                                 )}
                               </TableCell>
@@ -715,8 +715,8 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                   <div className="space-y-3">
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Requested Handovers (Sent)</h4>
                     {sentHandovers.length === 0 ? (
-                      <div className="text-center py-6 border border-slate-150 rounded-xl bg-slate-50/30">
-                        <p className="text-xs text-slate-455 italic">No handover requests sent by this mentor.</p>
+                      <div className="text-center py-6 border border-slate-100 rounded-xl bg-slate-50/30">
+                        <p className="text-xs text-slate-500 italic">No handover requests sent by this mentor.</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
@@ -759,8 +759,8 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                   <div className="space-y-3">
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Covered Handovers (Received)</h4>
                     {coveredHandovers.length === 0 ? (
-                      <div className="text-center py-6 border border-slate-150 rounded-xl bg-slate-50/30">
-                        <p className="text-xs text-slate-455 italic">No classes covered by this mentor.</p>
+                      <div className="text-center py-6 border border-slate-100 rounded-xl bg-slate-50/30">
+                        <p className="text-xs text-slate-500 italic">No classes covered by this mentor.</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
@@ -807,8 +807,8 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                   <div className="space-y-3">
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Compensation &amp; Workload Balance Ledger</h4>
                     {ledgerList.length === 0 ? (
-                      <div className="text-center py-6 border border-slate-150 rounded-xl bg-slate-50/30">
-                        <p className="text-xs text-slate-455 italic">No approved handover history to calculate balance.</p>
+                      <div className="text-center py-6 border border-slate-100 rounded-xl bg-slate-50/30">
+                        <p className="text-xs text-slate-500 italic">No approved handover history to calculate balance.</p>
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-xs">
@@ -832,15 +832,15 @@ export const MentorProfileModal: React.FC<MentorProfileModalProps> = ({
                                 <TableRow key={idx} className="hover:bg-slate-50/40 transition-colors text-slate-700">
                                   <TableCell className="p-3 font-semibold whitespace-nowrap">{formatMonthLabel(row.month)}</TableCell>
                                   <TableCell className="p-3 font-medium text-slate-600">{row.subject}</TableCell>
-                                  <TableCell className="p-3 font-bold text-slate-805">{row.otherName}</TableCell>
-                                  <TableCell className="p-3 text-center font-semibold text-slate-550">{row.given}</TableCell>
-                                  <TableCell className="p-3 text-center font-semibold text-slate-550">{row.received}</TableCell>
+                                  <TableCell className="p-3 font-bold text-slate-800">{row.otherName}</TableCell>
+                                  <TableCell className="p-3 text-center font-semibold text-slate-500">{row.given}</TableCell>
+                                  <TableCell className="p-3 text-center font-semibold text-slate-500">{row.received}</TableCell>
                                   <TableCell className={`p-3 text-right font-black text-xs whitespace-nowrap ${row.balance > 0 ? "text-emerald-600" : row.balance < 0 ? "text-rose-600" : "text-slate-600"}`}>
                                     {row.balance > 0 ? `+${row.balance}` : row.balance < 0 ? `-${Math.abs(row.balance)}` : "0"}
                                   </TableCell>
                                   <TableCell className="p-3 text-right whitespace-nowrap">
                                     {row.balance === 0 ? (
-                                      <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-650 border border-slate-200 text-[9.5px] font-black uppercase inline-flex items-center">
+                                      <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[9.5px] font-black uppercase inline-flex items-center">
                                         Balanced (0)
                                       </span>
                                     ) : isPastMonth ? (

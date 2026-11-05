@@ -13,6 +13,7 @@ import {
   UserCheck,
   ShieldCheck,
   ShieldAlert,
+  MoreVertical,
   X
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -22,10 +23,19 @@ import { TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/compon
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/Pagination";
 import { usePagination } from "@/hooks/usePagination";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { LoadingButton } from "@/components/ui/LoadingButton";
 import { College, Mentor, Slot, AuditLog, useApp } from "@/context/AppContext";
+import { useToast } from "@/context/ToastContext";
 import { KAMUserFromDB } from "@/components/admin/types";
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/queryKeys";
@@ -61,6 +71,7 @@ export const KamsTab: React.FC<KamsTabProps> = ({
   loadingActions: propLoadingActions
 }) => {
   const app = useApp();
+  const { toast, confirm: showConfirm } = useToast();
   const colleges = propColleges ?? app.colleges ?? [];
   const mentors = propMentors ?? app.mentors ?? [];
   const slots = propSlots ?? app.slots ?? [];
@@ -85,10 +96,20 @@ export const KamsTab: React.FC<KamsTabProps> = ({
 
   const handleDeleteKam = async (id: string) => {
     if (propOnDeleteKam) return propOnDeleteKam(id);
-    if (!window.confirm("Are you sure you want to delete this Key Account Manager?")) return;
+    const ok = await showConfirm({
+      message: "Delete this Key Account Manager? Their login and college assignments are removed.",
+      danger: true,
+      confirmLabel: "Delete"
+    });
+    if (!ok) return;
     setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`kam_${id}`]: true }));
     try {
-      await app.deleteKAM(id);
+      const result = await app.deleteKAM(id);
+      if (!result.success) {
+        toast(result.message || "Failed to delete Key Account Manager.", "error");
+        return;
+      }
+      toast("Key Account Manager deleted.", "success");
       kamQuery.refetch();
     } finally {
       setLocalLoading((prev: Record<string, boolean>) => ({ ...prev, [`kam_${id}`]: false }));
@@ -151,17 +172,26 @@ export const KamsTab: React.FC<KamsTabProps> = ({
         if (propOnUpdateKam) {
           await propOnUpdateKam(form.id, form.name, form.email, form.title);
         } else {
-          await app.updateKAM({ id: form.id, name: form.name, email: form.email, title: form.title || "Key Account Manager" });
+          const result = await app.updateKAM({ id: form.id, name: form.name, email: form.email, title: form.title || "Key Account Manager" });
+          if (!result.success) {
+            setModalError(result.message || "Failed to save Key Account Manager.");
+            return;
+          }
           kamQuery.refetch();
         }
       } else {
         if (propOnCreateKam) {
           await propOnCreateKam(form.id, form.name, form.email, form.title);
         } else {
-          await app.createKAM({ id: form.id, name: form.name, email: form.email, title: form.title || "Key Account Manager" });
+          const result = await app.createKAM({ id: form.id, name: form.name, email: form.email, title: form.title || "Key Account Manager" });
+          if (!result.success) {
+            setModalError(result.message || "Failed to save Key Account Manager.");
+            return;
+          }
           kamQuery.refetch();
         }
       }
+      setShowModal(false);
     } catch (err: any) {
       setModalError(err.message || "Failed to save Key Account Manager.");
     } finally {
@@ -283,20 +313,33 @@ export const KamsTab: React.FC<KamsTabProps> = ({
                     {kamSlots.length} slot{kamSlots.length !== 1 ? "s" : ""}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1.5">
-                      <Button variant="outline" size="icon" onClick={() => handleOpenEdit(kam)} title="Edit KAM">
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        onClick={() => handleDeleteKam(kam.id)}
-                        isLoading={loadingActions[`kam_${kam.id}`]}
-                        title="Delete KAM"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900 cursor-pointer"
+                          title="KAM Actions"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>KAM Options</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => handleOpenEdit(kam)}>
+                          <Edit className="h-3.5 w-3.5 mr-2 text-slate-500" />
+                          Edit Details
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-rose-600 focus:text-rose-700 focus:bg-rose-50"
+                          onClick={() => handleDeleteKam(kam.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-2" />
+                          Delete KAM
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );
@@ -308,7 +351,7 @@ export const KamsTab: React.FC<KamsTabProps> = ({
       {/* Charts Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Donut: Mentors Overview */}
-        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm space-y-3">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-gray-900">Mentors Overview</h3>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 font-semibold">
@@ -401,7 +444,7 @@ export const KamsTab: React.FC<KamsTabProps> = ({
         </div>
 
         {/* Scheduled Slots by Day */}
-        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm space-y-3">
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-gray-900">Scheduled Slots by Day</h3>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-semibold">
@@ -438,7 +481,7 @@ export const KamsTab: React.FC<KamsTabProps> = ({
         </div>
 
         {/* System Activity feed */}
-        <div className="bg-white border border-slate-200/80 rounded-xl p-4 shadow-sm space-y-3">
+        <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card space-y-3">
           <h3 className="text-sm font-bold text-gray-900">System Activity</h3>
           <div className="space-y-3">
             {auditLogs.length === 0 ? (

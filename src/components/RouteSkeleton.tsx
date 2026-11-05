@@ -14,7 +14,7 @@ export function RouteSkeleton() {
       </div>
       <div className="flex-1 flex gap-4 px-4 md:px-8 pt-4 min-h-0">
         {/* Sidebar */}
-        <div className="hidden md:flex w-[230px] shrink-0 flex-col gap-2 p-3 rounded-2xl bg-white/60 border border-slate-200/60">
+        <div className="hidden md:flex w-[230px] shrink-0 flex-col gap-2 p-3 rounded-2xl bg-white/60 border border-slate-100">
           {[...Array(9)].map((_, i) => (
             <div key={i} className="h-8 rounded-xl bg-slate-200/70" style={{ animationDelay: `${i * 60}ms` }} />
           ))}

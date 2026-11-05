@@ -8,6 +8,7 @@ import { useApp } from "@/context/AppContext";
 import { LoadingButton } from "./ui/LoadingButton";
 import { Dialog } from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/apiFetch";
+import { getLocalDateStr } from "@/lib/localDate";
 import {
   ShieldCheck,
   Building2,
@@ -237,6 +238,52 @@ export interface CampusAuditDbRecord {
 // 2b. CLASSROOM OBSERVATION VIEW (form + gallery, college-scoped)
 // ============================================================================
 
+const PhotoSlot: React.FC<{
+  stage: "start" | "end";
+  file: File | null;
+  preview: string;
+  onPick: (file: File | null, preview: string) => void;
+}> = ({ stage, file, preview, onPick }) => {
+  const label = stage === "start" ? "Session start" : "Session end";
+  return (
+    <div className="space-y-1.5">
+      <span className="flex items-center gap-1.5 text-[10px] font-black text-slate-600 uppercase tracking-wider">
+        <span className={`h-4 w-4 rounded-full text-[9px] font-black text-white flex items-center justify-center ${
+          stage === "start" ? "bg-indigo-600" : "bg-orange-600"
+        }`}>
+          {stage === "start" ? "1" : "2"}
+        </span>
+        {label} photo
+      </span>
+      {preview ? (
+        <div className="relative inline-block">
+          <img src={preview} alt={`${label} evidence`} className="h-28 rounded-xl border border-slate-200 object-cover" />
+          <button type="button"
+            onClick={() => onPick(null, "")}
+            aria-label={`Remove ${label} photo`}
+            className="absolute -top-2 -right-2 h-6 w-6 bg-rose-600 text-white rounded-full text-xs font-black cursor-pointer shadow-md">
+            ×
+          </button>
+          <span className="absolute bottom-1 left-1 rounded-md bg-slate-900/70 px-1.5 py-0.5 text-[9px] font-black text-white uppercase">
+            {file?.name.slice(0, 18) || "saved"}
+          </span>
+        </div>
+      ) : (
+        <label className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-all cursor-pointer">
+          <ImageIcon className="h-4 w-4" />
+          Choose {label.toLowerCase()} photo
+          <input type="file" accept="image/*" className="hidden"
+            aria-label={`${label} photo`}
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              onPick(f, f ? URL.createObjectURL(f) : "");
+            }} />
+        </label>
+      )}
+    </div>
+  );
+};
+
 const OBS_RATING_DIMS = [
   { key: "rating_professionalism", label: "Professionalism" },
   { key: "rating_class_handling", label: "Class Handling" },
@@ -266,9 +313,11 @@ export const ClassObservationView: React.FC<{
   const [fTeacher, setFTeacher] = useState("");
   const [fDept, setFDept] = useState("");
   const [fSubject, setFSubject] = useState("");
-  const [fDate, setFDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fDate, setFDate] = useState(() => getLocalDateStr());
   const [fPhoto, setFPhoto] = useState<File | null>(null);
   const [fPhotoPreview, setFPhotoPreview] = useState("");
+  const [fEndPhoto, setFEndPhoto] = useState<File | null>(null);
+  const [fEndPhotoPreview, setFEndPhotoPreview] = useState("");
   const [fRatings, setFRatings] = useState<Record<string, number>>({});
   const [fOverall, setFOverall] = useState(4);
   const [fSatisfaction, setFSatisfaction] = useState<"satisfied" | "not_satisfied">("satisfied");
@@ -276,7 +325,8 @@ export const ClassObservationView: React.FC<{
 
   const resetForm = () => {
     setFTeacher(""); setFDept(""); setFSubject("");
-    setFDate(new Date().toISOString().slice(0, 10)); setFPhoto(null); setFPhotoPreview("");
+    setFDate(getLocalDateStr()); setFPhoto(null); setFPhotoPreview("");
+    setFEndPhoto(null); setFEndPhotoPreview("");
     setFRatings({}); setFOverall(4); setFSatisfaction("satisfied"); setFRemarks("");
   };
 
@@ -315,9 +365,10 @@ export const ClassObservationView: React.FC<{
         satisfaction_remarks: fRemarks || null
       };
       let data: any;
-      if (fPhoto) {
+      if (fPhoto || fEndPhoto) {
         const fd = new FormData();
-        fd.append("photo", fPhoto);
+        if (fPhoto) fd.append("photo", fPhoto);
+        if (fEndPhoto) fd.append("photo_end", fEndPhoto);
         fd.append("payload", JSON.stringify(payload));
         data = await apiFetch("/api/audit/observations", { method: "POST", body: fd });
       } else {
@@ -333,6 +384,9 @@ export const ClassObservationView: React.FC<{
             : "Classroom observation logged successfully.",
           "success"
         );
+        if (fEndPhoto && data.capture_stage_saved === false) {
+          toast("Session-end photo could not be attached — run scripts/classroom_snaps_capture_stage.sql on the observations database.", "warning");
+        }
         resetForm();
         setShowForm(false);
         onRefresh();
@@ -359,7 +413,7 @@ export const ClassObservationView: React.FC<{
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-2">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <Camera className="h-5 w-5 text-orange-600" />
@@ -398,7 +452,7 @@ export const ClassObservationView: React.FC<{
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs">
+        <div className="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-card">
           <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 block">Total Observations</span>
           <div className="text-2xl font-black text-slate-900 mt-1">{observations.length}</div>
         </div>
@@ -424,7 +478,7 @@ export const ClassObservationView: React.FC<{
 
       {/* Entry form */}
       {showForm && !readOnly && (
-        <div className="bg-white border-2 border-orange-200 rounded-2xl p-5 shadow-xs space-y-4">
+        <div className="bg-white border-2 border-orange-200 rounded-2xl p-5 shadow-card space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <Sparkles className="h-4 w-4 text-orange-500" />
             <span className="text-xs font-black text-slate-800 uppercase tracking-wider">New Observation Entry</span>
@@ -519,31 +573,29 @@ export const ClassObservationView: React.FC<{
             )}
           </div>
 
-          {/* Photo upload */}
+          {/* Photo evidence — both stages of the visit */}
           <div>
-            <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block mb-2">Classroom Photo Evidence (optional, max 8MB)</span>
-            {fPhotoPreview ? (
-              <div className="relative inline-block">
-                <img src={fPhotoPreview} alt="preview" className="h-28 rounded-xl border border-slate-200 object-cover" />
-                <button type="button"
-                  onClick={() => { setFPhoto(null); setFPhotoPreview(""); }}
-                  aria-label="Remove photo"
-                  className="absolute -top-2 -right-2 h-6 w-6 bg-rose-600 text-white rounded-full text-xs font-black cursor-pointer shadow-md">
-                  ×
-                </button>
-              </div>
-            ) : (
-              <label className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-500 hover:border-orange-400 hover:text-orange-600 transition-all cursor-pointer">
-                <ImageIcon className="h-4 w-4" />
-                Choose photo
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] || null;
-                    setFPhoto(f);
-                    if (f) setFPhotoPreview(URL.createObjectURL(f));
-                  }} />
-              </label>
-            )}
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider block mb-2">
+              Classroom Photo Evidence (optional, max 8MB each)
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <PhotoSlot
+                stage="start"
+                file={fPhoto}
+                preview={fPhotoPreview}
+                onPick={(f, preview) => { setFPhoto(f); setFPhotoPreview(preview); }}
+              />
+              <PhotoSlot
+                stage="end"
+                file={fEndPhoto}
+                preview={fEndPhotoPreview}
+                onPick={(f, preview) => { setFEndPhoto(f); setFEndPhotoPreview(preview); }}
+              />
+            </div>
+            <p className="mt-1.5 text-[10px] font-semibold text-slate-400">
+              A visit recorded with both photos proves the class ran the full session — the start shot is the one
+              older entries and exports already use.
+            </p>
           </div>
 
           <div className="flex justify-end pt-1">
@@ -560,8 +612,8 @@ export const ClassObservationView: React.FC<{
       )}
 
       {/* Gallery */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+      <div className="bg-white border border-slate-100 rounded-2xl shadow-card overflow-hidden">
+        <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
           <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Observation Ledger</span>
           <span className="text-[10px] font-bold text-slate-500">{observations.length} entries</span>
         </div>
@@ -582,13 +634,18 @@ export const ClassObservationView: React.FC<{
                 <button key={o.id || o.created_at} type="button" onClick={() => setDetail(o)}
                   className="w-full p-4 flex items-center justify-between hover:bg-slate-50/60 transition-colors text-left cursor-pointer">
                   <div className="flex items-center gap-3 min-w-0">
-                    {o.photo_url ? (
-                      <img src={o.photo_url} alt="" className="h-11 w-11 rounded-lg object-cover border border-slate-200 shrink-0" />
-                    ) : (
-                      <div className="h-11 w-11 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-                        <Camera className="h-4 w-4 text-slate-400" />
-                      </div>
-                    )}
+                    <div className="flex -space-x-2 shrink-0">
+                      {o.photo_url ? (
+                        <img src={o.photo_url} alt="Session start" className="h-11 w-11 rounded-lg object-cover ring-2 ring-white border border-slate-200" />
+                      ) : (
+                        <div className="h-11 w-11 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center">
+                          <Camera className="h-4 w-4 text-slate-400" />
+                        </div>
+                      )}
+                      {o.photo_end_url ? (
+                        <img src={o.photo_end_url} alt="Session end" className="h-11 w-11 rounded-lg object-cover ring-2 ring-white border border-orange-300" />
+                      ) : null}
+                    </div>
                     <div className="min-w-0">
                       <div className="font-bold text-slate-900 text-xs truncate">{o.mentor_name || o.teacher_name || "Unknown mentor"}</div>
                       <div className="text-[10px] text-slate-400 font-medium truncate">
@@ -633,8 +690,22 @@ export const ClassObservationView: React.FC<{
                 <button type="button" onClick={() => setDetail(null)} aria-label="Close" className="text-slate-400 hover:text-slate-700 text-xl font-black cursor-pointer">×</button>
               </div>
 
-              {detail.photo_url && (
-                <img src={detail.photo_url} alt="observation" className="w-full rounded-xl border border-slate-200 object-cover max-h-64" />
+              {(detail.photo_url || detail.photo_end_url) && (
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { url: detail.photo_url, label: "Session start" },
+                    { url: detail.photo_end_url, label: "Session end" }
+                  ].map(shots => shots.url ? (
+                    <figure key={shots.label} className="space-y-1">
+                      <img src={shots.url} alt={shots.label} className="w-full rounded-xl border border-slate-200 object-cover h-40" />
+                      <figcaption className="text-[9px] font-black uppercase tracking-wider text-slate-400">{shots.label}</figcaption>
+                    </figure>
+                  ) : (
+                    <div key={shots.label} className="flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-300">No {shots.label.toLowerCase()} photo</span>
+                    </div>
+                  ))}
+                </div>
               )}
 
               <div className="grid grid-cols-2 gap-2 text-[11px]">
@@ -781,7 +852,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
   const [wizDeptName, setWizDeptName] = useState("");
   const [wizDepartment, setWizDepartment] = useState("");
   const [wizSubject, setWizSubject] = useState("");
-  const [wizDate, setWizDate] = useState(new Date().toISOString().slice(0, 10));
+  const [wizDate, setWizDate] = useState(getLocalDateStr());
 
   // Stage 2: Skill criteria
   const [wizSkillGenuine, setWizSkillGenuine] = useState(true);
@@ -988,8 +1059,8 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
       {/* ==================================================================== */}
       {/* 1. TOP HEADER & STREAMLINED 3-TAB NAVIGATION                        */}
       {/* ==================================================================== */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-150 pb-4">
+      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-xs">
               <ShieldCheck className="h-5 w-5" />
@@ -1099,7 +1170,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
       {activeSubTab === "assigned" && (
         <div className="space-y-4">
           {/* Header & Sub-filter pills */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Inbox className="h-4 w-4 text-emerald-600" />
               <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
@@ -1138,7 +1209,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           {assignedStatusFilter === "pending" && (
             <div>
               {incomingPeerReviews.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-3">
+                <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center shadow-card space-y-3">
                   <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
                   <h4 className="text-sm font-extrabold text-slate-800">Your Assigned Audits Queue is Clear</h4>
                   <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
@@ -1159,8 +1230,8 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {incomingPeerReviews.map((audit) => (
-                    <div key={audit.id || audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                    <div key={audit.id || audit.uid} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div>
                           <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
                           <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor_name || (audit as any).mentor}</div>
@@ -1182,18 +1253,18 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                       </div>
 
                       {/* Evidence Snapshot Card */}
-                      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                      <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Submitted Evidence Snapshot</span>
                         <div className="grid grid-cols-3 gap-2 text-center">
-                          <div className="p-2 bg-white rounded-lg border border-slate-200">
+                          <div className="p-2 bg-white rounded-2xl border border-slate-100 shadow-card">
                             <span className="text-[9px] text-slate-400 block font-bold">Skill Score</span>
                             <span className="font-mono font-black text-xs text-indigo-600">{audit.skill_score ?? (audit as any).evidenceSnapshot?.skillScore ?? 0}%</span>
                           </div>
-                          <div className="p-2 bg-white rounded-lg border border-slate-200">
+                          <div className="p-2 bg-white rounded-2xl border border-slate-100 shadow-card">
                             <span className="text-[9px] text-slate-400 block font-bold">Coursework</span>
                             <span className="font-mono font-black text-xs text-teal-600">{audit.coursework_score ?? (audit as any).evidenceSnapshot?.academicScore ?? 0}%</span>
                           </div>
-                          <div className="p-2 bg-white rounded-lg border border-slate-200">
+                          <div className="p-2 bg-white rounded-2xl border border-slate-100 shadow-card">
                             <span className="text-[9px] text-slate-400 block font-bold">Attendance</span>
                             <span className="font-mono font-black text-xs text-purple-600">{audit.attendance_score ?? (audit as any).evidenceSnapshot?.attendanceScore ?? 0}%</span>
                           </div>
@@ -1214,7 +1285,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                         )}
 
                         {(audit.skill_remarks || (audit as any).evidenceSnapshot?.remarks) && (
-                          <p className="text-[11px] text-slate-600 italic bg-white p-2 rounded-lg border border-slate-150">
+                          <p className="text-[11px] text-slate-600 italic bg-white p-2 rounded-lg border border-slate-100">
                             &ldquo;{audit.skill_remarks || (audit as any).evidenceSnapshot?.remarks}&rdquo;
                           </p>
                         )}
@@ -1266,14 +1337,14 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           {assignedStatusFilter === "completed" && (
             <div>
               {completedPeerReviews.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-2">
+                <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center shadow-card space-y-2">
                   <p className="text-xs text-slate-400 font-medium">No completed peer reviews signed off yet.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {completedPeerReviews.map((audit) => (
-                    <div key={audit.id || audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                    <div key={audit.id || audit.uid} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div>
                           <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
                           <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor_name || (audit as any).mentor}</div>
@@ -1317,7 +1388,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
       {/* ==================================================================== */}
       {activeSubTab === "submitted" && (
         <div className="space-y-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-emerald-600" />
               <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
@@ -1340,7 +1411,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           </div>
 
           {submittedAudits.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-xs space-y-3">
+            <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center shadow-card space-y-3">
               <FileText className="h-12 w-12 text-slate-300 mx-auto" />
               <h4 className="text-sm font-extrabold text-slate-800">No Campus Audits Recorded Yet</h4>
               <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
@@ -1361,8 +1432,8 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {submittedAudits.map((audit) => (
-                <div key={audit.id || audit.uid} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                <div key={audit.id || audit.uid} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
                       <span className="font-mono text-[10px] text-slate-400 font-bold block">{audit.id}</span>
                       <div className="font-extrabold text-slate-900 text-sm mt-0.5">{audit.mentor_name}</div>
@@ -1383,7 +1454,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
                   </div>
 
                   {/* Routing Details */}
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold text-slate-500 uppercase">Assigned Peer Reviewer</span>
                       <span className="font-bold text-slate-800">{audit.reviewer_campus || "Intra-KAM Peer Campus"}</span>
@@ -1436,7 +1507,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
       {/* VIEW 2: 4-STAGE RECORD AUDIT WIZARD                                 */}
       {/* ==================================================================== */}
       {activeSubTab === "record" && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6 max-w-3xl mx-auto">
+        <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-card space-y-6 max-w-3xl mx-auto">
           {/* Audit Submitted Success Banner */}
           {auditSubmittedSuccess && (
             <div className="p-5 bg-emerald-50 border-2 border-emerald-200 rounded-2xl space-y-3 animate-in fade-in duration-200">
@@ -1475,7 +1546,7 @@ export const CampusAuditManager: React.FC<CampusAuditManagerProps> = ({
           )}
 
           {/* Wizard Step Progress Tracker */}
-          <div className="border-b border-slate-150 pb-4">
+          <div className="border-b border-slate-100 pb-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">

@@ -201,6 +201,48 @@ export const CourseModal: React.FC<CourseModalProps> = ({
   };
 
   // Room allocation per year
+  const [showYearWiseRooms, setShowYearWiseRooms] = useState(false);
+
+  useEffect(() => {
+    if (editingCourse?.default_room && editingCourse.default_room.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(editingCourse.default_room);
+        const values = Object.values(parsed).filter(Boolean);
+        const unique = new Set(values);
+        setShowYearWiseRooms(unique.size > 1);
+      } catch (_) {
+        setShowYearWiseRooms(false);
+      }
+    } else {
+      setShowYearWiseRooms(false);
+    }
+  }, [editingCourse, isOpen]);
+
+  const primaryRoom = useMemo(() => {
+    if (!form.default_room) return "";
+    if (form.default_room.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(form.default_room);
+        return parsed[1] || Object.values(parsed)[0] || "";
+      } catch (_) {
+        return form.default_room;
+      }
+    }
+    return form.default_room;
+  }, [form.default_room]);
+
+  const handleSingleRoomChange = (roomVal: string) => {
+    const numYears = Number(form.years || 3);
+    const roomMap: Record<number, string> = {};
+    for (let y = 1; y <= numYears; y++) {
+      roomMap[y] = roomVal;
+    }
+    setForm(prev => ({
+      ...prev,
+      default_room: JSON.stringify(roomMap)
+    }));
+  };
+
   const handleYearRoomChange = (yearNum: number, roomVal: string) => {
     let currentRooms: Record<number, string> = {};
     try {
@@ -318,9 +360,9 @@ export const CourseModal: React.FC<CourseModalProps> = ({
     >
         
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-150 bg-slate-50/80 shrink-0">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-xl bg-indigo-50 border border-indigo-150 flex items-center justify-center text-indigo-600">
+            <div className="h-8 w-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
               <Layers className="h-4 w-4 text-indigo-600" />
             </div>
             <div>
@@ -387,7 +429,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
                 placeholder="e.g. B.Sc Mathematics, B.COM, BCA, BBA"
                 value={form.name}
                 onChange={(e) => handleNameChange(e.target.value)}
-                className={`w-full bg-slate-50 border rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 text-slate-850 transition-all ${
+                className={`w-full bg-slate-50 border rounded-xl px-3.5 py-2 font-bold focus:outline-none focus:ring-1 text-slate-800 transition-all ${
                   duplicateNameMatch 
                     ? "border-rose-400 bg-rose-50/40 focus:ring-rose-500 text-rose-900" 
                     : "border-slate-200 focus:ring-indigo-600"
@@ -543,49 +585,86 @@ export const CourseModal: React.FC<CourseModalProps> = ({
               />
             </div>
 
-            {/* Year-wise Classroom Allocations */}
-            <div className="space-y-3 sm:col-span-2 border-t border-slate-150 pt-3 mt-1">
-              <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">
-                Classroom Allocations (Year-wise)
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {Array.from({ length: Number(form.years || 3) }, (_, idx) => {
-                  const yearNum = idx + 1;
-                  let currentRoom = "";
-                  try {
-                    if (form.default_room && form.default_room.startsWith("{")) {
-                      const parsed = JSON.parse(form.default_room);
-                      currentRoom = parsed[yearNum] || "";
-                    } else if (form.default_room && yearNum === 1) {
-                      currentRoom = form.default_room;
-                    }
-                  } catch (_) {}
-
-                  return (
-                    <div key={yearNum} className="space-y-1">
-                      <label className="text-[9.5px] text-slate-400 font-bold block uppercase tracking-wider">
-                        Year {yearNum} Room
-                      </label>
-                      <input
-                        type="text"
-                        list={`rooms-suggest-modal-${form.college_id || "none"}`}
-                        placeholder={`e.g. Room for Year ${yearNum}`}
-                        value={currentRoom}
-                        onChange={(e) => handleYearRoomChange(yearNum, e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 text-xs"
-                      />
-                    </div>
-                  );
-                })}
-
-                {campusRoomSuggestions.length > 0 && (
-                  <datalist id={`rooms-suggest-modal-${form.college_id || "none"}`}>
-                    {campusRoomSuggestions.map(r => (
-                      <option key={r} value={r} />
-                    ))}
-                  </datalist>
-                )}
+            {/* Classroom / Room Allocation */}
+            <div className="space-y-2 sm:col-span-2 border-t border-slate-100 pt-3 mt-1">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">
+                    Classroom Allocation
+                  </h4>
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {showYearWiseRooms
+                      ? "Custom room specified per academic year"
+                      : "Designated classroom assigned across academic years for this course"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowYearWiseRooms(prev => !prev)}
+                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer bg-transparent border-0 p-0"
+                >
+                  {showYearWiseRooms ? "← Use Single Room" : "+ Customize per Year"}
+                </button>
               </div>
+
+              {!showYearWiseRooms ? (
+                <div>
+                  <input
+                    type="text"
+                    list={`rooms-suggest-modal-${form.college_id || "none"}`}
+                    placeholder="e.g. Room 101, Lab 3, Hall A"
+                    value={primaryRoom}
+                    onChange={(e) => handleSingleRoomChange(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 text-xs"
+                  />
+                  {campusRoomSuggestions.length > 0 && (
+                    <datalist id={`rooms-suggest-modal-${form.college_id || "none"}`}>
+                      {campusRoomSuggestions.map(r => (
+                        <option key={r} value={r} />
+                      ))}
+                    </datalist>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {Array.from({ length: Number(form.years || 3) }, (_, idx) => {
+                    const yearNum = idx + 1;
+                    let currentRoom = "";
+                    try {
+                      if (form.default_room && form.default_room.startsWith("{")) {
+                        const parsed = JSON.parse(form.default_room);
+                        currentRoom = parsed[yearNum] || "";
+                      } else if (form.default_room && yearNum === 1) {
+                        currentRoom = form.default_room;
+                      }
+                    } catch (_) {}
+
+                    return (
+                      <div key={yearNum} className="space-y-1">
+                        <label className="text-[9.5px] text-slate-400 font-bold block uppercase tracking-wider">
+                          Year {yearNum} Room
+                        </label>
+                        <input
+                          type="text"
+                          list={`rooms-suggest-modal-${form.college_id || "none"}`}
+                          placeholder={`e.g. Room for Year ${yearNum}`}
+                          value={currentRoom}
+                          onChange={(e) => handleYearRoomChange(yearNum, e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800 text-xs"
+                        />
+                      </div>
+                    );
+                  })}
+
+                  {campusRoomSuggestions.length > 0 && (
+                    <datalist id={`rooms-suggest-modal-${form.college_id || "none"}`}>
+                      {campusRoomSuggestions.map(r => (
+                        <option key={r} value={r} />
+                      ))}
+                    </datalist>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Description */}
@@ -606,7 +685,7 @@ export const CourseModal: React.FC<CourseModalProps> = ({
           </div>
 
           {/* Sticky Footer */}
-          <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-slate-150 shrink-0">
+          <div className="flex justify-end gap-2.5 pt-4 mt-4 border-t border-slate-100 shrink-0">
             <button
               type="button"
               onClick={onClose}

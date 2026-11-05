@@ -167,15 +167,15 @@ export default function LndTemplateChooserModal({
   
                 {/* Scope Micro-Pills */}
                 <div className="grid grid-cols-3 gap-2">
-                  <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-150 dark:border-slate-800/80 text-center">
+                  <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 text-center">
                     <span className="text-[9px] font-black uppercase text-slate-400 block">Colleges Included</span>
                     <span className="text-xs font-black text-[#D528A2] dark:text-[#f45fc6]">{allCollegesTimetableStatus.applicableColleges.length} Campuses</span>
                   </div>
-                  <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-150 dark:border-slate-800/80 text-center">
+                  <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 text-center">
                     <span className="text-[9px] font-black uppercase text-slate-400 block">Faculty Mentors</span>
                     <span className="text-xs font-black text-slate-800 dark:text-white">{groupMentors.length}</span>
                   </div>
-                  <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-150 dark:border-slate-800/80 text-center">
+                  <div className="p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800/80 text-center">
                     <span className="text-[9px] font-black uppercase text-slate-400 block">Assigned SMEs</span>
                     <span className="text-xs font-black text-[#D528A2] dark:text-[#f45fc6]">{groupSmes.length}</span>
                   </div>
@@ -185,7 +185,7 @@ export default function LndTemplateChooserModal({
           })()}
   
           {/* Campus Timetable Status Overview — every college listed with its own covered/uncovered days */}
-          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
             {(() => {
               const rows = allCollegesTimetableStatus.applicableColleges.map((c) => ({
                 college: c,
@@ -228,7 +228,7 @@ export default function LndTemplateChooserModal({
                     {rows.map(({ college, status, days }) => (
                       <div
                         key={college.id}
-                        className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-2"
+                        className="flex items-center gap-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-2 shadow-card"
                       >
                         <div className="flex w-32 shrink-0 flex-col gap-1 sm:w-40">
                           <span className="truncate text-[11px] font-black text-slate-800 dark:text-white" title={college.name}>

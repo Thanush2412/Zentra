@@ -87,7 +87,7 @@ export const SignupApprovalDialog: React.FC<SignupApprovalDialogProps> = ({
 
       <form onSubmit={onSubmit} className="p-6 space-y-4 text-xs font-semibold">
         {/* User Details */}
-        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/50 space-y-1">
+        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1">
           <div className="flex justify-between">
             <span className="text-gray-500">Name:</span>
             <span className="text-gray-900 font-bold">{signup.name}</span>

@@ -32,7 +32,7 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
   return (
     <div className="space-y-6 font-sans">
       {/* Header & Controls */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-black text-slate-900">Supervised Institutions & CM Leadership</h2>
           <p className="text-xs text-slate-400 font-semibold mt-0.5">
@@ -93,7 +93,7 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
               <div
                 key={c.id}
                 onClick={() => onSelectCollege(isSelected ? "all" : c.id)}
-                className={`bg-white rounded-2xl p-5 border shadow-xs transition-all cursor-pointer hover:border-[#D528A2]/50 ${
+                className={`bg-white rounded-2xl p-5 border shadow-card transition-all cursor-pointer hover:border-[#D528A2]/50 ${
                   isSelected ? "border-[#D528A2] ring-2 ring-[#D528A2]/10" : "border-slate-200"
                 }`}
               >
@@ -182,7 +182,7 @@ export const KAMCampusesDirectory: React.FC<KAMCampusesDirectoryProps> = ({
             const camPhone = cam?.phone || "+91 98400 00000";
 
             return (
-              <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4">
+              <div key={c.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-card space-y-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="h-11 w-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
