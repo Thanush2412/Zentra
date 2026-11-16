@@ -24,6 +24,8 @@ import {
 } from "@/lib/slotFilters";
 import { College, Mentor, Slot, useApp } from "@/context/AppContext";
 import { SundayScheduleCard } from "@/components/admin/operations/SundayScheduleCard";
+import { AdminDayOrderOversightTab } from "@/components/admin/operations/AdminDayOrderOversightTab";
+import { CalendarCheck2 } from "lucide-react";
 
 export interface SchedulesTabProps {
   slots?: Slot[];
@@ -54,6 +56,7 @@ export const SchedulesTab: React.FC<SchedulesTabProps> = ({
   const [dayFilter, setDayFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeScheduleSubTab, setActiveScheduleSubTab] = useState<"slots" | "day_orders">("slots");
 
   useEffect(() => {
     if (campusParam) {
@@ -100,11 +103,43 @@ export const SchedulesTab: React.FC<SchedulesTabProps> = ({
   return (
     <div className="space-y-4 animate-fadeIn font-sans text-xs">
       <PageHeader
-        icon={Grid}
-        title="Global Scheduled Slots"
+        icon={activeScheduleSubTab === "day_orders" ? CalendarCheck2 : Grid}
+        title={activeScheduleSubTab === "day_orders" ? "Campus Day Orders & Schedule Operations" : "Global Scheduled Slots"}
       />
 
-      <FilterBar>
+      {/* Subtab Switcher */}
+      <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveScheduleSubTab("slots")}
+          className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+            activeScheduleSubTab === "slots"
+              ? "bg-slate-900 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+          }`}
+        >
+          <Grid className="h-4 w-4" />
+          Timetable Slots
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveScheduleSubTab("day_orders")}
+          className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+            activeScheduleSubTab === "day_orders"
+              ? "bg-indigo-600 text-white shadow-xs"
+              : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+          }`}
+        >
+          <CalendarCheck2 className="h-4 w-4" />
+          Campus Day Orders
+        </button>
+      </div>
+
+      {activeScheduleSubTab === "day_orders" ? (
+        <AdminDayOrderOversightTab onSelectCollege={onDrillDownCampus} />
+      ) : (
+        <>
+          <FilterBar>
         <div className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input
@@ -269,6 +304,8 @@ export const SchedulesTab: React.FC<SchedulesTabProps> = ({
             })}
           </TableBody>
         </TableSurface>
+      )}
+        </>
       )}
     </div>
   );

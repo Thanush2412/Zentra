@@ -52,3 +52,59 @@ export function dayOrderCeiling(workingDayCount: number, current?: string | null
 export function dayOrderOptions(ceiling: number): string[] {
   return Array.from({ length: Math.max(1, ceiling) }, (_, i) => `Day ${i + 1}`);
 }
+
+/**
+ * Predicts the next sequential Day Order given the previous working Day Order
+ * and the campus's working day count (e.g. 5 or 6).
+ */
+export function predictNextDayOrder(lastDayOrder?: string | null, workingDayCount: number = 5): string {
+  const count = workingDayCount === 6 ? 6 : 5;
+  const currentNum = parseDayOrder(lastDayOrder);
+  if (currentNum <= 0) return "Day 1";
+  const nextNum = (currentNum % count) + 1;
+  return `Day ${nextNum}`;
+}
+
+/**
+ * Given any date string (YYYY-MM-DD) or Date object, returns the Monday and Sunday
+ * date strings and date objects bounding that week.
+ */
+export function getWeekBoundaries(referenceDateStr?: string): {
+  startDate: string; // Monday (YYYY-MM-DD)
+  endDate: string;   // Sunday (YYYY-MM-DD)
+  monday: Date;
+  sunday: Date;
+  weekDates: string[]; // 7 dates: Mon -> Sun
+} {
+  const ref = referenceDateStr && /^\d{4}-\d{2}-\d{2}$/.test(referenceDateStr)
+    ? new Date(referenceDateStr + "T00:00:00")
+    : new Date();
+
+  const dayOfWeek = ref.getDay(); // 0 = Sun, 1 = Mon, ...
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const monday = new Date(ref);
+  monday.setDate(ref.getDate() + diffToMonday);
+
+  const weekDates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    weekDates.push(`${y}-${m}-${day}`);
+  }
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return {
+    startDate: weekDates[0],
+    endDate: weekDates[6],
+    monday,
+    sunday,
+    weekDates,
+  };
+}
+

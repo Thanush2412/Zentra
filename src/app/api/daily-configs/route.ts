@@ -59,6 +59,11 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
     return NextResponse.json({ success: false, message: "college_id is required" }, { status: 400, headers: noCacheHeaders });
   }
 
+  // Look up campus working days (5-day vs 6-day campus)
+  const collegeRow = await db.get("SELECT working_days FROM colleges WHERE id = ?", [college_id]);
+  const workingDaysCount = (collegeRow && Number(collegeRow.working_days) === 6) ? 6 : 5;
+  const dayOrders = Array.from({ length: workingDaysCount }, (_, idx) => `Day ${idx + 1}`);
+
   // Determine reference week (default: current week)
   const refDate = reference_date ? new Date(reference_date) : new Date();
   const refDayOfWeek = refDate.getDay(); // 0=Sun, 1=Mon, ...
@@ -94,14 +99,13 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
   refConfigs.forEach((c: any) => refConfigMap.set(c.dateStr, c));
 
   // Find the last day order of reference week to continue the sequence
-  const dayOrders = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
   let lastDayOrderIndex = -1;
   for (let i = 6; i >= 0; i--) {
     const refConfig = refConfigMap.get(refDates[i]);
     if (refConfig && refConfig.day_order && refConfig.day_order !== "None") {
       const match = refConfig.day_order.match(/^Day (\d+)$/);
       if (match) {
-        lastDayOrderIndex = parseInt(match[1], 10) - 1;
+        lastDayOrderIndex = (parseInt(match[1], 10) - 1) % workingDaysCount;
         break;
       }
     }
@@ -125,6 +129,7 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
     const refConfig = refConfigMap.get(refDateStr);
     const dateObj = new Date(nextDateStr + "T00:00:00");
     const isSunday = dateObj.getDay() === 0;
+    const isSaturday = dateObj.getDay() === 6;
     const id = `${college_id}_${nextDateStr}`;
 
     let dayType = refConfig?.day_type || "working";
@@ -132,13 +137,15 @@ async function handleAutoAdaptNextWeek(db: any, body: any) {
     const sessionMode = refConfig?.session_mode || "Offline";
     const notesVal = refConfig?.notes || "";
 
-    // Handle Sunday skipping
-    if (skip_sundays && isSunday) {
+    // Handle weekend skipping (Sunday always; Saturday if 5-day campus and skipping weekends)
+    const isWeekendToSkip = skip_sundays && (isSunday || (workingDaysCount === 5 && isSaturday));
+
+    if (isWeekendToSkip) {
       dayType = "holiday";
       dayOrder = "None";
     } else if (dayType === "working" && dayOrder !== "None") {
-      // Continue day order sequence
-      dayOrder = dayOrders[dayOrderCounter % 6];
+      // Continue day order sequence dynamically modulo workingDaysCount
+      dayOrder = dayOrders[dayOrderCounter % workingDaysCount];
       dayOrderCounter++;
     }
 
@@ -193,10 +200,8 @@ export async function GET(request: Request) {
     const requestedCollegeId = searchParams.get("college_id");
     const limit = searchParams.get("limit") ? parseInt(searchParams.get("limit")!) : 200;
     const search = searchParams.get("search");
-
-    if (!requestedCollegeId) {
-      return NextResponse.json({ success: false, message: "college_id is required" }, { status: 400, headers: noCacheHeaders });
-    }
+    const startDate = searchParams.get("startDate");
+    const endDate = searchParams.get("endDate");
 
     // Role-based campus isolation: A CM may only view their assigned college
     const isSuper = auth.user.isSuperAdmin || auth.user.role === "admin";
@@ -205,17 +210,34 @@ export async function GET(request: Request) {
       collegeId = auth.user.college_id;
     }
 
-    let query = "SELECT * FROM campus_daily_configs WHERE college_id = ?";
+    if (!collegeId && !isSuper) {
+      return NextResponse.json({ success: false, message: "college_id is required" }, { status: 400, headers: noCacheHeaders });
+    }
 
-    let params: any[] = [collegeId];
+    let query = "SELECT c.*, col.name as college_name, col.working_days as college_working_days FROM campus_daily_configs c LEFT JOIN colleges col ON c.college_id = col.id WHERE 1=1";
+    let params: any[] = [];
+
+    if (collegeId && collegeId !== "all") {
+      query += " AND c.college_id = ?";
+      params.push(collegeId);
+    }
+
+    if (startDate) {
+      query += " AND c.dateStr >= ?";
+      params.push(startDate);
+    }
+    if (endDate) {
+      query += " AND c.dateStr <= ?";
+      params.push(endDate);
+    }
 
     if (search) {
-      query += " AND (dateStr LIKE ? OR day_type LIKE ? OR day_order LIKE ? OR notes LIKE ?)";
+      query += " AND (c.dateStr LIKE ? OR c.day_type LIKE ? OR c.day_order LIKE ? OR c.notes LIKE ?)";
       const pattern = `%${search}%`;
       params.push(pattern, pattern, pattern, pattern);
     }
 
-    query += " ORDER BY dateStr DESC LIMIT ?";
+    query += " ORDER BY c.dateStr DESC LIMIT ?";
     params.push(limit);
 
     const configs = await db.all(query, ...params);
@@ -250,6 +272,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
+    // Look up campus working days (5-day vs 6-day campus)
+    const collegeRow = await db.get("SELECT working_days FROM colleges WHERE id = ?", [college_id]);
+    const workingDaysCount = (collegeRow && Number(collegeRow.working_days) === 6) ? 6 : 5;
+    const dayOrders = Array.from({ length: workingDaysCount }, (_, idx) => `Day ${idx + 1}`);
+
     // Build array of dates to process
     const datesToProcess: string[] = [];
     if (startDate && endDate) {
@@ -269,9 +296,14 @@ export async function POST(request: Request) {
       datesToProcess.push(dateStr);
     }
 
-    // Day order sequence cycle: Day 1 -> Day 2 -> Day 3 -> Day 4 -> Day 5 -> Day 6
-    const dayOrders = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6"];
+    // Determine initial Day Order index within this campus's working day count
     let initialIndex = dayOrders.indexOf(effectiveDayOrder);
+    if (initialIndex === -1 && effectiveDayOrder.startsWith("Day")) {
+      const match = effectiveDayOrder.match(/^Day (\d+)$/i);
+      if (match) {
+        initialIndex = (parseInt(match[1], 10) - 1) % workingDaysCount;
+      }
+    }
 
     let dayOrderCounter = initialIndex !== -1 ? initialIndex : 0;
 
@@ -285,22 +317,27 @@ export async function POST(request: Request) {
       const id = `${college_id}_${dStr}`;
       const dateObj = new Date(dStr + "T00:00:00");
       const isSunday = dateObj.getDay() === 0;
+      const isSaturday = dateObj.getDay() === 6;
 
       let currentDayType = day_type;
       let currentDayOrder = effectiveDayOrder;
 
+      // Handle weekend skipping (Sunday always; Saturday if 5-day campus and skipping weekends)
+      const isWeekendToSkip = (body.skip_sundays === true && isSunday) ||
+        (workingDaysCount === 5 && body.skip_sundays === true && isSaturday);
+
       if (effectiveDayOrder === "None" || effectiveDayOrder === "none") {
         // If explicitly set to None, force None for all dates in range without cycling
         currentDayOrder = "None";
-      } else if (day_type === "holiday" || day_type === "event" || (body.skip_sundays === true && isSunday)) {
-        // Holidays, events, or auto-skipped Sundays get None and DO NOT advance the working day order counter!
-        if (isSunday && day_type === "working") {
+      } else if (day_type === "holiday" || day_type === "event" || isWeekendToSkip) {
+        // Holidays, events, or auto-skipped weekends get None and DO NOT advance the working day order counter!
+        if (isWeekendToSkip && day_type === "working") {
           currentDayType = "holiday";
         }
         currentDayOrder = "None";
       } else if (auto_advance !== false && initialIndex !== -1) {
-        // Continuous next day sequence starting from chosen Day Order (e.g. Day 3 -> Day 4 -> Day 5 -> Day 6 -> Day 1 -> Day 2)
-        currentDayOrder = dayOrders[dayOrderCounter % 6];
+        // Continuous next day sequence modulo campus working day count (e.g. Day 1 -> Day 5 on 5-day campus)
+        currentDayOrder = dayOrders[dayOrderCounter % workingDaysCount];
         dayOrderCounter++;
       }
 

@@ -13,7 +13,9 @@ import {
   dayOrderOptions,
   isCanonicalDayType,
   normalizeDayType,
-  parseDayOrder
+  parseDayOrder,
+  getWeekBoundaries,
+  predictNextDayOrder
 } from "@/lib/dailyConfigForm";
 import { cmMobileTabs, cmMoreTabIds, cmMoreTabs, cmNavGroups } from "@/lib/cmNav";
 import { isAwaitingCm, isAnyPendingCmRequest, isNeedsCmAllocation, isInCmQueue, isAwaitingCmCapacity, isLateAttendanceRequest } from "@/lib/requestStatus";
@@ -10901,6 +10903,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
   const [editingDailyId, setEditingDailyId] = useState<string | null>(null);
   const [isDailyConfigModalOpen, setIsDailyConfigModalOpen] = useState<boolean>(false);
   const [dailySearchFilter, setDailySearchFilter] = useState<string>("");
+  const [dailyModalWeekOffset, setDailyModalWeekOffset] = useState<number>(0);
+  const [dailyModalViewMode, setDailyModalViewMode] = useState<"week" | "all">("week");
+
+  const modalWeekInfo = useMemo(() => {
+    const today = getLocalDateStr();
+    const base = parseLocalDate(today);
+    base.setDate(base.getDate() + dailyModalWeekOffset * 7);
+    const refStr = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`;
+    return getWeekBoundaries(refStr);
+  }, [dailyModalWeekOffset]);
 
   useEffect(() => {
     // Folding the campus limit over the form is only fair while picking a new
@@ -13314,6 +13326,28 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     const panel = document.getElementById("daily-config-form")?.closest("[role=dialog]");
     panel?.scrollTo({ top: 0, behavior: "smooth" });
     toast(`Editing Day Order schedule for ${cfg.dateStr}`, "info");
+  };
+
+  const handleQuickConfigureDay = (dStr: string) => {
+    setEditingDailyId(null);
+    setDailyStartDateStr(dStr);
+    setDailyEndDateStr(dStr);
+    setDailyDayType("working");
+
+    // Predict next Day Order based on previous working Day Order for this campus
+    const priorConfigs = (dailyConfigsList || [])
+      .filter((c: any) => c.dateStr && c.dateStr < dStr && c.day_order && c.day_order !== "None")
+      .sort((a: any, b: any) => b.dateStr.localeCompare(a.dateStr));
+    const lastDayOrder = priorConfigs[0]?.day_order || null;
+    const daysLimit = workingDays.length > 0 ? workingDays.length : 5;
+    const predicted = predictNextDayOrder(lastDayOrder, daysLimit);
+    setDailyDayOrder(predicted);
+    setDailySessionMode("Offline");
+    setDailyNotes("");
+
+    const panel = document.getElementById("daily-config-form")?.closest("[role=dialog]");
+    panel?.scrollTo({ top: 0, behavior: "smooth" });
+    toast(`Pre-filled configuration for ${dStr} (${predicted})`, "info");
   };
 
   const handleCancelDailyEdit = () => {
@@ -28158,25 +28192,83 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
           </form>
 
-          {/* Modal Table */}
+          {/* Modal Table & Week Navigation */}
           <div className="border border-slate-100 rounded-2xl bg-white shadow-card overflow-hidden">
             <div className="p-3.5 bg-slate-50/80 border-b border-slate-100 flex justify-between items-center flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-                  Configured Schedule Records ({dailyConfigsList.length})
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search date, day type, order..."
-                    value={dailySearchFilter}
-                    onChange={e => setDailySearchFilter(e.target.value)}
-                    className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-[#4F46E5] w-48 font-medium"
-                  />
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center bg-white border border-slate-200 rounded-xl p-0.5 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setDailyModalWeekOffset(prev => prev - 1)}
+                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    title="Previous Week"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="px-3 text-xs font-black text-slate-800">
+                    Week: {modalWeekInfo.startDate} to {modalWeekInfo.endDate}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDailyModalWeekOffset(prev => prev + 1)}
+                    className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    title="Next Week"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
+
+                {dailyModalWeekOffset !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDailyModalWeekOffset(0)}
+                    className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors cursor-pointer"
+                  >
+                    This Week
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* View switcher: This Week vs All Records */}
+                <div className="flex items-center bg-slate-200/60 p-0.5 rounded-lg text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setDailyModalViewMode("week")}
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                      dailyModalViewMode === "week"
+                        ? "bg-white text-indigo-700 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    This Week (7 Days)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDailyModalViewMode("all")}
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                      dailyModalViewMode === "all"
+                        ? "bg-white text-indigo-700 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    All Records ({dailyConfigsList.length})
+                  </button>
+                </div>
+
+                {dailyModalViewMode === "all" && (
+                  <div className="relative">
+                    <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search..."
+                      value={dailySearchFilter}
+                      onChange={e => setDailySearchFilter(e.target.value)}
+                      className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-[#4F46E5] w-36 font-medium"
+                    />
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={fetchDailyConfigs}
@@ -28188,11 +28280,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               </div>
             </div>
 
-            <div className="overflow-x-auto max-h-[260px] overflow-y-auto">
+            <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
               <Table containerClassName="overflow-visible" className="w-full text-left text-xs border-collapse">
                 <TableHeader className="sticky top-0 bg-slate-100 z-10">
                   <TableRow className="border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    <TableHead className="p-3">Date</TableHead>
+                    <TableHead className="p-3">Date &amp; Weekday</TableHead>
                     <TableHead className="p-3">Day Type</TableHead>
                     <TableHead className="p-3">Day Order</TableHead>
                     <TableHead className="p-3">Session Mode</TableHead>
@@ -28201,22 +28293,89 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </TableRow>
                 </TableHeader>
                 <TableBody className="divide-y divide-slate-100">
-                  {dailyConfigsList.filter(cfg => {
-                    if (!dailySearchFilter.trim()) return true;
-                    const q = dailySearchFilter.toLowerCase();
-                    return (
-                      (cfg.dateStr || "").toLowerCase().includes(q) ||
-                      (cfg.day_type || "").toLowerCase().includes(q) ||
-                      (cfg.day_order || "").toLowerCase().includes(q) ||
-                      (cfg.session_mode || "").toLowerCase().includes(q) ||
-                      (cfg.notes || "").toLowerCase().includes(q)
-                    );
-                  }).length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="p-8 text-center text-slate-400 italic text-xs">
-                        {dailyConfigsList.length === 0 ? "No custom day order configurations saved yet. Use the form above to add date ranges." : "No matching day order records found for search filter."}
-                      </TableCell>
-                    </TableRow>
+                  {dailyModalViewMode === "week" ? (
+                    modalWeekInfo.weekDates.map(dStr => {
+                      const cfg = (dailyConfigsList || []).find((c: any) => c.dateStr === dStr);
+                      const dateObj = new Date(dStr + "T00:00:00");
+                      const weekdayName = dateObj.toLocaleDateString("en-US", { weekday: "long" });
+                      const isSelectedEdit = editingDailyId === (cfg?.id || dStr);
+
+                      if (!cfg) {
+                        return (
+                          <TableRow key={dStr} className={`transition-colors ${isSelectedEdit ? "bg-[#4F46E5]/10" : "hover:bg-slate-50/50"}`}>
+                            <TableCell className="p-3 font-extrabold text-slate-700">
+                              <span>{dStr}</span>
+                              <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">{weekdayName}</span>
+                            </TableCell>
+                            <TableCell className="p-3">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                                Unconfigured
+                              </span>
+                            </TableCell>
+                            <TableCell className="p-3 font-semibold text-slate-400">—</TableCell>
+                            <TableCell className="p-3 font-semibold text-slate-400">—</TableCell>
+                            <TableCell className="p-3 text-slate-400 italic">No Day Order assigned</TableCell>
+                            <TableCell className="p-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickConfigureDay(dStr)}
+                                className="px-3 py-1 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <Plus className="h-3 w-3" /> Set Day
+                              </button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
+                      return (
+                        <TableRow key={cfg.id || dStr} className={`transition-colors ${isSelectedEdit ? "bg-[#4F46E5]/10" : "hover:bg-slate-50/50"}`}>
+                          <TableCell className="p-3 font-extrabold text-slate-900">
+                            <span>{dStr}</span>
+                            <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">{weekdayName}</span>
+                          </TableCell>
+                          <TableCell className="p-3">
+                            <Badge
+                              variant={
+                                cfg.day_type === "holiday"
+                                  ? "destructive"
+                                  : cfg.day_type === "event"
+                                  ? "warning"
+                                  : cfg.day_type === "exam_day"
+                                  ? "default"
+                                  : "success"
+                              }
+                              className="text-[9.5px] uppercase font-extrabold"
+                            >
+                              {cfg.day_type ? cfg.day_type.replace("_", " ") : "Working"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="p-3 font-black text-slate-900">{cfg.day_order || "None"}</TableCell>
+                          <TableCell className="p-3 font-semibold text-slate-600">{cfg.session_mode || "Offline"}</TableCell>
+                          <TableCell className="p-3 text-slate-500 max-w-[200px] truncate" title={cfg.notes}>{cfg.notes || "-"}</TableCell>
+                          <TableCell className="p-3 text-right">
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditDailyConfig(cfg)}
+                                className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                                title="Edit Day Order Config"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDailyConfig(cfg.id, cfg.dateStr)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                title="Delete Day Order Config"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   ) : (
                     dailyConfigsList
                       .filter(cfg => {
@@ -28252,23 +28411,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <TableCell className="p-3 font-bold text-slate-900">{cfg.day_order || "None"}</TableCell>
                           <TableCell className="p-3 font-semibold text-slate-600">{cfg.session_mode || "Offline"}</TableCell>
                           <TableCell className="p-3 text-slate-500 max-w-[200px] truncate" title={cfg.notes}>{cfg.notes || "-"}</TableCell>
-                          <TableCell className="p-3 text-right flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditDailyConfig(cfg)}
-                              className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
-                              title="Edit Day Order Config"
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteDailyConfig(cfg.id, cfg.dateStr)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                              title="Delete Day Order Config"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                          <TableCell className="p-3 text-right">
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditDailyConfig(cfg)}
+                                className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-all cursor-pointer"
+                                title="Edit Day Order Config"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDailyConfig(cfg.id, cfg.dateStr)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                title="Delete Day Order Config"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
