@@ -5,6 +5,13 @@ import { PG_COLUMN_CASE_ENTRIES } from "./pgColumnCase.generated";
 
 const { Pool } = pg;
 
+// node-pg returns NUMERIC (oid 1700) as a string to avoid precision loss. Every fee
+// amount column is NUMERIC, and the app sums them with `+`, so totals were string
+// concatenations ("0" + "5000" + "3000" -> "050003000"). Money values here are well
+// inside double precision, so parse them as numbers once, at the driver.
+// (Optional chaining: some unit tests mock "pg" without `types`.)
+pg.types?.setTypeParser?.(1700, (value: string | null) => (value === null ? null : parseFloat(value)) as any);
+
 export interface DbTransactionContext {
   get: (sql: string, ...params: any[]) => Promise<any>;
   all: (sql: string, ...params: any[]) => Promise<any[]>;
@@ -477,8 +484,10 @@ export function resolveConnectionString(rawUrl: string): string {
   if (parsed.username === "postgres") {
     parsed.username = `postgres.${projectRef}`;
   }
+  // Default matches the production project (ap-southeast-1 / Singapore) and the
+  // Vercel function region in vercel.json (sin1). Override with DB_POOLER_HOST.
   parsed.hostname = process.env.DB_POOLER_HOST?.trim()
-    || "aws-0-ap-southeast-2.pooler.supabase.com";
+    || "aws-0-ap-southeast-1.pooler.supabase.com";
   parsed.port = parsed.port === "5432" || !parsed.port ? "6543" : parsed.port;
 
   console.log(`🐘 [Database] Auto-routed Supabase host to IPv4 Pooler (${parsed.hostname}:${parsed.port})`);
@@ -540,12 +549,13 @@ function resolveIntEnv(name: string, fallback: number, min: number, max: number)
 }
 
 /**
- * Pool ceiling per instance. Left at 20 when unset; PG_POOL_MAX exists because the
- * real budget is shared across every concurrent instance, and there is no way to
- * know that from code.
+ * Pool ceiling per instance. On serverless every concurrent instance opens its own
+ * pool against Supabase's fixed pooler limit, so a big per-instance pool exhausts the
+ * pooler after a handful of instances (35 x 6 instances > a typical 200-client cap).
+ * Default is 5; raise PG_POOL_MAX only together with the pooler's client limit.
  */
 function resolvePoolMax(): number {
-  return resolveIntEnv("PG_POOL_MAX", 20, 1, 100);
+  return resolveIntEnv("PG_POOL_MAX", 5, 1, 100);
 }
 
 export function getDb(): Promise<PostgresDbAdapter> {
@@ -584,7 +594,8 @@ export function getDb(): Promise<PostgresDbAdapter> {
         // the project's max_client_connections.
         max: resolvePoolMax(),
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: resolveIntEnv("DB_CONNECT_TIMEOUT_MS", 35000, 1000, 60000),
+        // Fail fast (10s) when the pool is saturated instead of holding requests for 35s.
+        connectionTimeoutMillis: resolveIntEnv("DB_CONNECT_TIMEOUT_MS", 10000, 1000, 60000),
         statement_timeout: resolveIntEnv("DB_STATEMENT_TIMEOUT_MS", 60000, 1000, 300000),
         application_name: process.env.DB_APP_NAME || "fp-timetable"
       });

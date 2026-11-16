@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb, readInChunks, type QueryFailure } from "@/lib/db";
 import { requireAuth, Role } from "@/lib/authGuard";
+import { canActOnCollege } from "@/lib/requestScope";
 import { checkMentorAvailability, loadAvailabilityContext, type AvailabilityContext } from "@/lib/availability";
 import { generateId } from "@/lib/id";
 import { dispatchSystemNotification } from "@/lib/notifications";
@@ -161,7 +162,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { errorResponse } = await requireAuth(request, { allowedRoles: LEAVE_ROLES });
+  const { auth, errorResponse } = await requireAuth(request, { allowedRoles: LEAVE_ROLES });
   if (errorResponse) return errorResponse;
 
   try {
@@ -209,6 +210,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Request not found" }, { status: 404 });
       }
 
+      // Only CM / KAM / admin decide faculty leave, and only on their own campus.
+      // (Any mentor — including the requester — could previously approve it.)
+      const deciderRole = auth!.user.role;
+      if (deciderRole === "mentor") {
+        return NextResponse.json({ success: false, message: "Only a Campus Manager can approve or reject faculty leave." }, { status: 403 });
+      }
+      if (deciderRole !== "admin" && !(await canActOnCollege(db, auth!.user, reqRecord.college_id))) {
+        return NextResponse.json({ success: false, message: "Unauthorized: This request belongs to a campus outside your scope." }, { status: 403 });
+      }
+      if (["approved", "rejected", "cancelled"].includes(String(reqRecord.status || "").toLowerCase())) {
+        return NextResponse.json({ success: false, message: `This leave request was already ${String(reqRecord.status).toLowerCase()}.` }, { status: 409 });
+      }
+      const deciderName = auth!.user.name || approvedBy || "Campus Manager";
+
       const newStatus = action === "approve" ? "approved" : "rejected";
 
       // ── Gate: leave approval must not create an unhandled demo conflict ──
@@ -222,12 +237,15 @@ export async function POST(request: Request) {
       }
 
       // MAIL-M09 Fix: Replace NOW() with CURRENT_TIMESTAMP
-      await db.run(
+      const flip = await db.run(
         `UPDATE faculty_leave_requests
          SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
-        [newStatus, approvedBy || "Campus Manager", rejectionReason || null, requestId]
+         WHERE id = ? AND LOWER(COALESCE(status, 'pending')) NOT IN ('approved', 'rejected', 'cancelled')`,
+        [newStatus, deciderName, rejectionReason || null, requestId]
       );
+      if (flip.changes !== 1) {
+        return NextResponse.json({ success: false, message: "This leave request was already processed." }, { status: 409 });
+      }
 
       // Automatic Sync to mentor_attendance if approved
       let affectedClasses: any[] = [];
@@ -238,35 +256,37 @@ export async function POST(request: Request) {
         const end = new Date(eY, eM - 1, eD, 12, 0, 0);
         const attStatus = reqRecord.request_type === "OD" ? "OD" : "Leave";
 
-        while (cur <= end) {
+        // One multi-row upsert instead of one round trip per day (a 3-week leave used
+        // to cost 21 sequential queries); capped so a bad end_date cannot loop for years.
+        const leaveDays: string[] = [];
+        while (cur <= end && leaveDays.length < 366) {
           const year = cur.getFullYear();
           const month = String(cur.getMonth() + 1).padStart(2, "0");
           const day = String(cur.getDate()).padStart(2, "0");
-          const dateStr = `${year}-${month}-${day}`;
-          const attId = `att_${reqRecord.mentor_id}_${dateStr}`;
-
-          // MAIL-M09 Fix: Replace NOW() with CURRENT_TIMESTAMP
+          leaveDays.push(`${year}-${month}-${day}`);
+          cur.setDate(cur.getDate() + 1);
+        }
+        for (let i = 0; i < leaveDays.length; i += 200) {
+          const chunk = leaveDays.slice(i, i + 200);
+          const params: any[] = [];
+          const values = chunk.map((dateStr) => {
+            params.push(
+              `att_${reqRecord.mentor_id}_${dateStr}`, reqRecord.mentor_id, reqRecord.college_id, dateStr,
+              attStatus, `${reqRecord.request_type}: ${reqRecord.reason}`, deciderName
+            );
+            return "(?, ?, ?, ?, ?, ?, 'cam_approval', ?, CURRENT_TIMESTAMP)";
+          }).join(", ");
           await db.run(
             `INSERT INTO mentor_attendance (id, mentor_id, college_id, date_str, status, reason, marked_by, marked_by_id, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'cam_approval', ?, CURRENT_TIMESTAMP)
+             VALUES ${values}
              ON CONFLICT(mentor_id, date_str) DO UPDATE SET
              status = excluded.status,
              reason = excluded.reason,
              marked_by = excluded.marked_by,
              marked_by_id = excluded.marked_by_id,
              updated_at = CURRENT_TIMESTAMP`,
-            [
-              attId,
-              reqRecord.mentor_id,
-              reqRecord.college_id,
-              dateStr,
-              attStatus,
-              `${reqRecord.request_type}: ${reqRecord.reason}`,
-              approvedBy || "Campus Manager"
-            ]
+            params
           );
-
-          cur.setDate(cur.getDate() + 1);
         }
 
         // Automatic identification of affected demo sessions for this mentor
@@ -323,7 +343,7 @@ export async function POST(request: Request) {
               [
                 auditId,
                 `CAM approved leave for Mentor ${reqRecord.mentorName}. L&D session for ${demo.subject} on ${demo.dateStr} (${demo.timeSlot}) placed on hold (Reschedule Required). Evaluator SME ${demo.smeName} and Mentor notified.`,
-                approvedBy || "Campus Manager",
+                deciderName,
                 new Date().toISOString()
               ]
             );
@@ -385,7 +405,7 @@ export async function POST(request: Request) {
           await dispatchSystemNotification(db, {
             userIds: [reqRecord.mentor_id],
             title: `${reqRecord.request_type} Request ${newStatus === "approved" ? "Approved" : "Rejected"}`,
-            message: `Your ${reqRecord.request_type} application for ${dateSpan} has been ${newStatus} by ${approvedBy || "Campus Manager"}.${rejectionReason ? ` Remarks: ${rejectionReason}` : ""}`,
+            message: `Your ${reqRecord.request_type} application for ${dateSpan} has been ${newStatus} by ${deciderName}.${rejectionReason ? ` Remarks: ${rejectionReason}` : ""}`,
             link: "/mentor?tab=handovers",
             type: newStatus === "approved" ? "success" : "alert",
             domain: "requests",

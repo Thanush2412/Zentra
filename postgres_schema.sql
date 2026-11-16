@@ -251,7 +251,7 @@ CREATE TABLE IF NOT EXISTS slots (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_slots_mentor_day_time_shift ON slots (mentorId, day, time, shift);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_slots_room_day_time_shift ON slots (LOWER(location), day, time, shift);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_slots_room_day_time_shift_college ON slots (college_id, LOWER(location), day, time, shift);
 
 CREATE TABLE IF NOT EXISTS handover_requests (
     id VARCHAR(255) PRIMARY KEY,

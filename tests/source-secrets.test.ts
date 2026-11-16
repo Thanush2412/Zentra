@@ -46,7 +46,7 @@ describe("no credentials embedded in application source", () => {
 
   it("hashes the password a self-service signup supplies", () => {
     const source = readFileSync(join(process.cwd(), "src/app/api/signup/route.ts"), "utf8");
-    expect(source).toContain("hashPassword(password)");
+    expect(source).toMatch(/hashPassword(Async)?\((String\()?password\)?\)/);
     expect(source).not.toMatch(/cleanEmail,\s*password,/);
   });
 });

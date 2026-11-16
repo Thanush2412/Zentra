@@ -5,6 +5,7 @@ import { getInstitutionDateStr, getInstitutionDateStrOffset } from "@/lib/localD
 import { generateId } from "@/lib/id";
 import { ensureMigration } from "@/lib/migrations";
 import { notifyRealtimeEvent } from "@/lib/realtimeServer";
+import { canActOnCollege, resolveKamCollegeIds, actorRoleLabel } from "@/lib/requestScope";
 
 // Without this, Vercel routes to iad1 (Washington DC) → ~200ms per DB call
 export const maxDuration = 60; // seconds — bulk imports need breathing room
@@ -344,9 +345,15 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "No attendance records to import" }, { status: 400 });
       }
 
-      const effectiveCollegeId = (actorRole === "cm" && actorCollegeId) ? actorCollegeId : importCollegeId;
+      if (actorRole === "cm" && !actorCollegeId) {
+        return NextResponse.json({ success: false, message: "No campus is assigned to this Campus Manager account." }, { status: 403 });
+      }
+      const effectiveCollegeId = actorRole === "cm" ? actorCollegeId : importCollegeId;
       if (!effectiveCollegeId && !isRealAdmin) {
         return NextResponse.json({ success: false, message: "Target campus (collegeId) is required for bulk import." }, { status: 400 });
+      }
+      if (actorRole === "kam" && !(await canActOnCollege(db, actor, effectiveCollegeId))) {
+        return NextResponse.json({ success: false, message: "Unauthorized: Campus is not assigned to your account." }, { status: 403 });
       }
 
       const nowStr = new Date().toISOString();
@@ -583,6 +590,78 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Slot not found." }, { status: 404 });
     }
 
+    // ── WHO MAY MARK THIS PERIOD ─────────────────────────────────────────
+    // Previously any mentor/CM could post attendance for any slot on any past date.
+    const actorIdList = Array.from(new Set([actor.reference_id, actor.id].filter(Boolean).map(String)));
+    if (actorRole === "mentor") {
+      const ph = actorIdList.map(() => "?").join(",");
+      const ownsSlot = actorIdList.includes(String(slot.mentorId || slot.mentorid || ""));
+      const cover = ownsSlot ? null : await db.get(
+        `SELECT id FROM approved_handovers WHERE slotId = ? AND dateStr = ? AND coverStaffId IN (${ph}) LIMIT 1`,
+        [slotId, dateStr, ...actorIdList]
+      );
+      if (!ownsSlot && !cover) {
+        return NextResponse.json(
+          { success: false, message: "You can only mark attendance for your own periods or periods you are the approved cover for." },
+          { status: 403 }
+        );
+      }
+
+      // Past-date lock (server side). Same-day period windows stay enforced in the UI;
+      // the server blocks earlier dates unless the CM approved a late-attendance request.
+      if (dateStr < getInstitutionDateStr()) {
+        const lockRow = await db.get("SELECT value FROM system_settings WHERE key = 'attendance_lock_enabled'");
+        const lockEnabled = !lockRow || lockRow.value === "true" || lockRow.value === "1";
+        if (lockEnabled) {
+          const lateApproval = await db.get(
+            `SELECT id FROM handover_requests WHERE slotId = ? AND dateStr = ? AND status = 'approved' AND requestorId IN (${ph}) LIMIT 1`,
+            [slotId, dateStr, ...actorIdList]
+          );
+          if (!lateApproval && !cover) {
+            return NextResponse.json(
+              { success: false, message: "Attendance for past dates is locked. Please request CM approval for late attendance." },
+              { status: 403 }
+            );
+          }
+        }
+      }
+    } else if (!isRealAdmin) {
+      if (!(await canActOnCollege(db, actor, slot.college_id))) {
+        return NextResponse.json(
+          { success: false, message: "Unauthorized: This period belongs to a campus outside your scope." },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Every student in the payload must belong to the period's campus.
+    if (slot.college_id) {
+      const submittedIds = Array.from(new Set(
+        attendance.filter((a: any) => a && a.status && a.status !== "not_marked").map((a: any) => String(a.studentId || ""))
+      )).filter(Boolean) as string[];
+      if (submittedIds.length > 0) {
+        const known = new Set<string>();
+        for (let i = 0; i < submittedIds.length; i += 500) {
+          const chunk = submittedIds.slice(i, i + 500);
+          const rows = await db.all(
+            `SELECT id FROM students WHERE college_id = ? AND id IN (${chunk.map(() => "?").join(",")})`,
+            [slot.college_id, ...chunk]
+          );
+          rows.forEach((r: any) => known.add(String(r.id)));
+        }
+        const foreign = submittedIds.filter((id) => !known.has(id));
+        if (foreign.length > 0) {
+          return NextResponse.json(
+            { success: false, message: `${foreign.length} student(s) in this submission do not belong to this campus.` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+    // Recorded identity comes from the session for mentors (no spoofed markedBy).
+    const recordedMarkedBy = actorRole === "mentor" ? String(actor.reference_id || actor.id) : (markedBy || actor.reference_id || "System");
+    const recordedActorName = realActorName || actorName || "Faculty";
+
     // ── FUTURE DATE ATTENDANCE GUARD ─────────────────────────────────────
     // Faculty mentors cannot record student attendance in advance for future dates
     const todayDateStr = getInstitutionDateStr();
@@ -648,7 +727,7 @@ export async function POST(request: Request) {
           const recordId = makeAttendanceId();
           params.push(
             recordId, item.studentId, slotId, dateStr, item.status,
-            markedBy || "System", timestamp,
+            recordedMarkedBy, timestamp,
             type || "Regular", mode || "Offline", attendanceTypeSub || null,
             coveredSubject || null
           );
@@ -671,7 +750,7 @@ export async function POST(request: Request) {
 
       await tx.run(
         "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-        [logId, "booking", description, actorName || "Faculty", actorRole || "Mentor", timestamp]
+        [logId, "booking", description, recordedActorName, actorRoleLabel(actorRole), timestamp]
       );
 
       return validItems.length;
@@ -733,9 +812,10 @@ export async function DELETE(request: NextRequest) {
       if (!effectiveCollegeId) {
         return NextResponse.json({ success: false, message: "Campus (collegeId) is required for attendance deletion." }, { status: 400 });
       }
-      const kamColleges = await db.all("SELECT college_id FROM kam_colleges WHERE kam_id = ?", [actor.reference_id || actor.id]);
-      const kamCids = new Set(kamColleges.map((r: any) => String(r.college_id).toLowerCase()));
-      if (kamCids.size > 0 && !kamCids.has(effectiveCollegeId.toLowerCase())) {
+      // kam_colleges never existed; the KAM portfolio lives on colleges.kam_id.
+      const kamCollegeIds = await resolveKamCollegeIds(db, actor);
+      const kamCids = new Set((kamCollegeIds || []).map((id) => id.toLowerCase()));
+      if (!kamCids.has(effectiveCollegeId.toLowerCase())) {
         return NextResponse.json({ success: false, message: "Unauthorized: Campus is not assigned to your account." }, { status: 403 });
       }
     } else if (!isRealAdmin && !effectiveCollegeId) {

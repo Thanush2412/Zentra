@@ -2777,30 +2777,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const actorRole = currentRole === "cm" ? "Campus Manager" : "Key Account Manager";
       const targetCollegeId = currentCAM?.college_id || activeCollegeId || "";
 
-      // Delete existing slots for this classGroup first (strictly scoped to this college)
-      await fetch(`/api/slots?classGroup=${encodeURIComponent(classGroup)}&college_id=${encodeURIComponent(targetCollegeId)}&actorName=${encodeURIComponent(actorName)}&actorRole=${encodeURIComponent(actorRole)}`, {
-        method: "DELETE"
-      });
-
+      // One atomic server call replaces this class's timetable. Periods at the same
+      // day/time keep their slot ids, so past attendance stays linked; if anything
+      // clashes, nothing is changed. (This used to be a DELETE followed by a separate
+      // POST — a failure in between wiped the class, and every regeneration orphaned
+      // the class's attendance history.)
+      void actorRole;
       const res = await fetch("/api/slots/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slots: generatedSlots, actorName })
+        body: JSON.stringify({
+          slots: generatedSlots,
+          actorName,
+          replace: { classGroup, college_id: targetCollegeId }
+        })
       });
       const data = await res.json();
       if (data.success) {
+        const saved: Slot[] = Array.isArray(data.slots) ? data.slots : [];
         setSlots(prev => {
           const filtered = prev.filter(s => !(s.classGroup && s.classGroup.toLowerCase() === classGroup.toLowerCase() && (!targetCollegeId || s.college_id === targetCollegeId)));
-          const newSlots = generatedSlots.map((s, idx) => ({
-            ...s,
-            id: s.id || `gen_s_${Date.now()}_${idx}`,
-            college_id: targetCollegeId
-          }));
-          return [...filtered, ...newSlots];
+          return [...filtered, ...saved];
         });
-        return { success: true, message: data.message || "Timetable generated successfully.", count: generatedSlots.length, unscheduled };
+        return { success: true, message: data.message || "Timetable generated successfully.", count: saved.length || data.count || 0, unscheduled };
       } else {
-        return { success: false, message: data.message || "Bulk import failed." };
+        const clashNote = Array.isArray(data.skipped) && data.skipped.length
+          ? ` (${data.skipped.slice(0, 3).map((x: any) => `${x.day} ${x.time}: ${x.reason}`).join("; ")}${data.skipped.length > 3 ? "…" : ""})`
+          : "";
+        return { success: false, message: (data.message || data.error || "Timetable could not be saved.") + clashNote };
       }
     } catch (e: any) {
       return { success: false, message: e.message };

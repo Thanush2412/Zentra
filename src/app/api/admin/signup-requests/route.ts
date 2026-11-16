@@ -36,11 +36,14 @@ export async function PATCH(request: Request) {
     if (!req) {
       return NextResponse.json({ success: false, message: "Signup request not found" }, { status: 404 });
     }
+    if (req.status && req.status !== "pending") {
+      return NextResponse.json({ success: false, message: `This request was already ${req.status}.` }, { status: 409 });
+    }
 
     if (action === "reject") {
       const logId = generateId("l");
       await db.transaction(async (tx) => {
-        await tx.run("UPDATE signup_requests SET status = 'rejected' WHERE id = ?", [id]);
+        await tx.run("UPDATE signup_requests SET status = 'rejected' WHERE id = ? AND status = 'pending'", [id]);
         await tx.run(
           "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'signup_rejection', ?, 'Admin', 'Super Admin', ?)",
           [logId, `Signup request for ${req.name} (${req.email}) was REJECTED by Admin`, new Date().toISOString()]
@@ -50,6 +53,12 @@ export async function PATCH(request: Request) {
     }
 
     if (action === "approve") {
+      // The role always comes from the admin's choice. A requested privileged role
+      // (from older rows, before signup was restricted) is never granted implicitly.
+      const requestedSafe = ["student", "mentor"].includes(String(req.requested_role || "").toLowerCase());
+      if (!role && !requestedSafe) {
+        return NextResponse.json({ success: false, message: "Please choose a role for this account before approving." }, { status: 400 });
+      }
       const targetRole = normalizeRole(role || req.requested_role || "student");
 
       // Checked before anything is created. This used to run after the profile row was
@@ -157,7 +166,8 @@ export async function PATCH(request: Request) {
           [userId, req.email.toLowerCase(), req.password_hash, targetRole, referenceId, nowStr, nowStr]
         );
 
-        await tx.run("UPDATE signup_requests SET status = 'approved' WHERE id = ?", [id]);
+        const flip = await tx.run("UPDATE signup_requests SET status = 'approved' WHERE id = ? AND status = 'pending'", [id]);
+        if (flip.changes !== 1) throw new Error("This signup request was already processed.");
 
         await tx.run(
           "INSERT INTO audit_logs (id, type, description, actorName, actorRole, timestamp) VALUES (?, 'signup_approval', ?, 'Admin', 'Super Admin', ?)",

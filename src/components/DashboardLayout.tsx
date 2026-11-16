@@ -323,13 +323,19 @@ export function DashboardLayout({ children, requiredRole }: DashboardLayoutProps
     queryKey: notificationsQueryKey,
     enabled: canLoadWorkspace && !!notificationsUserId,
     queryFn: async () => {
-      const data = await apiFetch(`/api/notifications?user_id=${encodeURIComponent(notificationsUserId!)}&limit=25`);
+      // Background poll: flagged so it does not reset the session idle timer.
+      const data = await apiFetch(`/api/notifications?user_id=${encodeURIComponent(notificationsUserId!)}&limit=25`, {
+        headers: { "x-fp-background": "1" }
+      });
       return data?.success && Array.isArray(data.notifications) ? (data.notifications as any[]) : [];
     },
-    // Poll faster while something is unread; TanStack pauses this when the tab is hidden.
+    // Realtime (SSE + cross-instance outbox) now delivers new notifications and
+    // invalidates this query, so polling is only a safety net. It used to fire every
+    // 15-30s for every signed-in user (~3 DB round trips each). TanStack pauses this
+    // when the tab is hidden.
     refetchInterval: (query) => {
       const rows = query.state.data as any[] | undefined;
-      return rows?.some((n) => !n.is_read) ? 15_000 : 30_000;
+      return rows?.some((n) => !n.is_read) ? 60_000 : 120_000;
     },
   });
   const notifications = notificationsQuery.data || [];

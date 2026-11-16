@@ -5,13 +5,21 @@ import { getDb } from "@/lib/db";
 import { requireAuth } from "@/lib/authGuard";
 import { normalizeRoleValue } from "@/lib/utils";
 
-function resolveDraftId(user: any, searchParamUserId?: string | null, searchParamRole?: string | null): string {
-  if (searchParamUserId && searchParamUserId !== "active_draft") {
-    return searchParamUserId;
-  }
-  const role = searchParamRole || (user?.role ? normalizeRoleValue(user.role) : "admin");
+/**
+ * The draft key is derived from the verified session only. It used to accept
+ * `userId` / `role` from the request, which let any signed-in user read, overwrite
+ * or delete anyone else's draft. The extra arguments are ignored on purpose so old
+ * callers keep working.
+ */
+function resolveDraftId(user: any, _searchParamUserId?: string | null, _searchParamRole?: string | null): string {
+  const role = user?.role ? normalizeRoleValue(user.role) : "user";
   const id = user?.id || user?.email || "default";
   return `${role}_${id}`;
+}
+
+/** The shared pre-scoping "active_draft" row is only readable/clearable by admins. */
+function canUseLegacyDraft(user: any): boolean {
+  return String(user?.role || "").toLowerCase() === "admin";
 }
 
 export async function GET(request: Request) {
@@ -25,7 +33,7 @@ export async function GET(request: Request) {
     
     // Check role-scoped draft first, fallback to legacy active_draft
     let row = await db.get("SELECT * FROM campus_drafts WHERE id = ?", draftId);
-    if (!row && draftId !== "active_draft") {
+    if (!row && canUseLegacyDraft(user)) {
       row = await db.get("SELECT * FROM campus_drafts WHERE id = 'active_draft'");
     }
 
@@ -91,7 +99,11 @@ export async function DELETE(request: Request) {
     const db = await getDb();
     const { searchParams } = new URL(request.url);
     const draftId = resolveDraftId(user, searchParams.get("userId"), searchParams.get("role"));
-    await db.run("DELETE FROM campus_drafts WHERE id = ? OR id = 'active_draft'", draftId);
+    if (canUseLegacyDraft(user)) {
+      await db.run("DELETE FROM campus_drafts WHERE id = ? OR id = 'active_draft'", draftId);
+    } else {
+      await db.run("DELETE FROM campus_drafts WHERE id = ?", draftId);
+    }
     return NextResponse.json({ success: true, message: "Draft cleared from database" });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });

@@ -889,6 +889,67 @@ const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_sme_evaluators_email ON sme_evaluators(email);
       `).catch(() => {});
     }
+  },
+  {
+    // Cross-instance realtime ledger (lib/realtimeServer polls it). Was referenced by
+    // lib/notifications but never created by any migration.
+    name: "event_outbox_table",
+    run: async (db) => {
+      await db.exec(`
+        CREATE TABLE IF NOT EXISTS event_outbox (
+          event_id TEXT PRIMARY KEY,
+          domain TEXT,
+          action TEXT,
+          college_id TEXT,
+          target_user_ids JSONB,
+          target_roles JSONB,
+          origin_tab_id TEXT,
+          payload JSONB,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_event_outbox_created ON event_outbox (created_at);
+      `).catch((err: any) => console.warn("[migrations] event_outbox_table:", err?.message || err));
+    }
+  },
+  {
+    // The room clash index ignored the campus, so "Room 101 / Mon / 9:00" at one college
+    // blocked the same room name at every other college. The replacement is strictly
+    // looser (adds college_id), so it can always be built from the existing rows.
+    // Both statements run as one implicit transaction.
+    name: "slots_room_index_per_college",
+    run: async (db) => {
+      await db.exec(`
+        DROP INDEX IF EXISTS idx_slots_room_day_time_shift;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_slots_room_day_time_shift_college ON slots (college_id, LOWER(location), day, time, shift);
+      `);
+    }
+  },
+  {
+    // One ledger row per approved request: double approvals used to double-count covers.
+    // Skipped (with a warning) if historical duplicates exist, so startup never fails.
+    name: "approved_handovers_unique_request",
+    run: async (db) => {
+      const dupes = await db.get(
+        "SELECT COUNT(*) AS n FROM (SELECT requestId FROM approved_handovers WHERE requestId IS NOT NULL GROUP BY requestId HAVING COUNT(*) > 1) d"
+      ).catch(() => null);
+      if (Number(dupes?.n || 0) > 0) {
+        console.warn(`[migrations] approved_handovers has ${dupes.n} duplicated requestId value(s); unique index not created. Clean them up and re-run.`);
+        throw new Error("approved_handovers duplicates present");
+      }
+      await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_approved_handovers_request_unique ON approved_handovers (requestId) WHERE requestId IS NOT NULL;");
+    }
+  },
+  {
+    // Indexes for the hot read paths found in the latency audit.
+    name: "latency_indexes_2026_11",
+    run: async (db) => {
+      await db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_notifications_user_lower_created ON notifications (LOWER(user_id), created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_student_attendance_markedby_date ON student_attendance (markedBy, dateStr);
+        CREATE INDEX IF NOT EXISTS idx_approved_handovers_cover_date ON approved_handovers (coverStaffId, dateStr);
+        CREATE INDEX IF NOT EXISTS idx_handover_requests_slot_date ON handover_requests (slotId, dateStr);
+      `).catch((err: any) => console.warn("[migrations] latency_indexes_2026_11:", err?.message || err));
+    }
   }
 ];
 

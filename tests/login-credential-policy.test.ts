@@ -38,7 +38,13 @@ describe("failed sign-ins are counted", () => {
   it("counts failures without ever locking the account out", () => {
     expect(loginSource).not.toContain("LOGIN_LOCKOUT_MINUTES");
     expect(loginSource).not.toContain("LOGIN_MAX_FAILURES");
-    expect(loginSource).not.toContain("status: 429");
+  });
+
+  it("throttles guessing per account+IP (and per IP), never account-wide", () => {
+    // Account-wide lockout would let anyone lock a real user out; the counter is
+    // keyed by the account AND the caller's IP instead.
+    expect(loginSource).toContain("WHERE email_key = ? AND ip = ? AND success = 0");
+    expect(loginSource).not.toMatch(/WHERE email_key = \? AND success = 0/);
   });
 
   it("returns one generic message for every rejected credential", () => {

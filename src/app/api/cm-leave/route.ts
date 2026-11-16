@@ -5,19 +5,22 @@ export const revalidate = 0;
 import { NextResponse } from "next/server";
 import { getDb, chunkList } from "@/lib/db";
 import { requireAuth } from "@/lib/authGuard";
+import { canActOnCollege, resolveKamCollegeIds } from "@/lib/requestScope";
 import { ensureMigration } from "@/lib/migrations";
 import { generateId } from "@/lib/id";
 import { dispatchSystemNotification } from "@/lib/notifications";
 
 export async function GET(request: Request) {
   try {
-    const { errorResponse } = await requireAuth(request);
+    // CM leave is staff HR data: only CMs (their own), KAMs (their portfolio) and admins.
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["cm", "kam", "admin"] });
     if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
     const { searchParams } = new URL(request.url);
+    const viewer = auth!.user;
 
-    const camId = searchParams.get("camId");
+    const camId = viewer.role === "cm" ? viewer.reference_id : searchParams.get("camId");
     const kamId = searchParams.get("kamId");
     const collegeId = searchParams.get("collegeId");
     const status = searchParams.get("status");
@@ -42,6 +45,11 @@ export async function GET(request: Request) {
     if (collegeId && collegeId !== "all") {
       query += ` AND clr.college_id = ?`;
       params.push(collegeId);
+    }
+    if (viewer.role === "kam") {
+      const ids = (await resolveKamCollegeIds(db, viewer)) || [];
+      query += ids.length ? ` AND clr.college_id IN (${ids.map(() => "?").join(",")})` : " AND 1=0";
+      params.push(...ids);
     }
     if (status && status !== "all") {
       query += ` AND clr.status = ?`;
@@ -150,7 +158,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { errorResponse } = await requireAuth(request, { allowedRoles: ["kam", "admin"] });
+    const { auth, errorResponse } = await requireAuth(request, { allowedRoles: ["kam", "admin"] });
     if (errorResponse) return errorResponse;
     await ensureMigration("cm_attendance_and_leave_tables");
     const db = await getDb();
@@ -159,9 +167,12 @@ export async function PATCH(request: Request) {
     const {
       requestId,
       status, // 'approved' | 'rejected'
-      approvedBy = "KAM Administrator",
       rejectionReason
     } = body;
+    const approvedBy = auth!.user.name || body.approvedBy || "KAM Administrator";
+    if (status !== "approved" && status !== "rejected") {
+      return NextResponse.json({ success: false, message: "status must be approved or rejected" }, { status: 400 });
+    }
 
     if (!requestId || !status) {
       return NextResponse.json({ success: false, message: "Missing requestId or status" }, { status: 400 });
@@ -170,6 +181,13 @@ export async function PATCH(request: Request) {
     const leaveReq = await db.get("SELECT * FROM cm_leave_requests WHERE id = ?", [requestId]);
     if (!leaveReq) {
       return NextResponse.json({ success: false, message: "Leave request not found" }, { status: 404 });
+    }
+
+    if (auth!.user.role === "kam" && !(await canActOnCollege(db, auth!.user, leaveReq.college_id))) {
+      return NextResponse.json({ success: false, message: "Unauthorized: campus outside your portfolio." }, { status: 403 });
+    }
+    if (["approved", "rejected", "cancelled"].includes(String(leaveReq.status || "").toLowerCase())) {
+      return NextResponse.json({ success: false, message: `This leave request was already ${leaveReq.status}.` }, { status: 409 });
     }
 
     const nowTimestamp = new Date().toISOString();
@@ -184,7 +202,7 @@ export async function PATCH(request: Request) {
       const [eY, eM, eD] = (leaveReq.end_date || leaveReq.start_date).split("-").map(Number);
       const cur = new Date(sY, sM - 1, sD, 12, 0, 0);
       const end = new Date(eY, eM - 1, eD, 12, 0, 0);
-      while (cur <= end) {
+      while (cur <= end && leaveDates.length < 366) {
         const y = cur.getFullYear();
         const m = String(cur.getMonth() + 1).padStart(2, "0");
         const d = String(cur.getDate()).padStart(2, "0");
@@ -193,13 +211,14 @@ export async function PATCH(request: Request) {
       }
     }
 
-    await db.transaction(async (tx) => {
-      await tx.run(
+    const decided = await db.transaction(async (tx) => {
+      const flip = await tx.run(
         `UPDATE cm_leave_requests
          SET status = ?, approved_by = ?, rejection_reason = ?, updated_at = ?
-         WHERE id = ?`,
+         WHERE id = ? AND LOWER(COALESCE(status, 'pending')) NOT IN ('approved', 'rejected', 'cancelled')`,
         [status, approvedBy, rejectionReason || null, nowTimestamp, requestId]
       );
+      if (flip.changes !== 1) return false;
 
       for (const chunk of chunkList(leaveDates, 100)) {
         const values = chunk.map(() => "(?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)").join(", ");
@@ -226,7 +245,11 @@ export async function PATCH(request: Request) {
           ...args
         );
       }
+      return true;
     });
+    if (!decided) {
+      return NextResponse.json({ success: false, message: "This leave request was already processed." }, { status: 409 });
+    }
 
     // Notify CM of the decision via in-app bell
     try {

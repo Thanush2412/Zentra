@@ -5,6 +5,7 @@ import { getDb, allCapped, syncMentorSubjectGroups } from "@/lib/db";
 import { requireAuth } from "@/lib/authGuard";
 import { hashPassword } from "@/lib/auth";
 import { DEFAULT_PASSWORD } from "@/lib/authConfig";
+import { cacheGet, cacheSet, cacheDel } from "@/lib/simpleCache";
 
 export async function GET(request: Request) {
   try {
@@ -32,9 +33,13 @@ export async function GET(request: Request) {
     }
 
     const mentorSql = collegeId ? "SELECT * FROM mentors WHERE college_id = ?" : "SELECT * FROM mentors";
+    const cacheKey = `mentors:${collegeId ?? "all"}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return NextResponse.json(cached);
     const mentors = await allCapped(db, mentorSql, collegeId ? [collegeId] : []);
-
-    return NextResponse.json({ success: true, mentors });
+    const payload = { success: true, mentors };
+    cacheSet(cacheKey, payload, 60);
+    return NextResponse.json(payload);
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
@@ -79,6 +84,7 @@ export async function POST(request: Request) {
 
     await syncMentorSubjectGroups(db);
 
+    cacheDel("mentors:");
     return NextResponse.json({ success: true, message: "Mentor created successfully." });
   } catch (error: any) {
     console.error("API POST Mentors error:", error);
@@ -134,6 +140,7 @@ export async function PUT(request: Request) {
 
     await syncMentorSubjectGroups(db);
 
+    cacheDel("mentors:");
     return NextResponse.json({ success: true, message: "Mentor updated successfully." });
   } catch (error: any) {
     console.error("API PUT Mentors error:", error);
@@ -160,6 +167,7 @@ export async function DELETE(request: Request) {
       await tx.run(`DELETE FROM mentors WHERE id = ?`, id);
     });
 
+    cacheDel("mentors:");
     return NextResponse.json({ success: true, message: "Mentor deleted successfully." });
   } catch (error: any) {
     console.error("API DELETE Mentors error:", error);

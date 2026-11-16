@@ -48,8 +48,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { errorResponse } = await requireAuth(request, { allowedRoles: DEMO_SWAP_ROLES });
+  const { auth, errorResponse } = await requireAuth(request, { allowedRoles: DEMO_SWAP_ROLES });
   if (errorResponse) return errorResponse;
+  const actorRole = auth!.user.role;
+  const actorIds = new Set([auth!.user.reference_id, auth!.user.id].filter(Boolean).map((v) => String(v)));
 
   try {
     const db = await getDb();
@@ -170,6 +172,32 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, message: "Swap request has already been resolved" });
       }
 
+      // Who may move the request to which state. Previously any mentor could post
+      // status=approved for any request and skip the SME step entirely.
+      //  - proposed peer mentor: accept (pending_peer -> pending_sme) or decline
+      //  - the session's SME (or proposed SME): approve / reject once it reaches them
+      //  - L&D / admin: approve / reject anything still open
+      const isOversight = actorRole === "admin" || actorRole === "L and D";
+      const isProposedPeer = actorRole === "mentor" && !!req.proposedMentorId && actorIds.has(String(req.proposedMentorId));
+      const isSessionSme = actorRole === "sme" && (actorIds.has(String(req.smeId)) || (!!req.proposedSmeId && actorIds.has(String(req.proposedSmeId))));
+      let allowed = false;
+      if (isOversight) {
+        allowed = status === "approved" || status === "rejected";
+      } else if (isProposedPeer) {
+        allowed = req.status === "pending_peer" && (status === "pending_sme" || status === "rejected");
+      } else if (isSessionSme) {
+        // An SME approves a peer swap that reached them; for their own L&D reallocation
+        // request ("pending") they may only withdraw it — L&D approves those.
+        allowed = (req.status === "pending_sme" && (status === "approved" || status === "rejected"))
+          || (req.status === "pending" && status === "rejected");
+      }
+      if (!allowed) {
+        return NextResponse.json(
+          { success: false, message: "You are not allowed to make this decision on this swap request." },
+          { status: 403 }
+        );
+      }
+
       const resolvedAt = new Date().toISOString();
 
       if (status === "rejected") {
@@ -189,13 +217,19 @@ export async function POST(request: Request) {
         const session = sessionRows[0];
         const requestorEmail = requestorRows[0]?.email || null;
 
-        await db.run("UPDATE demo_swap_requests SET status = 'rejected' WHERE id = ?", [requestId]);
-
-        if (session && session.status !== "completed") {
-          await db.run(
-            "UPDATE demo_sessions SET status = 'reallocation_required' WHERE id = ?",
-            [req.sessionId]
-          );
+        const rejected = await db.transaction(async (tx) => {
+          const flip = await tx.run("UPDATE demo_swap_requests SET status = 'rejected' WHERE id = ? AND status = ?", [requestId, req.status]);
+          if (flip.changes !== 1) return false;
+          if (session && session.status !== "completed") {
+            await tx.run(
+              "UPDATE demo_sessions SET status = 'reallocation_required' WHERE id = ?",
+              [req.sessionId]
+            );
+          }
+          return true;
+        });
+        if (!rejected) {
+          return NextResponse.json({ success: false, message: "Swap request was already processed. Refresh and try again." }, { status: 409 });
         }
 
         const auditId = generateId("audit");
@@ -210,7 +244,10 @@ export async function POST(request: Request) {
 
       if (status === "pending_sme") {
         // Peer mentor accepted the proposal, now wait for SME approval
-        await db.run("UPDATE demo_swap_requests SET status = 'pending_sme' WHERE id = ?", [requestId]);
+        const accepted = await db.run("UPDATE demo_swap_requests SET status = 'pending_sme' WHERE id = ? AND status = ?", [requestId, req.status]);
+        if (accepted.changes !== 1) {
+          return NextResponse.json({ success: false, message: "Swap request was already processed. Refresh and try again." }, { status: 409 });
+        }
 
         // Audit Log
         const auditId = generateId("audit");
@@ -224,7 +261,12 @@ export async function POST(request: Request) {
       }
 
       if (status === "approved") {
-        await db.run(
+        // Status flip first and conditional, then the session move, as one unit:
+        // two approvers can no longer both apply the swap.
+        const applied = await db.transaction(async (tx) => {
+        const flip = await tx.run("UPDATE demo_swap_requests SET status = 'approved' WHERE id = ? AND status = ?", [requestId, req.status]);
+        if (flip.changes !== 1) return false;
+        await tx.run(
           `UPDATE demo_sessions 
            SET mentorId = COALESCE(?, mentorId),
                mentorName = COALESCE(?, mentorName),
@@ -244,8 +286,11 @@ export async function POST(request: Request) {
             req.sessionId
           ]
         );
-
-        await db.run("UPDATE demo_swap_requests SET status = 'approved' WHERE id = ?", [requestId]);
+        return true;
+        });
+        if (!applied) {
+          return NextResponse.json({ success: false, message: "Swap request was already processed. Refresh and try again." }, { status: 409 });
+        }
 
         const auditId = generateId("audit");
         await db.run(

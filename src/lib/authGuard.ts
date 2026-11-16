@@ -108,12 +108,24 @@ export function isAccountDisabled(status: unknown): boolean {
   return DISABLED_STATUSES.has(String(status ?? "").toLowerCase().trim());
 }
 
-export function loadSession(rawToken: string) {
+/** Header sent by background polls (notification bell etc.). */
+export const BACKGROUND_REQUEST_HEADER = "x-fp-background";
+
+/** True for automatic background polls, which must not count as user activity. */
+export function isBackgroundRequest(request: Request): boolean {
+  return request.headers.get(BACKGROUND_REQUEST_HEADER) === "1";
+}
+
+/**
+ * @param stampActivity false for background polls: they must not keep an idle
+ *   session alive (a polling tab otherwise never hit the 60-minute idle logout).
+ */
+export function loadSession(rawToken: string, stampActivity = true) {
   return coalesce(`session:${rawToken}`, async () => {
     const db = await getDb();
     return validateSession(db, rawToken);
   }).then((res) => {
-    if (res.isValid && res.session && shouldStampActivity(res.session.last_activity_at)) {
+    if (stampActivity && res.isValid && res.session && shouldStampActivity(res.session.last_activity_at)) {
       scheduleActivityStamp(res.session.session_id_hash);
     }
     return {
@@ -319,7 +331,7 @@ export async function requireAuth(
       };
     }
 
-    const sessionRes = await loadSession(rawToken);
+    const sessionRes = await loadSession(rawToken, !isBackgroundRequest(request));
 
     if (!sessionRes.isValid || !sessionRes.session || !sessionRes.userId) {
       const code = sessionRes.reason === "idle_timeout" ? "SESSION_IDLE" : "SESSION_EXPIRED";

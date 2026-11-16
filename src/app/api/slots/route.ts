@@ -5,6 +5,8 @@ import { getDb, resolveClassGroupDetails, syncMentorSubjectsAndClasses, type Que
 import { isCohortMatch, isTimeSlotOverlap } from "@/lib/utils";
 import { requireAuth } from "@/lib/authGuard";
 import { generateId } from "@/lib/id";
+import { cacheGet, cacheSet, cacheDel } from "@/lib/simpleCache";
+import { canActOnCollege } from "@/lib/requestScope";
 
 export async function GET(request: Request) {
   try {
@@ -39,8 +41,15 @@ export async function GET(request: Request) {
 
     sql += " ORDER BY day, time ASC";
 
+    // Cache key encodes all filter params — only cache simple college/mentor-scoped reads
+    const cacheKey = `slots:${collegeId ?? ""}:${mentorId ?? ""}:${classGroup ?? ""}:${day ?? ""}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return NextResponse.json(cached);
     const slots = await db.all(sql, ...params);
-    return NextResponse.json({ success: true, slots: slots || [] });
+    const payload = { success: true, slots: slots || [] };
+    // Cache for 60s — slots change rarely during the day; invalidated on POST/PUT/DELETE
+    cacheSet(cacheKey, payload, 60);
+    return NextResponse.json(payload);
   } catch (error: any) {
     console.error("API GET Slots error:", error);
     return NextResponse.json({ success: false, error: error.message, slots: [] }, { status: 500 });
@@ -193,6 +202,7 @@ export async function POST(request: Request) {
       new Date().toISOString()
     );
 
+    cacheDel("slots:");
     return NextResponse.json({
       success: true,
       slot: { id: newId, mentorId, day, time, course, location: cleanLocation }
@@ -237,11 +247,10 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ success: false, message: "Unauthorized: Mentors cannot clear entire class timetables." }, { status: 403 });
       }
 
-      // Campus Managers can only clear timetables for their assigned campus
-      if (userRole === "cm" && auth?.user?.college_id) {
-        if (collegeId && collegeId.toLowerCase() !== auth.user.college_id.toLowerCase()) {
-          return NextResponse.json({ success: false, message: "Unauthorized: You can only clear timetables for your assigned campus." }, { status: 403 });
-        }
+      // Campus Managers / KAMs can only clear timetables on campuses they govern
+      // (a CM with no campus, or a KAM outside their portfolio, used to slip through).
+      if ((userRole === "cm" || userRole === "kam") && !(await canActOnCollege(db, auth!.user, collegeId))) {
+        return NextResponse.json({ success: false, message: "Unauthorized: You can only clear timetables for your assigned campus." }, { status: 403 });
       }
 
       if (!collegeId && !isRealAdmin) {
@@ -309,6 +318,7 @@ export async function DELETE(request: Request) {
         new Date().toISOString()
       );
 
+      cacheDel("slots:");
       return NextResponse.json({ success: true, count: matchedSlotIds.length, message: `Successfully cleared ${matchedSlotIds.length} slots for ${classGroup}.` });
     }
 
@@ -323,8 +333,8 @@ export async function DELETE(request: Request) {
       if (!isOwner) {
         return NextResponse.json({ success: false, message: "Unauthorized: You can only delete your own slots." }, { status: 403 });
       }
-    } else if (userRole === "cm" && auth?.user?.college_id) {
-      if (slotToDelete.college_id && slotToDelete.college_id.toLowerCase() !== auth.user.college_id.toLowerCase()) {
+    } else if (userRole === "cm" || userRole === "kam") {
+      if (!(await canActOnCollege(db, auth!.user, slotToDelete.college_id))) {
         return NextResponse.json({ success: false, message: "Unauthorized: You can only delete slots for your assigned campus." }, { status: 403 });
       }
     }
@@ -349,6 +359,7 @@ export async function DELETE(request: Request) {
       new Date().toISOString()
     );
 
+    cacheDel("slots:");
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("API DELETE Slot error:", error);
@@ -528,6 +539,7 @@ export async function PUT(request: Request) {
       id
     );
 
+    cacheDel("slots:");
     return NextResponse.json({ success: true, slot: updatedSlot || null });
   } catch (error: any) {
     console.error("API PUT Slot error:", error);

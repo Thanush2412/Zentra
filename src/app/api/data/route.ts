@@ -66,6 +66,20 @@ function compactAttendance(rows: any[]): any[][] {
   return (rows || []).map((a: any) => ATTENDANCE_WIRE_FIELDS.map((field) => a?.[field] ?? null));
 }
 
+/**
+ * Mentor attendance window. The old `slotId IN (...) OR markedBy = ?` form cannot use
+ * either index, so Postgres scanned student_attendance; the two halves as a UNION
+ * each use an index (slot_date / markedby_date). Params: [mentorId, since, mentorId, since].
+ */
+function mentorAttendanceSql(limit: number): string {
+  const cols = "sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub, sa.coveredSubject";
+  return `SELECT * FROM (
+    SELECT ${cols} FROM student_attendance sa WHERE sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0'
+    UNION
+    SELECT ${cols} FROM student_attendance sa WHERE sa.markedBy = ? AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0'
+  ) mentor_att ORDER BY dateStr DESC LIMIT ${limit}`;
+}
+
 /** Names the slice that failed so the client can report it without seeing raw SQL. */
 function sliceSection(sql: string): string {
   return sql.match(/FROM\s+([a-zA-Z0-9_"]+)/i)?.[1] || "unknown";
@@ -152,8 +166,8 @@ export async function GET(request: Request) {
         attSql = `SELECT id, studentId, slotId, dateStr, status, type, mode, markedBy, timestamp, attendanceTypeSub, coveredSubject FROM student_attendance WHERE studentId = ? AND strftime('%w', dateStr) != '0' ORDER BY dateStr DESC LIMIT ${ATTENDANCE_LIMIT}`;
         attParams = [userId];
       } else if (role === "mentor" && userId) {
-        attSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub, sa.coveredSubject FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr DESC LIMIT ${ATTENDANCE_LIMIT}`;
-        attParams = [userId, userId, mentorDateThreshold];
+        attSql = mentorAttendanceSql(ATTENDANCE_LIMIT);
+        attParams = [userId, mentorDateThreshold, userId, mentorDateThreshold];
       } else if (role === "kam") {
         attSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub, sa.coveredSubject FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id IN ${kamInClause} AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr DESC LIMIT ${ATTENDANCE_LIMIT}`;
         attParams = [...kamCollegeIds, fullDateThreshold];
@@ -246,8 +260,8 @@ export async function GET(request: Request) {
       attendanceParams = [...kamCollegeIds, fullDateThreshold];
     } else if (isMentor && userId) {
       // Mentor only needs attendance for their assigned slots or where they marked attendance
-      attendanceSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub, sa.coveredSubject FROM student_attendance sa WHERE (sa.slotId IN (SELECT id FROM slots WHERE mentorId = ?) OR sa.markedBy = ?) AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr DESC LIMIT ${ATTENDANCE_LIMIT}`;
-      attendanceParams = [userId, userId, mentorDateThreshold];
+      attendanceSql = mentorAttendanceSql(ATTENDANCE_LIMIT);
+      attendanceParams = [userId, mentorDateThreshold, userId, mentorDateThreshold];
     } else if (isCM && collegeId) {
       // CAM monitoring view scopes to attendance window for college
       attendanceSql = `SELECT sa.id, sa.studentId, sa.slotId, sa.dateStr, sa.status, sa.type, sa.mode, sa.markedBy, sa.timestamp, sa.attendanceTypeSub, sa.coveredSubject FROM student_attendance sa JOIN students st ON sa.studentId = st.id WHERE st.college_id = ? AND sa.dateStr >= ? AND strftime('%w', sa.dateStr) != '0' ORDER BY sa.dateStr DESC LIMIT ${ATTENDANCE_LIMIT}`;

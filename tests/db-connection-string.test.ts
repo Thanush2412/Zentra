@@ -17,7 +17,7 @@ describe("resolveConnectionString", () => {
     const out = new URL(resolveConnectionString(
       "postgresql://postgres:pw@db.abcdefghij.supabase.co:5432/postgres"
     ));
-    expect(out.hostname).toBe("aws-0-ap-southeast-2.pooler.supabase.com");
+    expect(out.hostname).toBe("aws-0-ap-southeast-1.pooler.supabase.com");
     expect(out.port).toBe("6543");
     expect(out.username).toBe("postgres.abcdefghij");
     expect(out.password).toBe("pw");

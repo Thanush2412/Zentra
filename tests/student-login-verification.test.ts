@@ -62,6 +62,8 @@ vi.mock("@/lib/db", () => ({
       }
       return { changes: 1 };
     },
+    // Bare identifiers (roll numbers) also try a unique email-prefix match via all().
+    all: async () => [],
     multiQuery: async () => [[]]
   })
 }));

@@ -3,11 +3,17 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { requireAuth } from "@/lib/authGuard";
+import { cacheGet, cacheSet, cacheDel } from "@/lib/simpleCache";
 
 export async function GET(request: Request) {
   try {
     const { errorResponse } = await requireAuth(request);
     if (errorResponse) return errorResponse;
+
+    const CACHE_KEY = "colleges:all";
+    const cached = cacheGet(CACHE_KEY);
+    if (cached) return NextResponse.json(cached, { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" } });
+
     const db = await getDb();
 
     // Three parameterless reads, so multiQuery folds them into a single statement batch
@@ -66,8 +72,10 @@ export async function GET(request: Request) {
       { sql: "SELECT id, name, email, title FROM kam_users ORDER BY name" }
     ]);
 
+    const payload = { success: true, colleges, campusManagers, kamUsers };
+    cacheSet("colleges:all", payload, 60);
     return NextResponse.json(
-      { success: true, colleges, campusManagers, kamUsers },
+      payload,
       { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120" } }
     );
   } catch (error: any) {
@@ -108,6 +116,9 @@ export async function POST(request: Request) {
       "INSERT INTO colleges (id, name, address, kam_id, has_shifts, shift_configs, rooms, code, academic_year, manager, working_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       generatedId, cleanName, address ? address.trim() : "", kam_id.trim(), has_shifts === undefined ? 1 : Number(has_shifts), shift_configs || null, rooms || null, code || null, academic_year || null, manager || null, working_days === undefined ? 5 : Number(working_days)
     );
+    cacheDel("colleges:");
+    cacheDel("mentors:");
+    cacheDel("slots:");
     return NextResponse.json({ success: true, message: "Campus created successfully", id: generatedId });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -128,6 +139,7 @@ export async function PUT(request: Request) {
       "UPDATE colleges SET name = ?, address = ?, kam_id = ?, has_shifts = ?, shift_configs = ?, rooms = ?, code = ?, academic_year = ?, manager = ?, working_days = ? WHERE id = ?",
       name.trim(), address ? address.trim() : "", kam_id.trim(), has_shifts === undefined ? 1 : Number(has_shifts), shift_configs || null, rooms || null, code || null, academic_year || null, manager || null, working_days === undefined ? 5 : Number(working_days), id
     );
+    cacheDel("colleges:");
     return NextResponse.json({ success: true, message: "Campus updated successfully" });
   } catch (error: any) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
@@ -192,6 +204,9 @@ export async function DELETE(request: Request) {
       return { mentors, students, cams };
     });
 
+    cacheDel("colleges:");
+    cacheDel("mentors:");
+    cacheDel("slots:");
     return NextResponse.json({
       success: true,
       message: `Campus deleted successfully. Removed ${deletedCounts.mentors} mentor(s), ${deletedCounts.students} student(s), ${deletedCounts.cams} CAM(s) and all associated data.`,

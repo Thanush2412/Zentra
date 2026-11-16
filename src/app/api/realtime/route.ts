@@ -1,26 +1,36 @@
 export const dynamic = "force-dynamic";
+// Bound each stream so a serverless instance is not pinned forever; the client
+// reconnects automatically (lib/dataSync) and the outbox poller covers the gap.
+export const maxDuration = 300;
 
 import { getSessionFromRequest } from "@/lib/api-auth";
 import { addRealtimeClient, removeRealtimeClient } from "@/lib/realtimeServer";
 import { generateId } from "@/lib/id";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
+  // Identity, role and campus come ONLY from the verified session. The stream used
+  // to fall back to ?role=&collegeId= query params, so an anonymous caller could
+  // subscribe as role=admin and receive admin broadcasts.
   let session = null;
   try {
     session = await getSessionFromRequest(request);
-  } catch (_) {}
+  } catch (_) {
+    session = null;
+  }
+  if (!session) {
+    return new Response(JSON.stringify({ success: false, message: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
 
-  const userId = session?.userId || searchParams.get("userId") || "";
-  const role = session?.role || searchParams.get("role") || "";
-  const collegeId = session?.collegeId || searchParams.get("collegeId") || "";
+  const userId = String(session.userId || "");
+  const role = String(session.role || "");
+  const collegeId = session.collegeId ? String(session.collegeId) : "";
 
   const aliasSet = new Set<string>();
-  if (userId) aliasSet.add(String(userId).trim());
-  if (session?.userId) aliasSet.add(String(session.userId).trim());
-  if (session?.email) aliasSet.add(String(session.email).trim());
-  const queryUserId = searchParams.get("userId");
-  if (queryUserId) aliasSet.add(String(queryUserId).trim());
+  if (userId) aliasSet.add(userId.trim());
+  if (session.email) aliasSet.add(String(session.email).trim());
 
   const clientId = generateId("rtc");
   let intervalId: any = null;
@@ -29,10 +39,10 @@ export async function GET(request: Request) {
     start(controller) {
       addRealtimeClient({
         id: clientId,
-        userId: userId ? String(userId) : undefined,
+        userId: userId || undefined,
         aliases: Array.from(aliasSet),
-        role: role ? String(role) : undefined,
-        collegeId: collegeId ? String(collegeId) : undefined,
+        role: role || undefined,
+        collegeId: collegeId || undefined,
         controller
       });
 

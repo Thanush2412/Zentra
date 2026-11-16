@@ -2,6 +2,7 @@ export const maxDuration = 60;
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { canActOnCollege, StaleStateError } from "@/lib/requestScope";
 import { requireAuth } from "@/lib/authGuard";
 import { generateId } from "@/lib/id";
 import { dispatchSystemNotification } from "@/lib/notifications";
@@ -146,6 +147,13 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: false, message: "Approval entry not found" }, { status: 404 });
     }
 
+    if (approval.current_status && approval.current_status !== "pending") {
+      return NextResponse.json({ success: false, message: `This request was already ${approval.current_status}.` }, { status: 409 });
+    }
+    if (actor.role !== "admin" && approval.college_id && !(await canActOnCollege(db, actor, approval.college_id))) {
+      return NextResponse.json({ success: false, message: "Unauthorized: This request belongs to a campus outside your scope." }, { status: 403 });
+    }
+
     const now = new Date().toISOString();
     const reasonText = rejection_reason || remarks;
     const { module_type, request_id } = approval;
@@ -155,8 +163,9 @@ export async function PUT(request: Request) {
     // autocommitted statements, a failure left an approval marked resolved with
     // the leave still Pending (or the reverse) — and the notification insert was
     // swallowed with .catch(console.warn), so the requester was simply never told.
+    try {
     await db.transaction(async (tx) => {
-      await tx.run(
+      const flip = await tx.run(
         `UPDATE approvals SET
           current_status = ?,
           approver_id = ?,
@@ -165,9 +174,11 @@ export async function PUT(request: Request) {
           rejection_reason = ?,
           approved_at = ?,
           updated_at = ?
-        WHERE id = ?`,
+        WHERE id = ? AND current_status = 'pending'`,
         [status, approver_id, approver_name, remarks, reasonText, status === "approved" ? now : null, now, approval_id]
       );
+      // A concurrent approver already decided: roll the whole decision back.
+      if (flip.changes !== 1) throw new StaleStateError();
 
       // Module Side Effects Trigger
       if (module_type === "student_leave") {
@@ -242,6 +253,12 @@ export async function PUT(request: Request) {
         ]
       );
     });
+    } catch (err) {
+      if (err instanceof StaleStateError) {
+        return NextResponse.json({ success: false, message: err.message }, { status: 409 });
+      }
+      throw err;
+    }
 
     const updatedApproval = await db.get("SELECT * FROM approvals WHERE id = ?", [approval_id]);
     return NextResponse.json({

@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextResponse } from "next/server";
 import { getDb, type QueryFailure } from "@/lib/db";
 import { requireAuth, Role } from "@/lib/authGuard";
+import { canActOnCollege } from "@/lib/requestScope";
 import { generateId } from "@/lib/id";
 import { notifyRealtimeEvent } from "@/lib/realtimeServer";
 import { dispatchSystemNotification } from "@/lib/notifications";
@@ -186,12 +187,28 @@ export async function PUT(request: Request) {
     // resolution as "Principal". Record whoever the session actually belongs to.
     const resolverName = auth?.user?.name || "Class Teacher / CM";
 
-    await db.run(
-      "UPDATE leave_requests SET status = ?, approvedBy = ? WHERE id = ?",
+    const resolverRole = auth!.user.role;
+    if (resolverRole === "student") {
+      return NextResponse.json({ success: false, message: "Students cannot approve leave requests." }, { status: 403 });
+    }
+    if (resolverRole === "cm" || resolverRole === "kam" || resolverRole === "mentor") {
+      const st = await db.get("SELECT college_id FROM students WHERE id = ?", [leaveReq.studentId]);
+      if (!(await canActOnCollege(db, auth!.user, st?.college_id))) {
+        return NextResponse.json({ success: false, message: "Unauthorized: This student belongs to a campus outside your scope." }, { status: 403 });
+      }
+    }
+
+    // Only a still-pending request can be decided; a second click / concurrent
+    // approver matches no row instead of re-applying the attendance side effects.
+    const flip = await db.run(
+      "UPDATE leave_requests SET status = ?, approvedBy = ? WHERE id = ? AND LOWER(status) = 'pending'",
       status,
       resolverName,
       requestId
     );
+    if (flip.changes !== 1) {
+      return NextResponse.json({ success: false, message: "This leave request was already processed." }, { status: 409 });
+    }
 
     // If approved, update student attendance records for that day to 'OD' or 'Leave' so they don't show as Absent
     if (status === "approved") {

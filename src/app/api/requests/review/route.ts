@@ -9,6 +9,24 @@ import { isInCmQueue, isAwaitingCm } from "@/lib/requestStatus";
 import { notifyRealtimeEvent } from "@/lib/realtimeServer";
 import { dispatchSystemNotification } from "@/lib/notifications";
 import { isTimeSlotOverlap } from "@/lib/utils";
+import { canActOnCollege, resolveRequestCollegeId, actorRoleLabel, StaleStateError } from "@/lib/requestScope";
+
+/** Statuses a CM reassignment may still act on (legacy cam spellings included). */
+const REASSIGNABLE_STATUSES = ["pending", "pending_cm", "pending_cam", "needs_cm_allocation", "needs_cam_allocation"];
+
+/**
+ * True when `mentorId` already covers another class that overlaps `time` on `dateStr`
+ * (approved covers are date-specific, so the weekly timetable check alone misses them).
+ */
+async function findCoverClash(db: any, mentorId: string, dateStr: string | null | undefined, time: string, excludeRequestId: string) {
+  if (!mentorId || !dateStr || !time) return null;
+  const covers = await db.all(
+    `SELECT ah.course, s.time FROM approved_handovers ah JOIN slots s ON s.id = ah.slotId
+     WHERE ah.coverStaffId = ? AND ah.dateStr = ? AND (ah.requestId IS NULL OR ah.requestId != ?)`,
+    [mentorId, dateStr, excludeRequestId]
+  );
+  return covers.find((c: any) => isTimeSlotOverlap(c.time, time)) || null;
+}
 
 // Approving or rejecting a handover mutates the schedule and notifies the
 // requestor by email, so it cannot stay reachable without a session.
@@ -54,8 +72,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Handover request not found" }, { status: 404 });
     }
 
-    const cleanApproverName = approverName || "System User";
-    const cleanActorRole = actorRole || (action === "cm_reassign" ? "Campus Manager" : "Mentor");
+    // Audit identity comes from the verified session; body fields are only a fallback label.
+    const cleanApproverName = auth?.user?.name || approverName || "System User";
+    const cleanActorRole = actorRoleLabel(auth?.user?.role) || actorRole || "User";
+
+    // Campus scope applies to every action on this request, not just reassignment.
+    // Mentors are scoped below by being the requestor or the addressed cover.
+    if (actorRoleFromAuth !== "mentor" && !isRealAdmin) {
+      const requestCollegeId = await resolveRequestCollegeId(db, handoverRequest);
+      if (!(await canActOnCollege(db, auth!.user, requestCollegeId))) {
+        return NextResponse.json(
+          { success: false, message: "Unauthorized: This request belongs to a campus outside your scope." },
+          { status: 403 }
+        );
+      }
+    }
 
     // 1. CM Direct Reassignment / Allocation of a Free Mentor
     if ((action === "cm_reassign" || action === "cam_reassign") && newTargetStaffId) {
@@ -67,14 +98,11 @@ export async function POST(request: Request) {
         );
       }
 
-      // If CM, verify request belongs to their assigned campus
-      if (actorRoleFromAuth === "cm" && auth?.user?.college_id && handoverRequest.college_id) {
-        if (handoverRequest.college_id.toLowerCase() !== auth.user.college_id.toLowerCase()) {
-          return NextResponse.json(
-            { success: false, message: "Unauthorized: You can only reassign handovers for your assigned campus." },
-            { status: 403 }
-          );
-        }
+      if (!REASSIGNABLE_STATUSES.includes(String(handoverRequest.status || ""))) {
+        return NextResponse.json(
+          { success: false, message: "This request has already been processed and cannot be reassigned." },
+          { status: 409 }
+        );
       }
 
       const newCoverStaff = coverStaffRows[0];
@@ -101,6 +129,13 @@ export async function POST(request: Request) {
             message: `Conflict: ${newCoverStaff.name} is already scheduled to teach "${teachingClash.course}" at [${targetDay}, ${teachingClash.time}].`
           }, { status: 409 });
         }
+        const coverClash = await findCoverClash(db, newCoverStaff.id, handoverRequest.dateStr, targetTime, requestId);
+        if (coverClash) {
+          return NextResponse.json({
+            success: false,
+            message: `Conflict: ${newCoverStaff.name} is already covering "${coverClash.course}" at ${coverClash.time} on ${handoverRequest.dateStr}.`
+          }, { status: 409 });
+        }
       }
 
       const handoverId = generateId("h");
@@ -109,13 +144,17 @@ export async function POST(request: Request) {
       // The request row, the ledger row and the audit trail are one decision. Split
       // across autocommitted statements, a failure mid-way left the request approved
       // with no handover to show for it (or vice versa) and the ledger short by a class.
+      try {
       await db.transaction(async (tx) => {
-        await tx.run(
+        // Conditional on the status we read: a second click / concurrent approver
+        // matches no row and the whole decision rolls back (no duplicate ledger row).
+        const flip = await tx.run(
           `UPDATE handover_requests 
            SET targetStaffId = ?, targetStaffName = ?, status = 'approved', approvedBy = ?, headerReason = ?
-           WHERE id = ?`,
-          [newCoverStaff.id, newCoverStaff.name, cleanApproverName, `Assigned by CM ${cleanApproverName}`, requestId]
+           WHERE id = ? AND status = ?`,
+          [newCoverStaff.id, newCoverStaff.name, cleanApproverName, `Assigned by CM ${cleanApproverName}`, requestId, handoverRequest.status]
         );
+        if (flip.changes !== 1) throw new StaleStateError();
 
         await tx.run(
           `INSERT INTO approved_handovers (id, requestId, slotId, dateStr, originalMentorId, coverStaffId, coverStaffName, course, ledger_month) 
@@ -145,6 +184,12 @@ export async function POST(request: Request) {
           ]
         );
       });
+      } catch (err) {
+        if (err instanceof StaleStateError) {
+          return NextResponse.json({ success: false, message: err.message }, { status: 409 });
+        }
+        throw err;
+      }
 
       // DATA_FLOW_AUDIT D3: return the created handover row so the client patches
       // state with the authoritative DB values.
@@ -185,11 +230,13 @@ export async function POST(request: Request) {
 
       // Approving the request and writing the mark are the same act; an error on the
       // second left a request marked approved whose mark never changed.
+      try {
       await db.transaction(async (tx) => {
-        await tx.run(
-          "UPDATE handover_requests SET status = ?, headerReason = ?, approvedBy = ? WHERE id = ?",
-          [targetStatus, headerReason || null, cleanApproverName, requestId]
+        const flip = await tx.run(
+          "UPDATE handover_requests SET status = ?, headerReason = ?, approvedBy = ? WHERE id = ? AND status = ?",
+          [targetStatus, headerReason || null, cleanApproverName, requestId, handoverRequest.status]
         );
+        if (flip.changes !== 1) throw new StaleStateError();
 
         if (approvedMark) {
           await tx.run(
@@ -206,6 +253,12 @@ export async function POST(request: Request) {
           );
         }
       });
+      } catch (err) {
+        if (err instanceof StaleStateError) {
+          return NextResponse.json({ success: false, message: err.message }, { status: 409 });
+        }
+        throw err;
+      }
 
       return NextResponse.json({ success: true, message: `Exam mark modification request ${status} successfully!` });
     }
@@ -291,6 +344,13 @@ export async function POST(request: Request) {
             message: `Conflict: ${coverName || 'Cover faculty'} is already scheduled to teach "${teachingClash.course}" at [${targetDay}, ${teachingClash.time}]. Cannot double-book.`
           }, { status: 409 });
         }
+        const coverClash = await findCoverClash(db, coverStaffId, handoverRequest.dateStr || handoverRequest.datestr, targetTime, requestId);
+        if (coverClash) {
+          return NextResponse.json({
+            success: false,
+            message: `Conflict: this faculty is already covering "${coverClash.course}" at ${coverClash.time} on that date. Cannot double-book.`
+          }, { status: 409 });
+        }
       }
     }
 
@@ -300,11 +360,13 @@ export async function POST(request: Request) {
     // cover missing from the ledger.
     let createdHandoverId: string | null = null;
 
+    try {
     await db.transaction(async (tx) => {
-      await tx.run(
-        "UPDATE handover_requests SET status = ?, headerReason = ?, approvedBy = ? WHERE id = ?",
-        [targetStatus, headerReason || null, cleanApproverName, requestId]
+      const flip = await tx.run(
+        "UPDATE handover_requests SET status = ?, headerReason = ?, approvedBy = ? WHERE id = ? AND status = ?",
+        [targetStatus, headerReason || null, cleanApproverName, requestId, handoverRequest.status]
       );
+      if (flip.changes !== 1) throw new StaleStateError();
 
       // If this is a late attendance / meta request, also resolve any duplicate pending requests for the same session
       if (isMetaOrCamRequest && handoverRequest.requestorId && handoverRequest.slotId && (handoverRequest.dateStr || handoverRequest.datestr)) {
@@ -485,6 +547,12 @@ export async function POST(request: Request) {
         ]
       );
     });
+    } catch (err) {
+      if (err instanceof StaleStateError) {
+        return NextResponse.json({ success: false, message: err.message }, { status: 409 });
+      }
+      throw err;
+    }
 
     // Realtime notification dispatch to requestor and target cover staff
     try {

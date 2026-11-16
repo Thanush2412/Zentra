@@ -14,7 +14,7 @@ const h = vi.hoisted(() => {
       multiQuery: async (queries: { sql: string }[]) => {
         reads.push(...queries.map(q => q.sql));
         return queries.map(q => {
-          if (q.sql.includes("FROM mentors")) return [{ id: "m9", college_id: "c1" }];
+          if (q.sql.includes("FROM mentors")) return ["m1", "m2", "m3", "m4", "m5", "m9"].map(id => ({ id, college_id: "c1" }));
           if (q.sql.includes("FROM colleges")) return [{ id: "c1" }];
           return existing();
         });
@@ -31,8 +31,11 @@ const h = vi.hoisted(() => {
   return { reads, writes, synced, makeDb };
 });
 
+// Admin is unscoped, so it may import into several campuses in one upload (a CM is
+// pinned to its own campus — see the "campus pinning" tests below).
+const authState = vi.hoisted(() => ({ user: { id: "u_admin", reference_id: "admin_1", role: "admin", name: "Admin", email: "a@x", college_id: null as string | null } }));
 vi.mock("@/lib/authGuard", () => ({
-  requireAuth: async () => ({ auth: { role: "cm" }, errorResponse: null })
+  requireAuth: async () => ({ auth: { user: authState.user }, errorResponse: null })
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -110,6 +113,25 @@ describe("bulk slot import round trips", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0].sql).toContain("VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     expect(h.writes.filter(w => w.sql.includes("INSERT INTO audit_logs"))).toHaveLength(1);
+  });
+
+  it("never lands a slot on an unrelated campus when its campus is unknown", async () => {
+    const json = await runImport([{ mentorId: "unknown", day: "Friday", time: "09:00 AM - 10:00 AM", course: "X", location: "R1", classGroup: "G", shift: "general" }]);
+    expect(json.success).toBe(false);
+    expect(json.skipped[0].reason).toContain("campus");
+    expect(h.writes.filter(w => w.sql.includes("INSERT INTO slots"))).toHaveLength(0);
+  });
+
+  it("pins a CM upload to the CM's own campus", async () => {
+    const saved = authState.user;
+    authState.user = { ...saved, role: "cm", college_id: "c1" };
+    try {
+      await runImport([{ mentorId: "m6", day: "Friday", time: "09:00 AM - 10:00 AM", course: "SE", location: "R9", classGroup: "G", shift: "general", college_id: "c2" }]);
+      const insert = h.writes.find(w => w.sql.includes("INSERT INTO slots"));
+      expect(insert!.params[11]).toBe("c1");
+    } finally {
+      authState.user = saved;
+    }
   });
 
   it("refuses an empty payload", async () => {

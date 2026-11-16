@@ -33,8 +33,8 @@ const PUBLIC_API_PATHS = new Set<string>([
   "/api/health",
   "/api/student-feedback",
   "/api/auth/me",
-  "/api/data/reference",
-  "/api/realtime"
+  "/api/data/reference"
+  // "/api/realtime" now requires a session (it used to trust ?role= query params).
 ]);
 
 export async function proxy(request: NextRequest) {

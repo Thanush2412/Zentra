@@ -404,10 +404,13 @@ export async function POST(request: Request) {
       }
 
       if (decision === "rejected") {
-        await db.run(
-          "UPDATE demo_reallocation_requests SET status = 'rejected', decided_by = ?, decided_at = ?, decision_notes = ? WHERE id = ?",
+        const flip = await db.run(
+          "UPDATE demo_reallocation_requests SET status = 'rejected', decided_by = ?, decided_at = ?, decision_notes = ? WHERE id = ? AND status = 'pending'",
           [decidedBy || "L&D", new Date().toISOString(), decisionNotes || null, requestId]
         );
+        if (flip.changes !== 1) {
+          return NextResponse.json({ success: false, message: "Request was already processed." }, { status: 409 });
+        }
 
         const auditId = generateId("audit");
         await db.run(
@@ -440,17 +443,25 @@ export async function POST(request: Request) {
         }, { status: 409 });
       }
 
-      await db.run(
-        `UPDATE demo_sessions
-         SET dateStr = ?, timeSlot = ?, status = 'confirmed'
-         WHERE id = ?`,
-        [req.proposed_date_str, req.proposed_time_slot, req.demo_session_id]
-      );
-
-      await db.run(
-        "UPDATE demo_reallocation_requests SET status = 'approved', decided_by = ?, decided_at = ?, decision_notes = ? WHERE id = ?",
-        [decidedBy || "L&D", new Date().toISOString(), decisionNotes || null, requestId]
-      );
+      // Claim the request first (conditional) and move the session in the same
+      // transaction, so two approvers cannot both apply it.
+      const moved = await db.transaction(async (tx) => {
+        const flip = await tx.run(
+          "UPDATE demo_reallocation_requests SET status = 'approved', decided_by = ?, decided_at = ?, decision_notes = ? WHERE id = ? AND status = 'pending'",
+          [decidedBy || "L&D", new Date().toISOString(), decisionNotes || null, requestId]
+        );
+        if (flip.changes !== 1) return false;
+        await tx.run(
+          `UPDATE demo_sessions
+           SET dateStr = ?, timeSlot = ?, status = 'confirmed'
+           WHERE id = ?`,
+          [req.proposed_date_str, req.proposed_time_slot, req.demo_session_id]
+        );
+        return true;
+      });
+      if (!moved) {
+        return NextResponse.json({ success: false, message: "Request was already processed." }, { status: 409 });
+      }
 
       // Notifications: mentor + SME via zero-delay notification engine
       await dispatchSystemNotification(db, {

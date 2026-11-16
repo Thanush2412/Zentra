@@ -214,8 +214,8 @@ export async function GET(request: Request) {
         db.all("SELECT cm.*, c.name as college_name FROM campus_managers cm JOIN colleges c ON cm.college_id = c.id")
       ]);
 
-      const totalFees = fees.reduce((s: number, f: any) => s + f.amount, 0);
-      const totalPaid = fees.reduce((s: number, f: any) => s + f.paid_amount, 0);
+      const totalFees = fees.reduce((s: number, f: any) => s + (Number(f.amount) || 0), 0);
+      const totalPaid = fees.reduce((s: number, f: any) => s + (Number(f.paid_amount) || 0), 0);
       const totalOutstanding = Math.max(totalFees - totalPaid, 0);
       const paidCount = fees.filter((f: any) => f.status === 'paid').length;
       const partialCount = fees.filter((f: any) => f.status === 'partial').length;
@@ -261,8 +261,8 @@ export async function GET(request: Request) {
         return NextResponse.json({ success: false, error: "Fee data could not be loaded. Please retry." }, { status: 500 });
       }
 
-      const totalFees = fees.reduce((s: number, f: any) => s + f.amount, 0);
-      const totalPaid = fees.reduce((s: number, f: any) => s + f.paid_amount, 0);
+      const totalFees = fees.reduce((s: number, f: any) => s + (Number(f.amount) || 0), 0);
+      const totalPaid = fees.reduce((s: number, f: any) => s + (Number(f.paid_amount) || 0), 0);
       const paidCount = fees.filter((f: any) => f.status === 'paid').length;
       const partialCount = fees.filter((f: any) => f.status === 'partial').length;
       const unpaidCount = fees.filter((f: any) => f.status === 'unpaid').length;
@@ -301,8 +301,8 @@ export async function GET(request: Request) {
       const student = studentRows[0];
       if (!student) return NextResponse.json({ success: false, message: "Student not found" }, { status: 404 });
 
-      const totalFees = fees.reduce((s: number, f: any) => s + f.amount, 0);
-      const totalPaid = fees.reduce((s: number, f: any) => s + f.paid_amount, 0);
+      const totalFees = fees.reduce((s: number, f: any) => s + (Number(f.amount) || 0), 0);
+      const totalPaid = fees.reduce((s: number, f: any) => s + (Number(f.paid_amount) || 0), 0);
 
       return NextResponse.json({
         success: true,

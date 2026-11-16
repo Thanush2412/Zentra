@@ -21,7 +21,9 @@ import { getCurrentAcademicYear } from "@/lib/academicYear";
 import { stableDocRef } from "@/lib/report-export";
 import { ALL_SEMESTERS } from "@/lib/semesters";
 import { generateId } from "@/lib/id";
-import { gsap } from "gsap";
+// gsap is loaded on demand (see loadGsap) so it is not part of the dashboard's initial bundle.
+let gsapPromise: Promise<typeof import("gsap")["gsap"]> | null = null;
+const loadGsap = () => (gsapPromise ??= import("gsap").then((m) => m.gsap));
 
 import { Button } from "./Button";
 import { Card } from "./Card";
@@ -8867,9 +8869,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
     let isMounted = true;
     // Immediate fetch on tab open so data is always fresh
     refreshAttendance(activeCollegeId);
+    // Realtime "attendance" events refresh this view as mentors mark; the timer is a
+    // fallback only (was every 30s per open CM tab, re-reading the attendance window).
     const interval = setInterval(() => {
       if (isMounted && document.visibilityState === "visible") refreshAttendance(activeCollegeId);
-    }, 30_000); // every 30 seconds
+    }, 120_000); // every 2 minutes
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -8996,6 +9000,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
       });
 
       if (cardElements.length > 0) {
+        void loadGsap().then((gsap) => {
         gsap.killTweensOf(cardElements);
         gsap.fromTo(
           cardElements,
@@ -9009,6 +9014,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             ease: "back.out(0.8)"
           }
         );
+        }).catch(() => {});
       }
     }
   }, [activeTab]);
@@ -9026,6 +9032,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         `.submenu-${hoveredGroupId} .submenu-button`
       );
       if (subButtons.length > 0) {
+        void loadGsap().then((gsap) => {
         gsap.killTweensOf(subButtons);
         gsap.fromTo(
           subButtons,
@@ -9039,6 +9046,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             ease: "back.out(1.1)"
           }
         );
+        }).catch(() => {});
       }
     }
   }, [hoveredGroupId]);

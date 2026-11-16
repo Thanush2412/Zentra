@@ -193,3 +193,6 @@ skills-lock.json
 ._*
 .Spotlight-V100
 .Trashes
+
+# local safety backups
+.audit-backup-*/

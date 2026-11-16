@@ -286,27 +286,21 @@ export async function dispatchSystemNotification(
       });
     }
 
-    // 7. Fire PostgreSQL `pg_notify` for multi-instance broadcast
-    try {
-      await db.run(`SELECT pg_notify('fp_realtime_channel', ?)`, [
-        JSON.stringify({
-          eventId,
-          domain: options.domain || "notifications",
-          action: options.action || "created",
-          collegeId,
-        }),
-      ]);
-    } catch (_) {}
+    // 7. (pg_notify removed: nothing LISTENs and the pooler cannot hold a LISTEN.
+    //     Other instances pick the row up from event_outbox; see lib/realtimeServer.)
 
     // 8. Instant in-memory SSE delivery to connected subscribers (<1ms)
+    // Same eventId as the outbox row above, so instances that poll the outbox
+    // recognise it and this instance does not deliver it twice.
     notifyRealtimeEvent({
+      eventId,
       domain: (options.domain as any) || "notifications",
       action: (options.action as any) || "created",
       targetUserIds: allTargetAliasesList,
       targetRoles: roles.length > 0 ? roles : undefined,
       collegeId: collegeId || undefined,
       payload: envelopePayload,
-    });
+    }, { persist: false });
 
     // 9. Asynchronous Web Push to Google FCM & Apple APNs (for closed tabs & locked phones)
     sendWebPushNotification(db, {

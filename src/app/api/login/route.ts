@@ -146,6 +146,38 @@ async function noteLoginAttempt(db: PostgresDbAdapter, emailKey: string, ip: str
   }
 }
 
+/**
+ * Brute-force throttle. Deliberately NOT an account lockout (an attacker must not be
+ * able to lock a real user out): the per-account counter is keyed by account + IP, so
+ * guessing from one network slows only that network. Campus networks share a public
+ * IP, so the IP-wide ceiling is generous.
+ */
+const THROTTLE_WINDOW_MS = 15 * 60_000;
+const MAX_FAILS_PER_ACCOUNT_AND_IP = 5;
+const MAX_FAILS_PER_IP = 100;
+
+/** True when this account+IP pair, or this IP overall, has too many recent failures. */
+async function isLoginThrottled(db: PostgresDbAdapter, emailKey: string, ip: string): Promise<boolean> {
+  try {
+    await ensureMigration("login_attempts");
+    const since = new Date(Date.now() - THROTTLE_WINDOW_MS).toISOString();
+    const [byPair, byIp] = await db.multiQuery([
+      { sql: "SELECT COUNT(*) AS n FROM login_attempts WHERE email_key = ? AND ip = ? AND success = 0 AND attempted_at >= ?", params: [emailKey, ip, since] },
+      { sql: "SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND success = 0 AND attempted_at >= ?", params: [ip, since] },
+    ]);
+    return Number(byPair?.[0]?.n || 0) >= MAX_FAILS_PER_ACCOUNT_AND_IP || Number(byIp?.[0]?.n || 0) >= MAX_FAILS_PER_IP;
+  } catch (err) {
+    // A failed counter read must not lock everyone out.
+    console.warn("[login] throttle check failed:", err);
+    return false;
+  }
+}
+
+/** Returns the single row matching, or null when zero or several rows match (ambiguous). */
+function uniqueRow(rows: any[] | undefined): any | null {
+  return rows && rows.length === 1 ? rows[0] : null;
+}
+
 export async function POST(request: Request) {
   try {
     // Legacy role-token cleanup moved into the post-auth after() block below. It used to
@@ -188,14 +220,27 @@ export async function POST(request: Request) {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "127.0.0.1";
     const userAgent = request.headers.get("user-agent") || "Web Browser";
 
-    const likeEmailPrefix = `${escapeLike(lowerEmail)}@%`;
-    const likeNameContains = `%${escapeLike(lowerEmail)}%`;
+    if (await isLoginThrottled(db, lowerEmail, ip)) {
+      return NextResponse.json(
+        { success: false, message: "Too many failed sign-in attempts from this network. Please wait 15 minutes and try again." },
+        { status: 429, headers: { "Retry-After": String(THROTTLE_WINDOW_MS / 1000) } }
+      );
+    }
 
-    // Query centralized users table by email, reference_id, id, or username prefix
+    // Short usernames ("john") may still resolve to "john@domain", but only when exactly
+    // one account matches. Partial-name matching was removed: it let a guessed fragment
+    // resolve to an arbitrary account.
+    const likeEmailPrefix = `${escapeLike(lowerEmail)}@%`;
+    const isBareUsername = !lowerEmail.includes("@");
+
+    // Query centralized users table by exact email, reference_id or id first
     let user = await db.get(
-      "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(reference_id) = ? OR LOWER(id) = ? OR LOWER(email) LIKE ?",
-      [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix]
+      "SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(reference_id) = ? OR LOWER(id) = ? LIMIT 1",
+      [lowerEmail, lowerEmail, lowerEmail]
     );
+    if (!user && isBareUsername) {
+      user = uniqueRow(await db.all("SELECT * FROM users WHERE LOWER(email) LIKE ? LIMIT 2", [likeEmailPrefix]));
+    }
 
     // Opt-in break-glass path — repairs or provisions the owner account when admin credentials match
     const configuredAdminEmail = (process.env.SUPER_ADMIN_EMAIL || "thanush@faceprep.in").toLowerCase().trim();
@@ -213,28 +258,33 @@ export async function POST(request: Request) {
       // ── Parallel role lookup — all 5 tables queried in one round-trip ──
       // mentors/students carry a password_hash; sme_users still has a plaintext
       // `password`; campus_managers/kam_users keep their credential only in `users`.
-      const [cm, mentor, student, kam, sme] = await Promise.all([
+      // Exact identifiers first (one round trip for all five tables).
+      const [cmExact, mentorExact, student, kamExact, smeExact] = await Promise.all([
+        db.get("SELECT id, email FROM campus_managers WHERE LOWER(email) = ? OR LOWER(id) = ? LIMIT 1", [lowerEmail, lowerEmail]),
+        db.get("SELECT id, email, password_hash FROM mentors WHERE LOWER(email) = ? OR LOWER(id) = ? LIMIT 1", [lowerEmail, lowerEmail]),
         db.get(
-          "SELECT id, email FROM campus_managers WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
-          [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix, likeNameContains]
-        ),
-        db.get(
-          "SELECT id, email, password_hash FROM mentors WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
-          [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix, likeNameContains]
-        ),
-        db.get(
-          "SELECT id, email, password_hash FROM students WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(roll_number) = ? OR LOWER(register_number) = ?",
+          "SELECT id, email, password_hash FROM students WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(roll_number) = ? OR LOWER(register_number) = ? LIMIT 1",
           [lowerEmail, lowerEmail, lowerEmail, lowerEmail]
         ),
-        db.get(
-          "SELECT id, email FROM kam_users WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
-          [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix, likeNameContains]
-        ),
-        db.get(
-          "SELECT id, email, password FROM sme_users WHERE LOWER(email) = ? OR LOWER(id) = ? OR LOWER(name) = ? OR LOWER(email) LIKE ? OR LOWER(name) LIKE ?",
-          [lowerEmail, lowerEmail, lowerEmail, likeEmailPrefix, likeNameContains]
-        )
+        db.get("SELECT id, email FROM kam_users WHERE LOWER(email) = ? OR LOWER(id) = ? LIMIT 1", [lowerEmail, lowerEmail]),
+        db.get("SELECT id, email, password FROM sme_users WHERE LOWER(email) = ? OR LOWER(id) = ? LIMIT 1", [lowerEmail, lowerEmail]),
       ]);
+      let cm = cmExact, mentor = mentorExact, kam = kamExact, sme = smeExact;
+      // Bare username ("john") → "john@…" only when exactly one staff row matches.
+      // Partial-NAME matching was removed: a guessed fragment used to resolve to an
+      // arbitrary account.
+      if (isBareUsername && !cm && !mentor && !student && !kam && !sme) {
+        const [cmRows, mentorRows, kamRows, smeRows] = await Promise.all([
+          db.all("SELECT id, email FROM campus_managers WHERE LOWER(email) LIKE ? LIMIT 2", [likeEmailPrefix]),
+          db.all("SELECT id, email, password_hash FROM mentors WHERE LOWER(email) LIKE ? LIMIT 2", [likeEmailPrefix]),
+          db.all("SELECT id, email FROM kam_users WHERE LOWER(email) LIKE ? LIMIT 2", [likeEmailPrefix]),
+          db.all("SELECT id, email, password FROM sme_users WHERE LOWER(email) LIKE ? LIMIT 2", [likeEmailPrefix]),
+        ]);
+        cm = uniqueRow(cmRows);
+        mentor = uniqueRow(mentorRows);
+        kam = uniqueRow(kamRows);
+        sme = uniqueRow(smeRows);
+      }
 
       // Priority: CM > Mentor > Student > KAM > SME
       const resolved = cm ? { role: "cm", record: cm }
@@ -275,6 +325,7 @@ export async function POST(request: Request) {
           const stored = String(storedCredential || "");
           const looksHashed = looksLikeStoredCredential(stored);
           let isValid = false;
+          let usedDefaultPassword = false;
 
           if (looksHashed) {
             isValid = await verifyPasswordAsync(password, stored);
@@ -283,6 +334,7 @@ export async function POST(request: Request) {
           } else if ((foundRole === "kam" || foundRole === "cm" || foundRole === "sme" || foundRole === "admin") &&
                      (password === DEFAULT_PASSWORD || safeEqual(password, DEFAULT_PASSWORD))) {
             isValid = true;
+            usedDefaultPassword = true;
           }
 
           if (!isValid) {
@@ -295,18 +347,22 @@ export async function POST(request: Request) {
 
           const newHashed = (looksHashed && !needsRehash(stored)) ? stored : await hashPasswordAsync(password);
           const newId = generateId("user");
+          // Anyone who got in with the shared default password must set their own
+          // before the session can do anything (enforced by requireAuth).
+          const mustChange = usedDefaultPassword ? 1 : 0;
           await db.run(
-            `INSERT INTO users (id, email, password_hash, role, reference_id, created_at, updated_at) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO users (id, email, password_hash, role, reference_id, must_change_password, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (id) DO UPDATE SET
                email = EXCLUDED.email,
                password_hash = EXCLUDED.password_hash,
                role = EXCLUDED.role,
                reference_id = EXCLUDED.reference_id,
+               must_change_password = EXCLUDED.must_change_password,
                updated_at = EXCLUDED.updated_at`,
-            [newId, resolvedEmail, newHashed, foundRole, refId, new Date().toISOString(), new Date().toISOString()]
+            [newId, resolvedEmail, newHashed, foundRole, refId, mustChange, new Date().toISOString(), new Date().toISOString()]
           );
-          user = { id: newId, email: resolvedEmail, password_hash: newHashed, role: foundRole, reference_id: refId };
+          user = { id: newId, email: resolvedEmail, password_hash: newHashed, role: foundRole, reference_id: refId, must_change_password: mustChange };
         }
       }
     }
@@ -362,6 +418,14 @@ export async function POST(request: Request) {
     const collegeId = profile.collegeId;
     const userName = profile.name;
     const { rawToken, csrfToken, expiresAt } = session;
+
+    // A login with the shared default password always forces a password change,
+    // whatever the stored flag says (accounts are provisioned with that default).
+    const usedSharedDefault = !roleGrantsSuperAdmin(user.role) && Boolean(DEFAULT_PASSWORD) && safeEqual(password, DEFAULT_PASSWORD);
+    if (usedSharedDefault && !user.must_change_password) {
+      user.must_change_password = 1;
+      await db.run("UPDATE users SET must_change_password = 1 WHERE id = ?", [user.id]).catch(() => {});
+    }
 
     // Check if password change is explicitly enforced
     const mustChangePassword = Boolean(user.must_change_password);
