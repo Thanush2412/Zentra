@@ -229,8 +229,8 @@ export async function GET(request: Request) {
     const studentParams = isFeeManager ? [] : (isStudent && userId) ? [userId] : isKAM ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
     const subjectSql = isFeeManager ? "SELECT 1 WHERE 1=0" : isKAM
-      ? `SELECT * FROM subjects WHERE college_id IN ${kamInClause} OR college_id IS NULL`
-      : collegeId ? "SELECT * FROM subjects WHERE college_id = ? OR college_id IS NULL" : "SELECT * FROM subjects";
+      ? `SELECT * FROM subjects WHERE college_id IN ${kamInClause}`
+      : collegeId ? "SELECT * FROM subjects WHERE college_id = ?" : "SELECT * FROM subjects";
     const subjectParams = isFeeManager ? [] : isKAM ? [...kamCollegeIds] : collegeId ? [collegeId] : [];
 
     const courseSql = isKAM

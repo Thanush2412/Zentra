@@ -193,8 +193,8 @@ export async function DELETE(request: Request) {
       await tx.run(`DELETE FROM users WHERE role IN ('cm', 'cam') AND reference_id IN (SELECT id FROM campus_managers WHERE college_id = ?)`, id);
       await tx.run(`DELETE FROM campus_managers WHERE college_id = ?`, id);
 
-      // 5. Subjects keep their rows but lose the campus assignment
-      await tx.run("UPDATE subjects SET college_id = NULL WHERE college_id = ?", id);
+      // 5. Subjects belonging to this campus are deleted
+      await tx.run("DELETE FROM subjects WHERE college_id = ?", id);
 
       // 6. Courses, departments, then the college itself
       await tx.run("DELETE FROM courses WHERE college_id = ?", id);
@@ -207,6 +207,7 @@ export async function DELETE(request: Request) {
     cacheDel("colleges:");
     cacheDel("mentors:");
     cacheDel("slots:");
+    cacheDel("subjects:");
     return NextResponse.json({
       success: true,
       message: `Campus deleted successfully. Removed ${deletedCounts.mentors} mentor(s), ${deletedCounts.students} student(s), ${deletedCounts.cams} CAM(s) and all associated data.`,
