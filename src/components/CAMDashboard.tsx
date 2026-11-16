@@ -396,7 +396,7 @@ const CAMFeePanel: React.FC<{ camId: string }> = ({ camId }) => {
             <div className="flex-1 space-y-3 w-full">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-slate-700">Collection Progress</span>
-                <span className="text-sm font-black text-indigo-600">{collectedPct}%</span>
+                <span className="text-sm font-black text-amber-500">{collectedPct}%</span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2.5">
                 <div className="h-2.5 rounded-full brand-gradient transition-all duration-700" style={{ width: `${collectedPct}%` }} />
@@ -534,10 +534,10 @@ const AttMonitoringCharts = React.memo<AttMonitoringChartProps>(({
           <p className="text-xl font-black text-slate-800 mt-0.5">{onTrack}</p>
           <p className="text-[9px] text-slate-400 font-semibold mt-0.5">students ≥ 75%</p>
         </div>
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
-          <p className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider">Tracked Days</p>
-          <p className="text-xl font-black text-indigo-700 mt-0.5">{workingDatesCount}</p>
-          <p className="text-[9px] text-indigo-400 font-semibold mt-0.5">working days in range</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <p className="text-[10px] font-extrabold text-amber-500 uppercase tracking-wider">Tracked Days</p>
+          <p className="text-xl font-black text-amber-700 mt-0.5">{workingDatesCount}</p>
+          <p className="text-[9px] text-amber-400 font-semibold mt-0.5">working days in range</p>
         </div>
       </div>
 
@@ -3963,12 +3963,12 @@ export const CAMCampusInsightPanel: React.FC<{
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2.5">
-                <div className="h-10 w-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100/80 shadow-card">
+                <div className="h-10 w-10 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500 border border-amber-200/80 shadow-card">
                   <FileSpreadsheet className="h-5 w-5" />
                 </div>
                 <div>
                   <h2 className="text-base font-black text-slate-900 leading-tight">Campus Reports &amp; Analytics</h2>
-                  <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100/60 inline-block mt-0.5">
+                  <span className="text-[11px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/60 inline-block mt-0.5">
                     {activeCollegeName || "Current Campus"}
                   </span>
                 </div>
@@ -3987,7 +3987,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken/50 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken/50 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
               </div>
 
@@ -4180,7 +4180,7 @@ export const CAMCampusInsightPanel: React.FC<{
                     title="Refresh Student Achievements"
                     className="p-2 rounded-xl border border-slate-200 inset-shadow-well bg-sunken hover:bg-white text-slate-600 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${achievementsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${achievementsLoading ? "animate-spin text-amber-500" : ""}`} />
                   </button>
                 </>
               )}
@@ -4218,7 +4218,7 @@ export const CAMCampusInsightPanel: React.FC<{
                     title="Refresh Mentor NPS"
                     className="p-2 rounded-xl border border-slate-200 inset-shadow-well bg-sunken hover:bg-white text-slate-600 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${mentorNpsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${mentorNpsLoading ? "animate-spin text-amber-500" : ""}`} />
                   </button>
                 </>
               )}
@@ -4232,7 +4232,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   title="Refresh Client NPS"
                   className="p-2 rounded-xl border border-slate-200 inset-shadow-well bg-sunken hover:bg-white text-slate-600 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${clientNpsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${clientNpsLoading ? "animate-spin text-amber-500" : ""}`} />
                 </button>
               )}
 
@@ -4245,7 +4245,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   title="Refresh Observations"
                   className="p-2 rounded-xl border border-slate-200 inset-shadow-well bg-sunken hover:bg-white text-slate-600 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${observationsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${observationsLoading ? "animate-spin text-amber-500" : ""}`} />
                 </button>
               )}
 
@@ -4258,7 +4258,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   title="Reload live tickets"
                   className="p-2 rounded-xl border border-slate-200 inset-shadow-well bg-sunken hover:bg-white text-slate-600 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${ticketsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${ticketsLoading ? "animate-spin text-amber-500" : ""}`} />
                 </button>
               )}
 
@@ -4271,7 +4271,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   title="Reload placement records"
                   className="p-2 rounded-xl border border-slate-200 inset-shadow-well bg-sunken hover:bg-white text-slate-600 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${placementLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 ${placementLoading ? "animate-spin text-amber-500" : ""}`} />
                 </button>
               )}
             </div>
@@ -4525,7 +4525,7 @@ export const CAMCampusInsightPanel: React.FC<{
                               type="button"
                               onClick={() => copyParentAlert(s)}
                               title="Copy Parent WhatsApp/SMS Alert Notice"
-                              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-500 transition-colors cursor-pointer"
                             >
                               <MessageSquare className="w-3.5 h-3.5" />
                             </button>
@@ -4533,7 +4533,7 @@ export const CAMCampusInsightPanel: React.FC<{
                               type="button"
                               onClick={() => setSelectedStudentForModal(s)}
                               title="View Detailed Student Profile & Parent Notice Draft"
-                              className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
+                              className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-[10px] font-bold transition-colors cursor-pointer"
                             >
                               View
                             </button>
@@ -4589,13 +4589,13 @@ export const CAMCampusInsightPanel: React.FC<{
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div>
                 <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shrink-0">
+                  <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center border border-amber-200 shrink-0">
                     <ThumbsUp className="h-5 w-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-base font-black text-slate-900 leading-tight">Mentor NPS &amp; Student Satisfaction</h3>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200">
                         Live Feedback Sheets
                       </span>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -4663,7 +4663,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Overall NPS Index</span>
-                      <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full flex items-center gap-1 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                      <span className="text-[9px] font-bold text-amber-500 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full flex items-center gap-1 group-hover:bg-zinc-900 group-hover:text-white transition-colors">
                         <Eye className="w-2.5 h-2.5" /> History
                       </span>
                     </div>
@@ -4715,7 +4715,7 @@ export const CAMCampusInsightPanel: React.FC<{
                         <div
                           key={m.mentor || idx}
                           onClick={() => setSelectedMentorNpsRow(m)}
-                          className="py-3 px-2 -mx-2 rounded-xl flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 transition-colors group"
+                          className="py-3 px-2 -mx-2 rounded-xl flex items-center justify-between cursor-pointer hover:bg-amber-50/50 transition-colors group"
                           title="Click to view 360° Mentor Evaluation & Student Breakdown"
                         >
                           <div className="min-w-0 pr-2">
@@ -4724,7 +4724,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                 }`}>
                                 {idx + 1}
                               </span>
-                              <span className="font-extrabold text-xs text-slate-900 group-hover:text-indigo-700 transition-colors truncate">{m.mentor}</span>
+                              <span className="font-extrabold text-xs text-slate-900 group-hover:text-amber-700 transition-colors truncate">{m.mentor}</span>
                               {m.rating != null && (
                                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-[10px] font-black text-amber-800 shrink-0">
                                   <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-500" />
@@ -4755,9 +4755,9 @@ export const CAMCampusInsightPanel: React.FC<{
                                 e.stopPropagation();
                                 setSelectedMentorNpsRow(m);
                               }}
-                              className="px-2 py-1 bg-white border border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50 rounded-lg text-[10px] font-bold text-slate-600 group-hover:text-indigo-700 flex items-center gap-1 transition-all shadow-2xs cursor-pointer ml-1"
+                              className="px-2 py-1 bg-white border border-slate-200 group-hover:border-amber-400 group-hover:bg-amber-50 rounded-lg text-[10px] font-bold text-slate-600 group-hover:text-amber-700 flex items-center gap-1 transition-all shadow-2xs cursor-pointer ml-1"
                             >
-                              <Eye className="w-3 h-3 text-indigo-500" />
+                              <Eye className="w-3 h-3 text-amber-500" />
                               <span className="hidden sm:inline">Details</span>
                             </button>
                           </div>
@@ -4942,7 +4942,7 @@ export const CAMCampusInsightPanel: React.FC<{
                     type="button"
                     onClick={() => setTicketCampusScope("all")}
                     className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${ticketCampusScope === "all"
-                      ? "bg-white text-indigo-700 shadow-xs font-black"
+                      ? "bg-white text-amber-700 shadow-xs font-black"
                       : "text-slate-600 hover:text-slate-900"
                       }`}
                     title="View all support tickets across all colleges"
@@ -4956,10 +4956,10 @@ export const CAMCampusInsightPanel: React.FC<{
                   type="button"
                   onClick={() => fetchCampusTickets()}
                   disabled={ticketsLoading}
-                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-indigo-600 transition-all cursor-pointer shadow-2xs"
+                  className="p-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-amber-500 transition-all cursor-pointer shadow-2xs"
                   title="Refresh tickets"
                 >
-                  <RefreshCw className={`w-4 h-4 ${ticketsLoading ? "animate-spin text-indigo-600" : ""}`} />
+                  <RefreshCw className={`w-4 h-4 ${ticketsLoading ? "animate-spin text-amber-500" : ""}`} />
                 </button>
 
                 {/* Export Action Menu */}
@@ -5009,7 +5009,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   <Ticket className={`w-3.5 h-3.5 ${ticketStatusFilter === "all" && ticketAttachmentFilter === "all" ? "text-slate-300" : "text-slate-400"}`} />
                 </div>
                 <p className="text-xl font-black mt-1">{campusTickets.length}</p>
-                <span className={`text-[10px] font-medium block mt-0.5 ${ticketStatusFilter === "all" && ticketAttachmentFilter === "all" ? "text-indigo-300 font-bold" : "text-slate-500"}`}>
+                <span className={`text-[10px] font-medium block mt-0.5 ${ticketStatusFilter === "all" && ticketAttachmentFilter === "all" ? "text-amber-300 font-bold" : "text-slate-500"}`}>
                   {ticketStatusFilter === "all" && ticketAttachmentFilter === "all" ? "● Active Filter (All)" : "Click to view all"}
                 </span>
               </div>
@@ -5095,21 +5095,21 @@ export const CAMCampusInsightPanel: React.FC<{
                   setTicketAttachmentFilter(ticketAttachmentFilter === "with_image" ? "all" : "with_image");
                 }}
                 className={`p-3.5 rounded-xl border transition-all cursor-pointer hover:scale-[1.01] ${ticketAttachmentFilter === "with_image"
-                  ? "bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-500"
-                  : "bg-indigo-50/60 border-indigo-200 text-indigo-900 hover:bg-indigo-100/60"
+                  ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-md ring-1 ring-amber-500/40 font-bold"
+                  : "bg-amber-50/60 border-amber-200 text-zinc-900 hover:bg-amber-100/60"
                   }`}
                 title="Click to filter tickets with uploaded screenshots / images"
               >
                 <div className="flex items-center justify-between">
-                  <span className={`text-[10px] font-extrabold uppercase tracking-wider block ${ticketAttachmentFilter === "with_image" ? "text-indigo-100" : "text-indigo-700"}`}>
+                  <span className={`text-[10px] font-extrabold uppercase tracking-wider block ${ticketAttachmentFilter === "with_image" ? "text-amber-200" : "text-amber-700"}`}>
                     With Photo / Proof
                   </span>
-                  <Camera className={`w-3.5 h-3.5 ${ticketAttachmentFilter === "with_image" ? "text-white" : "text-indigo-600"}`} />
+                  <Camera className={`w-3.5 h-3.5 ${ticketAttachmentFilter === "with_image" ? "text-white" : "text-amber-500"}`} />
                 </div>
                 <p className="text-xl font-black mt-1">
                   {campusTickets.filter(t => Boolean(t.image_url)).length}
                 </p>
-                <span className={`text-[10px] font-medium block mt-0.5 ${ticketAttachmentFilter === "with_image" ? "text-indigo-100 font-bold" : "text-indigo-600"}`}>
+                <span className={`text-[10px] font-medium block mt-0.5 ${ticketAttachmentFilter === "with_image" ? "text-amber-200 font-bold" : "text-amber-500"}`}>
                   {ticketAttachmentFilter === "with_image" ? "● Active Filter (Click to clear)" : "Click to view images"}
                 </span>
               </div>
@@ -5128,7 +5128,7 @@ export const CAMCampusInsightPanel: React.FC<{
                       <button
                         type="button"
                         onClick={() => setSelectedTicketCategory("all")}
-                        className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                        className="text-[10px] font-bold text-amber-500 hover:underline cursor-pointer"
                       >
                         Clear Category ({selectedTicketCategory})
                       </button>
@@ -5198,12 +5198,12 @@ export const CAMCampusInsightPanel: React.FC<{
                       <button
                         type="button"
                         onClick={() => setTicketStatusFilter("all")}
-                        className="text-[10px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                        className="text-[10px] font-bold text-amber-500 hover:underline cursor-pointer"
                       >
                         Clear Status ({ticketStatusFilter})
                       </button>
                     )}
-                    <span className="text-[10px] text-indigo-600 font-bold">Click bar to filter</span>
+                    <span className="text-[10px] text-amber-500 font-bold">Click bar to filter</span>
                   </div>
                 </div>
                 <div className="h-56 w-full">
@@ -5255,9 +5255,9 @@ export const CAMCampusInsightPanel: React.FC<{
                   {(selectedTicketCategory !== "all" || ticketDeptFilter !== "all") && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {ticketDeptFilter !== "all" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-bold">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
                           Dept: {ticketDeptFilter}
-                          <button type="button" onClick={() => setTicketDeptFilter("all")} className="hover:text-indigo-950 font-black cursor-pointer">×</button>
+                          <button type="button" onClick={() => setTicketDeptFilter("all")} className="hover:text-zinc-900 font-black cursor-pointer">×</button>
                         </span>
                       )}
                       {selectedTicketCategory !== "all" && (
@@ -5289,7 +5289,7 @@ export const CAMCampusInsightPanel: React.FC<{
                           <TableHead
                             key={cat}
                             onClick={() => setSelectedTicketCategory(selectedTicketCategory === cat ? "all" : cat)}
-                            className={`p-2 text-center cursor-pointer transition-colors hover:text-indigo-600 ${selectedTicketCategory === cat ? "text-indigo-600 bg-indigo-50 font-black" : ""
+                            className={`p-2 text-center cursor-pointer transition-colors hover:text-amber-500 ${selectedTicketCategory === cat ? "text-amber-500 bg-amber-50 font-black" : ""
                               }`}
                             title={`Click to filter table by category: ${cat}`}
                           >
@@ -5304,10 +5304,10 @@ export const CAMCampusInsightPanel: React.FC<{
                         const rowTotal = ticketHeatmapData.categories.reduce((acc, cat) => acc + (row.counts[cat] || 0), 0);
                         const isRowSelected = ticketDeptFilter.toLowerCase() === row.dept.toLowerCase();
                         return (
-                          <TableRow key={row.dept} className={`transition-colors ${isRowSelected ? "bg-indigo-50/60" : "hover:bg-slate-100/40"}`}>
+                          <TableRow key={row.dept} className={`transition-colors ${isRowSelected ? "bg-amber-50/60" : "hover:bg-slate-100/40"}`}>
                             <TableCell
                               onClick={() => setTicketDeptFilter(ticketDeptFilter.toLowerCase() === row.dept.toLowerCase() ? "all" : row.dept)}
-                              className={`p-2 font-bold text-xs whitespace-nowrap cursor-pointer transition-colors ${isRowSelected ? "text-indigo-700 underline font-black" : "text-slate-800 hover:text-indigo-600"
+                              className={`p-2 font-bold text-xs whitespace-nowrap cursor-pointer transition-colors ${isRowSelected ? "text-amber-700 underline font-black" : "text-slate-800 hover:text-amber-500"
                                 }`}
                               title={`Click to filter table by department: ${row.dept}`}
                             >
@@ -5331,7 +5331,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                     setSelectedTicketCategory(selectedTicketCategory === cat ? "all" : cat);
                                     setTicketDeptFilter(ticketDeptFilter.toLowerCase() === row.dept.toLowerCase() ? "all" : row.dept);
                                   }}
-                                  className={`p-2 text-center cursor-pointer transition-all hover:ring-2 hover:ring-indigo-400 ${isCellActive ? "ring-2 ring-indigo-600 font-black bg-indigo-100" : ""
+                                  className={`p-2 text-center cursor-pointer transition-all hover:ring-2 hover:ring-amber-400 ${isCellActive ? "ring-2 ring-amber-500 font-black bg-amber-100" : ""
                                     }`}
                                   title={`${count} tickets in ${row.dept} for ${cat}. Click to filter table.`}
                                 >
@@ -5361,7 +5361,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   placeholder="Search by student, roll no, department, subject, ticket ID, note..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500"
                 />
                 {searchQuery && (
                   <button
@@ -5430,7 +5430,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   type="button"
                   onClick={() => setTicketAttachmentFilter(ticketAttachmentFilter === "with_image" ? "all" : "with_image")}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${ticketAttachmentFilter === "with_image"
-                    ? "bg-indigo-600 text-white shadow-xs"
+                    ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                     : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
                     }`}
                   title="Filter tickets that contain student-uploaded screenshot image proof"
@@ -5477,7 +5477,7 @@ export const CAMCampusInsightPanel: React.FC<{
                       <TableHead className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "name_asc" ? "date_desc" : "name_asc")}>
                         <div className="flex items-center gap-1">
                           <span>Student Name</span>
-                          {ticketSortBy === "name_asc" && <span className="text-indigo-600">▲</span>}
+                          {ticketSortBy === "name_asc" && <span className="text-amber-500">▲</span>}
                         </div>
                       </TableHead>
                       <TableHead className="p-3">Roll Number</TableHead>
@@ -5488,7 +5488,7 @@ export const CAMCampusInsightPanel: React.FC<{
                       <TableHead className="p-3 cursor-pointer hover:text-slate-800" onClick={() => setTicketSortBy(ticketSortBy === "status" ? "date_desc" : "status")}>
                         <div className="flex items-center gap-1">
                           <span>Status</span>
-                          {ticketSortBy === "status" && <span className="text-indigo-600">▲</span>}
+                          {ticketSortBy === "status" && <span className="text-amber-500">▲</span>}
                         </div>
                       </TableHead>
                       <TableHead className="p-3">Priority</TableHead>
@@ -5512,7 +5512,7 @@ export const CAMCampusInsightPanel: React.FC<{
                         <React.Fragment key={`${t.id || "tkt"}_${idx}`}>
                           <TableRow
                             onClick={() => setExpandedTicketId(isExpanded ? null : t.id)}
-                            className={`transition-colors cursor-pointer ${isExpanded ? "bg-indigo-50/30" : "hover:bg-slate-50/80"}`}
+                            className={`transition-colors cursor-pointer ${isExpanded ? "bg-amber-50/30" : "hover:bg-slate-50/80"}`}
                           >
                             <TableCell className="p-3 font-mono font-bold text-slate-800">{t.id}</TableCell>
                             <TableCell className="p-3 font-bold text-slate-900">{t.student_name || "Unknown"}</TableCell>
@@ -5524,7 +5524,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                   e.stopPropagation();
                                   if (t.department) setTicketDeptFilter(ticketDeptFilter === t.department ? "all" : t.department);
                                 }}
-                                className="hover:text-indigo-600 hover:underline text-left truncate block w-full cursor-pointer"
+                                className="hover:text-amber-500 hover:underline text-left truncate block w-full cursor-pointer"
                               >
                                 {t.department || "—"}
                               </button>
@@ -5536,7 +5536,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                   e.stopPropagation();
                                   if (t.category) setSelectedTicketCategory(selectedTicketCategory === t.category ? "all" : t.category);
                                 }}
-                                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-amber-50 hover:text-amber-700 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
                                 title="Click to filter by this category"
                               >
                                 {t.category || "General"}
@@ -5554,10 +5554,10 @@ export const CAMCampusInsightPanel: React.FC<{
                                     setPreviewImageUrl(t.image_url);
                                     setPreviewImageTitle(`${t.id} - ${t.student_name || "Ticket Screenshot"}`);
                                   }}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold transition-all cursor-pointer shadow-2xs"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-bold transition-all cursor-pointer shadow-2xs"
                                   title="Click to view full student screenshot"
                                 >
-                                  <Camera className="w-3 h-3 text-indigo-600" />
+                                  <Camera className="w-3 h-3 text-amber-500" />
                                   <span>Photo</span>
                                 </button>
                               ) : (
@@ -5606,7 +5606,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                       setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
                                       setResolutionNotes(t.admin_note || "");
                                     }}
-                                    className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold transition-colors cursor-pointer"
+                                    className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-[10px] font-bold transition-colors cursor-pointer"
                                     title="Update resolution status or add notes"
                                   >
                                     Resolve
@@ -5634,8 +5634,8 @@ export const CAMCampusInsightPanel: React.FC<{
                                     </div>
                                     {t.admin_note ? (
                                       <div>
-                                        <span className="text-[10px] font-extrabold uppercase text-indigo-700 tracking-wider">Official Admin Resolution Note:</span>
-                                        <p className="text-xs text-indigo-950 font-medium mt-1 leading-relaxed bg-indigo-50/80 p-3 rounded-lg border border-indigo-100 whitespace-pre-wrap">
+                                        <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Official Admin Resolution Note:</span>
+                                        <p className="text-xs text-zinc-900 font-medium mt-1 leading-relaxed bg-amber-50 p-3 rounded-lg border border-amber-200 whitespace-pre-wrap">
                                           {t.admin_note}
                                         </p>
                                       </div>
@@ -5648,7 +5648,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                   <div className="space-y-2">
                                     <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider flex items-center justify-between">
                                       <span className="flex items-center gap-1.5">
-                                        <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                                        <Camera className="w-3.5 h-3.5 text-amber-500" />
                                         <span>Uploaded Screenshot / Image Proof:</span>
                                       </span>
                                       {hasImage && (
@@ -5685,7 +5685,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                               setPreviewImageUrl(t.image_url);
                                               setPreviewImageTitle(`${t.id} - ${t.student_name || "Ticket Screenshot"}`);
                                             }}
-                                            className="font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                                            className="font-bold text-amber-500 hover:text-amber-800 flex items-center gap-1 cursor-pointer"
                                           >
                                             <Maximize2 className="w-3 h-3" />
                                             <span>Preview Fullscreen</span>
@@ -5727,7 +5727,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                         setUpdatingTicketStatus(isResolved ? "resolved" : isInProgress ? "progress" : "resolved");
                                         setResolutionNotes(t.admin_note || "");
                                       }}
-                                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors self-start sm:self-auto"
+                                      className="px-3 py-1.5 rounded-lg btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors self-start sm:self-auto"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
                                       <span>Update Status / Remarks</span>
@@ -5820,7 +5820,7 @@ export const CAMCampusInsightPanel: React.FC<{
                     },
                     {
                       label: "Print / PDF Ledger",
-                      icon: <FileText className="h-4 w-4 text-indigo-600" />,
+                      icon: <FileText className="h-4 w-4 text-amber-500" />,
                       onClick: () => exportDemoEvaluations("pdf"),
                     },
                   ]}
@@ -5833,7 +5833,7 @@ export const CAMCampusInsightPanel: React.FC<{
               <div className="p-4 rounded-xl bg-slate-50/70 border border-slate-100">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Total Demos</span>
                 <p className="text-xl font-black text-slate-800 mt-1">{demoMetrics.totalDemos}</p>
-                <span className="text-[10px] text-indigo-600 font-medium">{demoMetrics.scheduledCount} upcoming scheduled</span>
+                <span className="text-[10px] text-amber-500 font-medium">{demoMetrics.scheduledCount} upcoming scheduled</span>
               </div>
               <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
                 <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider">Completed</span>
@@ -5976,7 +5976,7 @@ export const CAMCampusInsightPanel: React.FC<{
                           {d.status}
                         </span>
                       </TableCell>
-                      <TableCell className="p-3 text-center font-mono font-black text-indigo-700 text-sm">{d.marks}</TableCell>
+                      <TableCell className="p-3 text-center font-mono font-black text-amber-700 text-sm">{d.marks}</TableCell>
                       <TableCell className="p-3 text-slate-600 max-w-xs truncate" title={d.comments}>{d.comments}</TableCell>
                       <TableCell className="p-3 text-center">
                         <button
@@ -6187,7 +6187,7 @@ export const CAMCampusInsightPanel: React.FC<{
                       <TableCell className="p-3 text-slate-600">{f.dept}</TableCell>
                       <TableCell className="p-3 text-center font-mono font-black text-slate-800">{f.assignedHours} hrs</TableCell>
                       <TableCell className="p-3 text-center font-mono text-slate-500">{f.targetLimit} hrs</TableCell>
-                      <TableCell className="p-3 text-center font-mono font-bold text-indigo-700">{f.variance}</TableCell>
+                      <TableCell className="p-3 text-center font-mono font-bold text-amber-700">{f.variance}</TableCell>
                       <TableCell className="p-3 text-right">
                         <span className={`px-2.5 py-1 rounded-md text-[10px] font-black uppercase ${f.status === "Overload" ? "bg-amber-100 text-amber-800" : f.status === "Optimal" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"
                           }`}>
@@ -6290,7 +6290,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
                     <span>Conducted vs Target Semester Hours</span>
                   </h4>
-                  <span className="text-[10px] text-indigo-600 font-bold">Top Subjects</span>
+                  <span className="text-[10px] text-amber-500 font-bold">Top Subjects</span>
                 </div>
                 <div className="h-56 w-full">
                   {subjectHoursComparisonData.length > 0 ? (
@@ -6390,7 +6390,7 @@ export const CAMCampusInsightPanel: React.FC<{
                       <TableCell className="p-3 text-slate-600">{sub.dept}</TableCell>
                       <TableCell className="p-3 text-slate-500">{sub.sem}</TableCell>
                       <TableCell className="p-3 text-slate-500">{sub.type}</TableCell>
-                      <TableCell className="p-3 text-center font-mono font-bold text-indigo-700">{sub.actualHours} hrs</TableCell>
+                      <TableCell className="p-3 text-center font-mono font-bold text-amber-700">{sub.actualHours} hrs</TableCell>
                       <TableCell className="p-3 text-center font-mono text-slate-500">{sub.targetHours} hrs</TableCell>
                       <TableCell className="p-3 text-center font-mono font-black text-slate-800 text-sm">{sub.completionPct}%</TableCell>
                       <TableCell className="p-3 text-right">
@@ -6488,10 +6488,10 @@ export const CAMCampusInsightPanel: React.FC<{
                 <p className="text-xl font-black text-purple-700 mt-1">{achievementMetrics.nationalCount}</p>
                 <span className="text-[10px] font-bold text-purple-600">High Impact Tier</span>
               </div>
-              <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100">
-                <span className="text-[10px] font-extrabold uppercase text-indigo-600 tracking-wider">Hackathons &amp; Contests</span>
-                <p className="text-xl font-black text-indigo-700 mt-1">{achievementMetrics.hackathonsCount}</p>
-                <span className="text-[10px] font-bold text-indigo-600">Competitive Coding / Expos</span>
+              <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-200">
+                <span className="text-[10px] font-extrabold uppercase text-amber-500 tracking-wider">Hackathons &amp; Contests</span>
+                <p className="text-xl font-black text-amber-700 mt-1">{achievementMetrics.hackathonsCount}</p>
+                <span className="text-[10px] font-bold text-amber-500">Competitive Coding / Expos</span>
               </div>
             </div>
 
@@ -6574,7 +6574,7 @@ export const CAMCampusInsightPanel: React.FC<{
                       const levelClass = ach.achievement_level?.includes("International")
                         ? "bg-purple-100 text-purple-800"
                         : ach.achievement_level?.includes("National")
-                          ? "bg-indigo-100 text-indigo-800"
+                          ? "bg-amber-100 text-amber-800"
                           : ach.achievement_level?.includes("State")
                             ? "bg-sky-100 text-sky-800"
                             : "bg-slate-100 text-slate-700";
@@ -6609,7 +6609,7 @@ export const CAMCampusInsightPanel: React.FC<{
                           <TableCell className="p-3 max-w-[200px]">
                             {ach.participation_type === "team" && ach.team_name ? (
                               <div>
-                                <span className="font-bold text-indigo-700 text-[11px] block">{ach.team_name}</span>
+                                <span className="font-bold text-amber-700 text-[11px] block">{ach.team_name}</span>
                                 <span className="text-[10px] text-slate-500 line-clamp-1">
                                   {studentNamesList.join(", ") || "Team Members"}
                                 </span>
@@ -6637,7 +6637,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                   target="_blank"
                                   rel="noreferrer"
                                   title="Open Proof / Certificate Link"
-                                  className="p-1 rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                                  className="p-1 rounded-md bg-amber-50 text-amber-500 hover:bg-amber-100 transition-colors"
                                 >
                                   <ExternalLink className="w-3.5 h-3.5" />
                                 </a>
@@ -6714,7 +6714,7 @@ export const CAMCampusInsightPanel: React.FC<{
               <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
                 {selectedAchDetail.badge || "Achievement"}
               </span>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
                 {selectedAchDetail.category || "General"}
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
@@ -6764,7 +6764,7 @@ export const CAMCampusInsightPanel: React.FC<{
                   href={selectedAchDetail.proof_link}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg btn-gradient text-white text-xs font-bold hover:bg-zinc-800 transition-colors"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span>View Official Certificate / Proof URL</span>
@@ -6852,7 +6852,7 @@ export const CAMCampusInsightPanel: React.FC<{
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center font-bold">
                   <User className="w-5 h-5" />
                 </div>
                 <div>
@@ -6906,7 +6906,7 @@ export const CAMCampusInsightPanel: React.FC<{
                 <button
                   type="button"
                   onClick={() => copyParentAlert(selectedStudentForModal)}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                  className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>Copy Notice</span>
@@ -6996,7 +6996,7 @@ export const CAMCampusInsightPanel: React.FC<{
                     <TableRow key={`${slot.id || 'slot'}_${sIdx}`} className="hover:bg-slate-50/60">
                       <TableCell className="p-2.5 font-bold text-slate-800">{slot.day || "—"}</TableCell>
                       <TableCell className="p-2.5 font-mono text-slate-600">{slot.time || slot.timeSlot || "Period"}</TableCell>
-                      <TableCell className="p-2.5 font-semibold text-indigo-700">{slot.course || "—"}</TableCell>
+                      <TableCell className="p-2.5 font-semibold text-amber-700">{slot.course || "—"}</TableCell>
                       <TableCell className="p-2.5 text-slate-600">{slot.classGroup || "General"}</TableCell>
                       <TableCell className="p-2.5 text-slate-500 font-mono">{slot.room || "—"}</TableCell>
                     </TableRow>
@@ -7035,7 +7035,7 @@ export const CAMCampusInsightPanel: React.FC<{
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center font-bold">
                   <Ticket className="w-5 h-5" />
                 </div>
                 <div>
@@ -7062,9 +7062,9 @@ export const CAMCampusInsightPanel: React.FC<{
 
             {/* Student Uploaded Image Proof */}
             {ticketUpdating.image_url && (
-              <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-2">
+              <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase text-indigo-700 flex items-center gap-1.5">
+                  <span className="text-[10px] font-black uppercase text-amber-700 flex items-center gap-1.5">
                     <Camera className="w-3.5 h-3.5" /> Student Uploaded Screenshot Proof
                   </span>
                   <div className="flex items-center gap-2">
@@ -7074,7 +7074,7 @@ export const CAMCampusInsightPanel: React.FC<{
                         setPreviewImageUrl(ticketUpdating.image_url);
                         setPreviewImageTitle(`Ticket #${ticketUpdating.id} - ${ticketUpdating.student_name || "Student Proof"}`);
                       }}
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] font-bold text-amber-500 hover:text-amber-800 flex items-center gap-1 cursor-pointer"
                     >
                       <Maximize2 className="w-3 h-3" /> Full View
                     </button>
@@ -7093,7 +7093,7 @@ export const CAMCampusInsightPanel: React.FC<{
                     setPreviewImageUrl(ticketUpdating.image_url);
                     setPreviewImageTitle(`Ticket #${ticketUpdating.id} - ${ticketUpdating.student_name || "Student Proof"}`);
                   }}
-                  className="relative group rounded-lg overflow-hidden border border-indigo-200 bg-white cursor-pointer max-h-48 flex items-center justify-center"
+                  className="relative group rounded-lg overflow-hidden border border-amber-200 bg-white cursor-pointer max-h-48 flex items-center justify-center"
                 >
                   <img
                     src={ticketUpdating.image_url}
@@ -7122,7 +7122,7 @@ export const CAMCampusInsightPanel: React.FC<{
                     type="button"
                     onClick={() => setUpdatingTicketStatus(opt.id)}
                     className={`p-2.5 rounded-xl border text-xs font-black transition-all cursor-pointer text-center ${updatingTicketStatus === opt.id
-                      ? `${opt.color} ring-2 ring-indigo-500 shadow-xs`
+                      ? `${opt.color} ring-2 ring-amber-500 shadow-xs`
                       : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                       }`}
                   >
@@ -7143,7 +7143,7 @@ export const CAMCampusInsightPanel: React.FC<{
                 onChange={e => setResolutionNotes(e.target.value)}
                 placeholder="Enter actions taken, counselor guidance, or closure reason..."
                 rows={3}
-                className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="w-full p-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-amber-500"
               />
             </div>
 
@@ -7160,7 +7160,7 @@ export const CAMCampusInsightPanel: React.FC<{
                 type="button"
                 disabled={readOnly || isSubmittingTicketUpdate}
                 onClick={() => updateTicketStatus(ticketUpdating.id, updatingTicketStatus, resolutionNotes)}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white text-xs font-black shadow-xs transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
               >
                 {isSubmittingTicketUpdate && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                 <span>Save Changes</span>
@@ -7186,7 +7186,7 @@ export const CAMCampusInsightPanel: React.FC<{
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3.5 bg-slate-800/80 border-b border-slate-700 text-white">
               <div className="flex items-center gap-2 min-w-0">
-                <ImageIcon className="w-4 h-4 text-indigo-400 shrink-0" />
+                <ImageIcon className="w-4 h-4 text-amber-400 shrink-0" />
                 <h4 className="text-xs font-bold truncate text-slate-200">
                   {previewImageTitle || "Ticket Uploaded Attachment Proof"}
                 </h4>
@@ -7237,16 +7237,16 @@ export const CAMCampusInsightPanel: React.FC<{
             panelClassName="rounded-2xl max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-scaleUp"
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-indigo-50/50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-amber-50/50">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0">
+                <div className="h-10 w-10 rounded-xl btn-gradient text-white flex items-center justify-center font-black text-sm shrink-0">
                   {selectedMentorNpsRow.rank ? `#${selectedMentorNpsRow.rank}` : <GraduationCap className="h-5 w-5" />}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base font-black text-slate-900 leading-tight">{selectedMentorNpsRow.mentor}</h3>
                     {selectedMentorNpsRow.percentile != null && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200">
                         Top {100 - selectedMentorNpsRow.percentile <= 0 ? 1 : 100 - selectedMentorNpsRow.percentile}% (Percentile {selectedMentorNpsRow.percentile}%)
                       </span>
                     )}
@@ -7291,8 +7291,8 @@ export const CAMCampusInsightPanel: React.FC<{
                   </div>
                 </div>
 
-                <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-xl text-center">
-                  <span className="text-[10px] font-black text-indigo-800 uppercase tracking-wider block">Mentor NPS Index</span>
+                <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-xl text-center">
+                  <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Mentor NPS Index</span>
                   <div className={`text-3xl font-black mt-1 ${npsColor(selectedMentorNpsRow.nps)}`}>
                     {selectedMentorNpsRow.nps != null ? (selectedMentorNpsRow.nps > 0 ? `+${selectedMentorNpsRow.nps}` : selectedMentorNpsRow.nps) : (selectedMentorNpsRow.rating ? `${(selectedMentorNpsRow.rating * 20).toFixed(0)}%` : "—")}
                   </div>
@@ -7321,7 +7321,7 @@ export const CAMCampusInsightPanel: React.FC<{
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                    <CheckCircle2 className="w-4 h-4 text-amber-500" />
                     <span>Pedagogical &amp; Delivery Survey Indicators</span>
                   </h4>
                   <span className="text-[10px] text-slate-400 font-bold">Student Affirmative %</span>
@@ -7509,13 +7509,13 @@ export const CAMCampusInsightPanel: React.FC<{
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
+                <div className="h-10 w-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-500 shrink-0">
                   <TrendingUp className="h-5 w-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base font-black text-slate-900 leading-tight">Student Satisfaction Census &amp; NPS History</h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200">
                       Census Audits
                     </span>
                   </div>
@@ -7598,7 +7598,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                   fetchMentorNps(pm.key);
                                   setShowNpsHistoryModal(false);
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold text-[10px] transition-colors cursor-pointer"
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-zinc-900 text-amber-700 hover:text-white font-bold text-[10px] transition-colors cursor-pointer"
                               >
                                 View Month
                               </button>
@@ -7610,7 +7610,7 @@ export const CAMCampusInsightPanel: React.FC<{
                           <TableRow key={am.key} className="hover:bg-slate-50">
                             <TableCell className="p-3 font-bold text-slate-900">{am.label}</TableCell>
                             <TableCell className="p-3 text-center font-mono font-bold text-slate-700">Census Period</TableCell>
-                            <TableCell className="p-3 text-center font-mono font-black text-indigo-600">—</TableCell>
+                            <TableCell className="p-3 text-center font-mono font-black text-amber-500">—</TableCell>
                             <TableCell className="p-3 text-center text-slate-400 text-[10px]">Verified Batch</TableCell>
                             <TableCell className="p-3 text-right">
                               <button
@@ -7620,7 +7620,7 @@ export const CAMCampusInsightPanel: React.FC<{
                                   fetchMentorNps(am.key);
                                   setShowNpsHistoryModal(false);
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold text-[10px] transition-colors cursor-pointer"
+                                className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-zinc-900 text-amber-700 hover:text-white font-bold text-[10px] transition-colors cursor-pointer"
                               >
                                 Select Cycle
                               </button>
@@ -8092,7 +8092,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="h-11 w-11 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs">
+            <div className="h-11 w-11 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500 shrink-0 shadow-xs">
               <CalendarCheck2 className="h-6 w-6" />
             </div>
             <div>
@@ -8107,7 +8107,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
             <button
               type="button"
               onClick={handleExportMentorAttendance}
-              className="px-4 py-2 rounded-xl text-xs font-extrabold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-4 py-2 rounded-xl text-xs font-extrabold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <Download className="h-4 w-4" />
               {dateMode === "range" ? "Export Range Report (Excel)" : "Export Day Excel"}
@@ -8132,7 +8132,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                     setDateMode("range");
                   }
                 }}
-                className="bg-white dark:bg-slate-900 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                className="bg-white dark:bg-slate-900 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
               />
               <span className="text-xs font-bold text-slate-500">To:</span>
               <input aria-label="End date"
@@ -8147,7 +8147,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                     setDateMode("range");
                   }
                 }}
-                className="bg-white dark:bg-slate-900 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-indigo-500"
+                className="bg-white dark:bg-slate-900 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
               />
             </div>
 
@@ -8175,9 +8175,9 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Faculty</p>
                   <p className="text-xl font-black text-slate-900 mt-0.5">{summary.totalMentors || records.length}</p>
                 </div>
-                <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 shadow-xs">
-                  <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Working Days</p>
-                  <p className="text-xl font-black text-indigo-700 mt-0.5">{summary.totalDays || distinctDates.length}</p>
+                <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Working Days</p>
+                  <p className="text-xl font-black text-amber-700 mt-0.5">{summary.totalDays || distinctDates.length}</p>
                 </div>
                 <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/80 shadow-xs">
                   <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Team Avg Rate</p>
@@ -8187,9 +8187,9 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                   <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Total Present Days</p>
                   <p className="text-xl font-black text-emerald-700 mt-0.5">{summary.totalPresentSlots || 0}</p>
                 </div>
-                <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 shadow-xs">
-                  <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Total OD Days</p>
-                  <p className="text-xl font-black text-indigo-700 mt-0.5">{summary.totalODSlots || 0}</p>
+                <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Total OD Days</p>
+                  <p className="text-xl font-black text-amber-700 mt-0.5">{summary.totalODSlots || 0}</p>
                 </div>
                 <div className="p-4 rounded-xl bg-rose-50/60 border border-rose-200/80 shadow-xs">
                   <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider">Total Absent Days</p>
@@ -8206,9 +8206,9 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                   <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Present</p>
                   <p className="text-xl font-black text-emerald-700 mt-0.5">{summary.present}</p>
                 </div>
-                <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200/80 shadow-xs">
-                  <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">On Duty (OD)</p>
-                  <p className="text-xl font-black text-indigo-700 mt-0.5">{summary.od}</p>
+                <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200/80 shadow-xs">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">On Duty (OD)</p>
+                  <p className="text-xl font-black text-amber-700 mt-0.5">{summary.od}</p>
                 </div>
                 <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200/80 shadow-xs">
                   <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">On Leave</p>
@@ -8277,7 +8277,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                   placeholder="Search faculty name or email..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full text-xs font-semibold pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500"
+                  className="w-full text-xs font-semibold pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                 />
               </div>
 
@@ -8287,7 +8287,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                   aria-label="Department"
                   value={selectedDept}
                   onChange={(e) => setSelectedDept(e.target.value)}
-                  className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-indigo-500"
+                  className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                 >
                   <option value="all">All Departments ({records.length})</option>
                   {departments.map(d => (
@@ -8357,7 +8357,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                             <TableCell className="p-3 text-center font-bold text-emerald-700">
                               {m.presentDays || 0}
                             </TableCell>
-                            <TableCell className="p-3 text-center font-bold text-indigo-700">
+                            <TableCell className="p-3 text-center font-bold text-amber-700">
                               {m.odDays || 0}
                             </TableCell>
                             <TableCell className="p-3 text-center font-bold text-amber-700">
@@ -8368,7 +8368,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                             </TableCell>
                             <TableCell className="p-3 text-right">
                               <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black ${pct >= 85 ? "bg-emerald-100 text-emerald-800" :
-                                pct >= 75 ? "bg-indigo-100 text-indigo-800" :
+                                pct >= 75 ? "bg-amber-100 text-amber-800" :
                                   pct >= 60 ? "bg-amber-100 text-amber-800" :
                                     "bg-rose-100 text-rose-800"
                                 }`}>
@@ -8401,8 +8401,8 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                               </span>
                             )}
                             {m.status === "OD" && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black">
-                                <Briefcase className="h-3 w-3 text-indigo-600" /> OD (On Duty)
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black">
+                                <Briefcase className="h-3 w-3 text-amber-500" /> OD (On Duty)
                               </span>
                             )}
                             {m.status === "Leave" && (
@@ -8445,8 +8445,8 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                                 disabled={isMarking}
                                 onClick={() => openReasonModal(m, "OD")}
                                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${m.status === "OD"
-                                  ? "bg-indigo-600 text-white shadow-xs"
-                                  : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+                                  ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
+                                  : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
                                   }`}
                               >
                                 OD
@@ -8537,7 +8537,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                     }
                     value={reasonText}
                     onChange={(e) => setReasonText(e.target.value)}
-                    className="w-full text-xs font-medium p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500"
+                    className="w-full text-xs font-medium p-3 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                   />
                 </div>
               </div>
@@ -8553,7 +8553,7 @@ const CAMMentorAttendanceTab: React.FC<{ collegeId: string; camName: string; rea
                 <button
                   type="button"
                   onClick={submitReasonModal}
-                  className="px-5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all cursor-pointer"
+                  className="px-5 py-2 rounded-xl text-xs font-extrabold btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white shadow-xs transition-all cursor-pointer"
                 >
                   Save Attendance →
                 </button>
@@ -14751,7 +14751,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           {isKAMView && (
             <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-card">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-[#4F46E5] to-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-xs">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-zinc-900 to-zinc-800 flex items-center justify-center text-white font-black text-sm shadow-xs">
                   <Building2 className="h-5 w-5" />
                 </div>
                 <div>
@@ -14759,7 +14759,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <h2 className="text-sm font-extrabold text-slate-900 dark:text-white">
                       {activeCollegeId === "all" ? "All Supervised Campuses (Portfolio Overview)" : activeCollegeName}
                     </h2>
-                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                       KAM Portfolio
                     </span>
                   </div>
@@ -14780,7 +14780,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     setInternalSelectedCollegeId(val);
                     if (onCollegeChange) onCollegeChange(val);
                   }}
-                  className="bg-sunken dark:bg-slate-800 border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[220px]"
+                  className="bg-sunken dark:bg-slate-800 border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer min-w-[220px]"
                 >
                   <option value="all">🌐 All Supervised Campuses ({scopedColleges.length})</option>
                   {scopedColleges.map((c) => (
@@ -14810,9 +14810,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       key={t.id}
                       type="button"
                       onClick={() => setActiveTab(t.id as any)}
-                      className="min-h-[4.5rem] p-3.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-left hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 active:scale-[0.98] transition-all flex flex-col gap-2 shadow-card cursor-pointer group"
+                      className="min-h-[4.5rem] p-3.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl text-left hover:border-amber-400 hover:ring-2 hover:ring-amber-400/20 active:scale-[0.98] transition-all flex flex-col gap-2 shadow-card cursor-pointer group"
                     >
-                      <div className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600 shrink-0 group-hover:scale-105 transition-transform">
+                      <div className="h-9 w-9 rounded-xl bg-amber-50 dark:bg-amber-950/20 flex items-center justify-center text-amber-500 shrink-0 group-hover:scale-105 transition-transform">
                         <Icon className="h-4.5 w-4.5" />
                       </div>
                       <div className="min-w-0">
@@ -14963,8 +14963,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Left Text Content */}
                   <div className="space-y-2.5 max-w-lg z-10 text-left">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 border border-indigo-100 text-indigo-700 text-[11px] font-bold shadow-xs">
-                      <Sparkles className="h-3 w-3 text-indigo-600 animate-pulse" />
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 border border-amber-200 text-amber-700 text-[11px] font-bold shadow-xs">
+                      <Sparkles className="h-3 w-3 text-amber-500 animate-pulse" />
                       <span>Welcome back, {currentCAM?.name || "Campus Manager"}</span>
                     </div>
 
@@ -14980,7 +14980,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <button
                         type="button"
                         onClick={() => setActiveTab("timetable" as any)}
-                        className="brand-gradient text-white font-bold text-xs px-5 py-2.5 rounded-full shadow-lg shadow-indigo-600/25 hover:opacity-95 transition-all flex items-center gap-2 cursor-pointer"
+                        className="brand-gradient text-white font-bold text-xs px-5 py-2.5 rounded-full shadow-lg shadow-black/20 hover:opacity-95 transition-all flex items-center gap-2 cursor-pointer"
                       >
                         <span>Open Timetable</span>
                         <span>&rarr;</span>
@@ -15061,10 +15061,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {/* Card 1: Total Students */}
                   <div
                     onClick={() => setActiveTab("students_list" as any)}
-                    className="relative bg-white rounded-2xl p-5 shadow-card border border-slate-100 overflow-hidden flex flex-col justify-between hover:border-indigo-200 hover:shadow-card-lg transition-all cursor-pointer group"
+                    className="relative bg-white rounded-2xl p-5 shadow-card border border-slate-100 overflow-hidden flex flex-col justify-between hover:border-amber-200 hover:shadow-card-lg transition-all cursor-pointer group"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="h-11 w-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
+                      <div className="h-11 w-11 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center shadow-xs">
                         <Users className="h-5 w-5" />
                       </div>
                       <span className="inline-flex items-center text-[11px] font-bold text-slate-500">
@@ -15171,7 +15171,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="lg:col-span-7 bg-white rounded-2xl p-5 sm:p-6 shadow-card border border-slate-100 space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                        <div className="p-2 rounded-xl bg-amber-50 text-amber-500">
                           <TrendingUp className="h-4.5 w-4.5" />
                         </div>
                         <div>
@@ -15192,7 +15192,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     {/* Spline Wave Chart Container */}
                     <div className="relative w-full h-48 pt-2">
                       <div className="absolute top-2 left-[50%] -translate-x-1/2 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-bold text-slate-800 shadow-md flex items-center gap-1 z-10">
-                        <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
+                        <span className="h-2 w-2 rounded-full btn-gradient"></span>
                         <span>{peakDay.slots} Slots ({peakDay.fullDay})</span>
                       </div>
 
@@ -15283,7 +15283,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="bg-white rounded-2xl p-5 shadow-card border border-slate-100 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <div className="h-6 w-6 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                          <div className="h-6 w-6 rounded-lg bg-amber-50 text-amber-500 flex items-center justify-center">
                             <Clock className="h-3.5 w-3.5" />
                           </div>
                           <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Campus Alerts</h3>
@@ -15291,8 +15291,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
 
                       <div className="space-y-2 pt-1">
-                        <div className="p-2.5 rounded-xl border border-indigo-100 bg-indigo-50/40 flex items-start gap-2.5">
-                          <Clock className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
+                        <div className="p-2.5 rounded-xl border border-amber-200 bg-amber-50/40 flex items-start gap-2.5">
+                          <Clock className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                           <div className="min-w-0">
                             <div className="text-xs font-bold text-slate-800">Class Cover Handovers</div>
                             <div className="text-[11px] text-slate-500 mt-0.5 font-medium">
@@ -15363,8 +15363,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     className="lg:col-span-2 animate-gsap-card"
                   >
                     <div className="space-y-3">
-                      <div className="p-4 rounded-xl border border-slate-100 bg-indigo-50/20 flex items-start gap-3">
-                        <Clock className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+                      <div className="p-4 rounded-xl border border-slate-100 bg-amber-50/20 flex items-start gap-3">
+                        <Clock className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                         <div>
                           <h4 className="text-xs font-bold text-slate-800">Active Substitutions Rate</h4>
                           <p className="text-[11px] text-slate-500 mt-0.5 font-semibold leading-relaxed">
@@ -15403,7 +15403,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
                       <div>
                         <span className="text-slate-400 font-bold block text-[9px] uppercase">Configured Class Periods</span>
-                        <span className="font-bold text-indigo-600 text-sm">{workingDays.length} Working Days</span>
+                        <span className="font-bold text-amber-500 text-sm">{workingDays.length} Working Days</span>
                       </div>
                     </div>
                   </Panel>
@@ -15428,7 +15428,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       placeholder="e.g. 2027-2028"
                       value={newYearName}
                       onChange={e => setNewYearName(e.target.value)}
-                      className="flex-1 p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
+                      className="flex-1 p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none shadow-sm"
                       required
                     />
                     <Button type="submit" variant="primary" size="md" disabled={readOnly}>
@@ -15447,7 +15447,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 type="text"
                                 value={editingYearValue}
                                 onChange={e => setEditingYearValue(e.target.value)}
-                                className="flex-1 p-1.5 border border-slate-200 rounded-lg bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
+                                className="flex-1 p-1.5 border border-slate-200 rounded-lg bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none"
                               />
                               <Button
                                 variant="success"
@@ -15459,8 +15459,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             </div>
                           ) : (
                             <>
-                              <span onClick={() => { setSelectedYear(y); setCurrYear(y); setEditSubYear(y); }} className={`font-bold cursor-pointer text-[12px] flex items-center gap-1.5 ${selectedYear === y ? "text-indigo-600 font-extrabold" : "text-slate-600"}`}>
-                                {y} {selectedYear === y && <CheckCircle2 className="h-3.5 w-3.5 text-indigo-600" />}
+                              <span onClick={() => { setSelectedYear(y); setCurrYear(y); setEditSubYear(y); }} className={`font-bold cursor-pointer text-[12px] flex items-center gap-1.5 ${selectedYear === y ? "text-amber-500 font-extrabold" : "text-slate-600"}`}>
+                                {y} {selectedYear === y && <CheckCircle2 className="h-3.5 w-3.5 text-amber-500" />}
                               </span>
                               <div className="flex gap-1.5">
                                 <Button variant="secondary" size="xs" onClick={() => handleEditYear(index)} title="Rename Academic Year" className="p-1">
@@ -15484,7 +15484,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div>
                       <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider">Configure Working Days & Hours</h3>
                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                        Configuring: <strong className="text-indigo-600">{colleges.find(c => c.id === ((isSuperAdminUser || isKAMView) ? (configCollegeId || activeCollegeId) : (activeCollegeId || currentCAM?.college_id)))?.name || activeCollegeName}</strong>
+                        Configuring: <strong className="text-amber-500">{colleges.find(c => c.id === ((isSuperAdminUser || isKAMView) ? (configCollegeId || activeCollegeId) : (activeCollegeId || currentCAM?.college_id)))?.name || activeCollegeName}</strong>
                       </p>
                     </div>
                     {(isSuperAdminUser || isKAMView) && scopedColleges.length > 1 && (
@@ -15494,7 +15494,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           aria-label="Campus"
                           value={configCollegeId || (activeCollegeId !== "all" ? activeCollegeId : scopedColleges[0]?.id || "")}
                           onChange={e => setConfigCollegeId(e.target.value)}
-                          className="p-1 px-2.5 text-xs font-bold border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-1 focus:ring-indigo-500 outline-none shadow-xs"
+                          className="p-1 px-2.5 text-xs font-bold border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-1 focus:ring-amber-500 outline-none shadow-xs"
                         >
                           {scopedColleges.map(c => (
                             <option key={c.id} value={c.id}>
@@ -15547,7 +15547,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                     <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] text-slate-500 font-semibold">
-                        Configured Shift Hours: <strong className="text-indigo-600 font-bold">{collegeHours.start} – {collegeHours.end}</strong>
+                        Configured Shift Hours: <strong className="text-amber-500 font-bold">{collegeHours.start} – {collegeHours.end}</strong>
                       </span>
                       <LoadingButton
                         variant="primary"
@@ -15598,7 +15598,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           onClick={() => handleOpenDeptModal()}
                           className="gap-2 cursor-pointer text-xs"
                         >
-                          <Plus className="h-3.5 w-3.5 text-indigo-600" />
+                          <Plus className="h-3.5 w-3.5 text-amber-500" />
                           <span>Add Department / Course</span>
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -15662,7 +15662,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           placeholder="Search subjects..."
                           value={subjectSearch}
                           onChange={(e) => setSubjectSearch(e.target.value)}
-                          className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                          className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500"
                         />
                       </div>
                       <select aria-label="Subject type filter" value={subjectTypeFilter} onChange={e => setSubjectTypeFilter(e.target.value)} className="p-1.5 border border-slate-200 rounded-xl bg-white text-[10px] cursor-pointer font-bold outline-none shadow-sm">
@@ -15759,7 +15759,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="text-[12px] font-black text-slate-800">{deptName}</span>
                                       <CourseInfoButton course={registeredDept || deptName} collegeId={activeCollegeId} size="xs" />
-                                      {registeredDept?.code && <span className="text-[9px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded font-bold uppercase">{registeredDept.code}</span>}
+                                      {registeredDept?.code && <span className="text-[9px] px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded font-bold uppercase">{registeredDept.code}</span>}
                                       {registeredDept?.start_year && registeredDept?.end_year && (
                                         <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 border border-purple-100 text-purple-700 rounded font-bold">
                                           {registeredDept.start_year}–{registeredDept.end_year}
@@ -15810,12 +15810,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   {!readOnly && (
                                     <div className="flex gap-1">
                                       {registeredDept && (
-                                        <Button variant="ghost" size="xs" onClick={() => handleOpenDeptModal(registeredDept)} title="Edit Course & Batch Details" className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"><Edit2 className="h-3 w-3" /></Button>
+                                        <Button variant="ghost" size="xs" onClick={() => handleOpenDeptModal(registeredDept)} title="Edit Course & Batch Details" className="p-1 text-slate-400 hover:text-amber-500 hover:bg-amber-50"><Edit2 className="h-3 w-3" /></Button>
                                       )}
                                       <Button variant="ghost" size="xs" onClick={() => handleDeleteDept(deptName, registeredDept?.id)} title="Delete Department" className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 className="h-3 w-3" /></Button>
                                     </div>
                                   )}
-                                  <ChevronDown className={`h-4.5 w-4.5 text-slate-400 transition-transform duration-200 ml-1 ${isDeptExpanded ? "rotate-180 text-indigo-500" : ""}`} />
+                                  <ChevronDown className={`h-4.5 w-4.5 text-slate-400 transition-transform duration-200 ml-1 ${isDeptExpanded ? "rotate-180 text-amber-500" : ""}`} />
                                 </div>
                               </div>
 
@@ -15839,7 +15839,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       </div>
                                       <div>
                                         <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Code Prefix</span>
-                                        <span className="text-indigo-600 font-black">{registeredDept?.code || "None"}</span>
+                                        <span className="text-amber-500 font-black">{registeredDept?.code || "None"}</span>
                                       </div>
                                       <div>
                                         <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Offerings</span>
@@ -15847,7 +15847,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       </div>
                                       <div className="col-span-2">
                                         <span className="text-[9px] uppercase tracking-wider text-slate-400 block mb-0.5">Assigned Classrooms (Year-wise)</span>
-                                        <span className="text-indigo-700 font-black block">
+                                        <span className="text-amber-700 font-black block">
                                           {formatYearWiseRooms(registeredDept?.default_room)}
                                         </span>
                                       </div>
@@ -15870,11 +15870,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           {/* Year Header */}
                                           <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-slate-50/80 border-b border-slate-100 font-bold text-slate-800 text-xs gap-2">
                                             <div className="flex items-center gap-2 flex-wrap">
-                                              <GraduationCap className="h-4 w-4 text-indigo-600 shrink-0" />
+                                              <GraduationCap className="h-4 w-4 text-amber-500 shrink-0" />
                                               <span className="font-extrabold text-slate-900">{yr}</span>
                                               <span className="text-[10px] text-slate-400 font-semibold lowercase">(sem {2 * (i + 1) - 1}/{2 * (i + 1)})</span>
                                               <div className="flex gap-1.5 ml-1">
-                                                <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold">Sem {2 * (i + 1) - 1}: {oddSubjects.length}</span>
+                                                <span className="bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold">Sem {2 * (i + 1) - 1}: {oddSubjects.length}</span>
                                                 <span className="bg-purple-50 border border-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[9px] font-extrabold">Sem {2 * (i + 1)}: {evenSubjects.length}</span>
                                               </div>
                                             </div>
@@ -15883,7 +15883,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                 variant="secondary"
                                                 size="xs"
                                                 onClick={() => handleOpenSubjectModal(undefined, deptName, yr)}
-                                                className="flex items-center gap-1 text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-1 rounded-lg font-bold shrink-0"
+                                                className="flex items-center gap-1 text-[10px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-zinc-900 hover:text-white px-2 py-1 rounded-lg font-bold shrink-0"
                                               >
                                                 <Plus className="h-3 w-3" /> Add Subject
                                               </Button>
@@ -15895,25 +15895,25 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                             {/* Odd Semester Column */}
                                             <div className="flex flex-col border border-slate-100 rounded-2xl p-3 bg-white shadow-card">
                                               <div className="flex items-center justify-between pb-2 border-b border-slate-100 mb-2">
-                                                <span className="font-extrabold text-[10px] uppercase tracking-wider text-indigo-700">{semOdd}</span>
-                                                <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{oddSubjects.length} subject(s)</span>
+                                                <span className="font-extrabold text-[10px] uppercase tracking-wider text-amber-700">{semOdd}</span>
+                                                <span className="bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-full text-[8.5px] font-extrabold">{oddSubjects.length} subject(s)</span>
                                               </div>
                                               {oddSubjects.length === 0 ? (
                                                 <div className="text-center py-6 text-slate-400 italic text-[10px] my-auto">No subjects mapped to {semOdd} yet.</div>
                                               ) : (
                                                 <div className="space-y-1.5">
                                                   {oddSubjects.map(sub => (
-                                                    <div key={sub.id} className="p-2 border border-slate-100 rounded-lg hover:border-indigo-100 hover:bg-indigo-50/30 transition-all flex items-center justify-between gap-2 group">
+                                                    <div key={sub.id} className="p-2 border border-slate-100 rounded-lg hover:border-amber-200 hover:bg-amber-50/30 transition-all flex items-center justify-between gap-2 group">
                                                       <div>
                                                         <div className="font-bold text-slate-800 text-[11px]">{sub.name}</div>
                                                         <div className="flex items-center gap-1.5 mt-0.5">
-                                                          <span className="text-[8px] px-1.5 py-0.2 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold uppercase">{sub.type}</span>
+                                                          <span className="text-[8px] px-1.5 py-0.2 rounded bg-amber-50 border border-amber-200 text-amber-700 font-bold uppercase">{sub.type}</span>
                                                           <span className="text-[8px] text-slate-400 font-semibold">{sub.weekly_hours || 4} hrs/wk</span>
                                                         </div>
                                                       </div>
                                                       {!readOnly && (
                                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                          <button onClick={() => handleStartEditSubject(sub)} className="p-1 text-slate-400 hover:text-indigo-600 cursor-pointer"><Edit2 className="h-3 w-3" /></button>
+                                                          <button onClick={() => handleStartEditSubject(sub)} className="p-1 text-slate-400 hover:text-amber-500 cursor-pointer"><Edit2 className="h-3 w-3" /></button>
                                                           <button
                                                             onClick={() => handleDeleteSubject(sub.id)}
                                                             disabled={loadingActions[`delete_subject_${sub.id}`]}
@@ -16004,7 +16004,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       placeholder="Search faculty..."
                       value={facultySearch}
                       onChange={e => setFacultySearch(e.target.value)}
-                      className="pl-8 pr-7 h-9 border border-slate-200/90 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-2xl bg-sunken text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-bold w-full sm:w-44 shadow-2xs"
+                      className="pl-8 pr-7 h-9 border border-slate-200/90 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-2xl bg-sunken text-xs focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 outline-none font-bold w-full sm:w-44 shadow-2xs"
                     />
                     {facultySearch && (
                       <button
@@ -16049,7 +16049,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           onClick={() => setShowSubstitutionModal(true)}
                           className="gap-2 cursor-pointer text-xs"
                         >
-                          <Plus className="h-3.5 w-3.5 text-indigo-600" />
+                          <Plus className="h-3.5 w-3.5 text-amber-500" />
                           <span>Substitution Request</span>
                         </DropdownMenuItem>
                       )}
@@ -16128,9 +16128,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pb-2">
                       {/* KPI summary cards */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <div className="bg-indigo-50/80 border border-indigo-100 rounded-2xl p-3 text-center shadow-card">
-                          <p className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider">Total</p>
-                          <p className="text-lg font-black text-indigo-700 mt-0.5">{filtered.length}</p>
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-center shadow-card">
+                          <p className="text-[9px] font-extrabold text-amber-500 uppercase tracking-wider">Total</p>
+                          <p className="text-lg font-black text-amber-700 mt-0.5">{filtered.length}</p>
                         </div>
                         <div className="bg-amber-50/80 border border-amber-100 rounded-2xl p-3 text-center shadow-card">
                           <p className="text-[9px] font-extrabold text-amber-500 uppercase tracking-wider">Overload</p>
@@ -16225,7 +16225,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     onClick={() => handleOpenMentorModal(m)}
                                     className="gap-2 cursor-pointer text-xs"
                                   >
-                                    <Edit2 className="h-3.5 w-3.5 text-indigo-600" />
+                                    <Edit2 className="h-3.5 w-3.5 text-amber-500" />
                                     <span>Edit Info & Map Subjects</span>
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
@@ -16243,7 +16243,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                           {/* Top Profile Summary */}
                           <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 text-indigo-600 flex items-center justify-center font-black text-sm uppercase shrink-0">
+                            <div className="h-10 w-10 rounded-full bg-slate-100 border border-slate-200 text-amber-500 flex items-center justify-center font-black text-sm uppercase shrink-0">
                               {m.name.substring(0, 2)}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -16257,7 +16257,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {/* Shift & Workload Badges */}
                           <div className="flex flex-wrap gap-1.5">
                             {isCampusShiftBased && (
-                              <span className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-[8px] font-black text-indigo-700 uppercase">
+                              <span className="px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-[8px] font-black text-amber-700 uppercase">
                                 {shiftVal.replace("_", " ")}
                               </span>
                             )}
@@ -16289,7 +16289,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           <span className="text-slate-800 font-black truncate">{course}</span>
                                           <span className="text-slate-400 font-bold truncate mt-0.5">{cleanCohort}</span>
                                         </div>
-                                        <span className="shrink-0 px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 font-black text-[9px] rounded-lg">
+                                        <span className="shrink-0 px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 font-black text-[9px] rounded-lg">
                                           {count} {count === 1 ? 'hr' : 'hrs'} / wk
                                         </span>
                                       </div>
@@ -16459,7 +16459,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-card">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Campus Demos</span>
                     <span className="text-2xl font-black text-slate-800">{totalDemosCount}</span>
-                    <span className="text-[10px] font-semibold text-indigo-600 block mt-1">Total scheduled sessions</span>
+                    <span className="text-[10px] font-semibold text-amber-500 block mt-1">Total scheduled sessions</span>
                   </div>
                   <div className="p-4 bg-white border border-slate-100 rounded-2xl shadow-card">
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">Confirmed &amp; Ready</span>
@@ -16486,7 +16486,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       aria-label="Faculty Member"
                       value={camDemoMentorFilter}
                       onChange={(e) => setCamDemoMentorFilter(e.target.value)}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                     >
                       <option value="all">All Faculty ({facultyList.length})</option>
                       {facultyList.map(m => (
@@ -16502,7 +16502,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       aria-label="From Date"
                       value={camDemoFromDate}
                       onChange={(e) => setCamDemoFromDate(e.target.value)}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                     />
                   </div>
 
@@ -16514,7 +16514,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       value={camDemoToDate}
                       min={camDemoFromDate || undefined}
                       onChange={(e) => setCamDemoToDate(e.target.value)}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                     />
                   </div>
 
@@ -16524,7 +16524,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       aria-label="Status"
                       value={camDemoStatusFilter}
                       onChange={(e) => setCamDemoStatusFilter(e.target.value)}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                     >
                       <option value="all">All Statuses</option>
                       <option value="confirmed">Confirmed</option>
@@ -16544,7 +16544,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         placeholder="Search faculty, SME, topic..."
                         value={camDemoSearch}
                         onChange={(e) => setCamDemoSearch(e.target.value)}
-                        className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                        className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                       />
                     </div>
                   </div>
@@ -16628,7 +16628,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       <AlertCircle className="w-3 h-3" /> Reallocation Req.
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-extrabold">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-extrabold">
                                       <Clock className="w-3 h-3" /> Scheduled
                                     </span>
                                   )}
@@ -16649,7 +16649,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => setSelectedDemoDetails(demo)}
-                                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200 text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
+                                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-50 text-slate-700 hover:text-amber-700 border border-slate-200 hover:border-amber-200 text-[11px] font-bold transition-all cursor-pointer shadow-2xs"
                                   >
                                     View Details
                                   </button>
@@ -16717,7 +16717,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <span className="text-[10px] uppercase font-extrabold text-slate-400 block">Evaluation &amp; Feedback</span>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-700">Score:</span>
-                        <span className="font-black text-indigo-700">
+                        <span className="font-black text-amber-700">
                           {selectedDemoDetails.marks !== undefined && selectedDemoDetails.marks !== null ? `${selectedDemoDetails.marks}/100` : "Not evaluated yet"}
                         </span>
                       </div>
@@ -16851,7 +16851,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     type="button"
                     onClick={() => setTimetableSubTab("view")}
                     className={`px-4 py-2 text-xs font-bold transition-all border-b-2 cursor-pointer ${timetableSubTab === "view"
-                      ? "border-indigo-600 text-indigo-600 font-extrabold border-indigo-600"
+                      ? "border-amber-500 text-amber-500 font-extrabold border-amber-500"
                       : "border-transparent text-slate-500 hover:text-slate-700"
                       }`}
                   >
@@ -16862,7 +16862,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       type="button"
                       onClick={() => setTimetableSubTab("generate")}
                       className={`px-4 py-2 text-xs font-bold transition-all border-b-2 cursor-pointer ${timetableSubTab === "generate"
-                        ? "border-indigo-600 text-indigo-600 font-extrabold border-indigo-600"
+                        ? "border-amber-500 text-amber-500 font-extrabold border-amber-500"
                         : "border-transparent text-slate-500 hover:text-slate-700"
                         }`}
                     >
@@ -16879,7 +16879,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-card space-y-6">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-4">
                         <div className="flex items-center gap-2">
-                          <Calendar className="h-5 w-5 text-indigo-500" />
+                          <Calendar className="h-5 w-5 text-amber-500" />
                           <div>
                             <h3 className="text-sm font-bold text-slate-900">Class Timetable View</h3>
                             <p className="text-xs text-slate-400 font-semibold mt-0.5">
@@ -16896,7 +16896,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <select aria-label="Course filter"
                               value={selectedCohortCourse}
                               onChange={e => handleCohortCourseChange(e.target.value)}
-                              className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-indigo-500"
+                              className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-amber-500"
                             >
                               {cohortCourses.length === 0 && <option value="">No courses</option>}
                               {cohortCourses.map((c, idx) => (
@@ -16914,7 +16914,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <select aria-label="Semester filter"
                               value={selectedCohortSem}
                               onChange={e => handleCohortSemChange(e.target.value)}
-                              className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-indigo-500"
+                              className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer shadow-sm focus:ring-1 focus:ring-amber-500"
                             >
                               {cohortSemesters.length === 0 && <option value="">No semesters</option>}
                               {cohortSemesters.map((s, idx) => (
@@ -16931,7 +16931,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   type="button"
                                   onClick={() => handleViewerShiftChange(sh)}
                                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${viewerShift === sh
-                                    ? "bg-indigo-600 text-white shadow-sm"
+                                    ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                                     : "text-slate-500 hover:text-slate-700"
                                     }`}
                                 >
@@ -16956,10 +16956,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <button
                                 type="button"
                                 onClick={handleRegenerateClick}
-                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/80 text-indigo-700 text-xs font-black hover:bg-indigo-100 hover:border-indigo-300 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
+                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-xs font-black hover:bg-amber-100 hover:border-amber-400 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
                                 title="Open in Timetable Generator Engine to edit, regenerate, download templates, or clear timetable"
                               >
-                                <Sparkles className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                                <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                                 <span>Timetable Engine &amp; Actions →</span>
                               </button>
                             </div>
@@ -17039,8 +17039,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         return (
                           <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 space-y-4 animate-fadeIn">
                             <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                              <h4 className="text-xs font-black text-indigo-700 uppercase tracking-wider flex items-center gap-2">
-                                <ClipboardList className="h-4 w-4 text-indigo-500" />
+                              <h4 className="text-xs font-black text-amber-700 uppercase tracking-wider flex items-center gap-2">
+                                <ClipboardList className="h-4 w-4 text-amber-500" />
                                 Weekly Hour Allocation Tracker
                               </h4>
                               <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider bg-slate-200 px-2 py-0.5 rounded-md">
@@ -17109,7 +17109,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 onClick={() => setMobileTimetableDay(day)}
                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                                   (mobileTimetableDay || DAYS[0]) === day
-                                    ? "bg-indigo-600 text-white shadow-xs"
+                                    ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                                 }`}
                               >
@@ -17152,7 +17152,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                       <span>{time}</span>
                                     </div>
                                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                      slot ? "bg-indigo-50 text-indigo-700 border border-indigo-200" : "bg-slate-100 text-slate-400"
+                                      slot ? "bg-amber-50 text-amber-700 border border-amber-200" : "bg-slate-100 text-slate-400"
                                     }`}>
                                       {slot ? "Scheduled" : "Free Period"}
                                     </span>
@@ -17161,7 +17161,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <div className="space-y-1">
                                       <h4 className="text-xs font-extrabold text-slate-900">{slot.course}</h4>
                                       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-1">
-                                        <span className="font-semibold text-indigo-600">{mentor ? mentor.name : "Unassigned Faculty"}</span>
+                                        <span className="font-semibold text-amber-500">{mentor ? mentor.name : "Unassigned Faculty"}</span>
                                         <span className="font-medium">{slot.location || "Classroom"}</span>
                                       </div>
                                     </div>
@@ -17224,8 +17224,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           return (
                                             <TableCell key={day} className="p-2 border-r border-slate-100 last:border-r-0 h-20">
                                               {slot ? (
-                                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-indigo-100 bg-indigo-50/20 text-xs shadow-sm">
-                                                  <div className="text-[9px] font-extrabold text-indigo-600 uppercase tracking-wider truncate">
+                                                <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-amber-200 bg-amber-50/20 text-xs shadow-sm">
+                                                  <div className="text-[9px] font-extrabold text-amber-500 uppercase tracking-wider truncate">
                                                     {mentor ? mentor.name : "Unassigned"}
                                                   </div>
                                                   <div className="font-bold text-slate-800 truncate text-[10px]">{slot.course}</div>
@@ -17256,13 +17256,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     {/* ── TIMETABLE GENERATOR ENGINE ACTION BAR & TOOLTIPS ── */}
                     <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-card flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fadeIn">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                        <div className="h-9 w-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shrink-0">
                           <Sparkles className="h-5 w-5" />
                         </div>
                         <div>
                           <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Timetable Engine Controls</h3>
                           <p className="text-[11px] text-slate-500 font-medium">
-                            Target Cohort: <span className="font-bold text-indigo-600">{genClassGroup || (genSelectedCourse ? `${genSelectedCourse} - ${genSelectedSemester}` : "Select Course Below")}</span>
+                            Target Cohort: <span className="font-bold text-amber-500">{genClassGroup || (genSelectedCourse ? `${genSelectedCourse} - ${genSelectedSemester}` : "Select Course Below")}</span>
                           </p>
                         </div>
                       </div>
@@ -17326,9 +17326,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 handleGeneratePreview();
                               }
                             }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-all cursor-pointer shadow-xs active:scale-95 duration-150"
                           >
-                            <Sparkles className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                            <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                             <span>Regenerate</span>
                           </button>
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none min-w-[210px] animate-fadeIn">
@@ -17367,7 +17367,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     {genStep === 1 && (
                       <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-card space-y-6 animate-fadeIn">
                         <div className="flex items-center gap-2.5 border-b border-slate-100 pb-4">
-                          <Sparkles className="h-5 w-5 text-indigo-500 animate-pulse" />
+                          <Sparkles className="h-5 w-5 text-amber-500 animate-pulse" />
                           <div>
                             <h3 className="text-sm font-bold text-slate-900">Step 1: Define Target & Bounds</h3>
                           </div>
@@ -17392,7 +17392,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               aria-label="Course / Department"
                               value={genSelectedCourse}
                               onChange={e => handleGenCourseChange(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
+                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none shadow-sm cursor-pointer"
                             >
                               <option value="">Select Course</option>
                               {collegeCourses.map(c => (
@@ -17407,7 +17407,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               aria-label="Semester"
                               value={genSelectedSemester}
                               onChange={e => handleGenSemesterChange(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer"
+                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none shadow-sm cursor-pointer"
                             >
                               {ALL_SEMESTERS.map(s => (
                                 <option key={s} value={s}>{s}</option>
@@ -17421,23 +17421,23 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                             if (hasDefaults && !showCustomTarget) {
                               return (
-                                <div className="md:col-span-2 p-4 rounded-xl border border-indigo-50 bg-indigo-50/20 dark:bg-indigo-950/10 dark:border-indigo-900/30 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fadeIn">
+                                <div className="md:col-span-2 p-4 rounded-xl border border-amber-200/50 bg-amber-50/20 dark:bg-amber-950/10 dark:border-amber-900/30 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fadeIn">
                                   <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-indigo-500/10 rounded-xl">
-                                      <Sparkles className="h-4.5 w-4.5 text-indigo-500" />
+                                    <div className="p-2 bg-amber-500/10 rounded-xl">
+                                      <Sparkles className="h-4.5 w-4.5 text-amber-500" />
                                     </div>
                                     <div>
                                       <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">Default Target Shift & Room Applied</p>
                                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                                        Shift: <span className="text-indigo-600 dark:text-indigo-400 font-black">{genShift === "shift_1" ? "Shift 1" : genShift === "shift_2" ? "Shift 2" : "General Shift"}</span> ·
-                                        Room: <span className="text-indigo-600 dark:text-indigo-400 font-black">{genRoom || "None"}</span>
+                                        Shift: <span className="text-amber-500 dark:text-amber-400 font-black">{genShift === "shift_1" ? "Shift 1" : genShift === "shift_2" ? "Shift 2" : "General Shift"}</span> ·
+                                        Room: <span className="text-amber-500 dark:text-amber-400 font-black">{genRoom || "None"}</span>
                                       </p>
                                     </div>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => setShowCustomTarget(true)}
-                                    className="px-3 py-1.5 rounded-xl border border-indigo-200 hover:border-indigo-300 dark:border-indigo-900 dark:hover:border-indigo-800 text-[10.5px] font-bold text-indigo-600 dark:text-indigo-500 bg-white hover:bg-slate-50 transition-all cursor-pointer self-start md:self-auto"
+                                    className="px-3 py-1.5 rounded-xl border border-amber-200 hover:border-amber-400 dark:border-amber-900/30 dark:hover:border-amber-800/40 text-[10.5px] font-bold text-amber-500 dark:text-amber-500 bg-white hover:bg-slate-50 transition-all cursor-pointer self-start md:self-auto"
                                   >
                                     ✏️ Customize Shift / Room
                                   </button>
@@ -17456,7 +17456,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         type="button"
                                         onClick={() => handleGenShiftChange(sh)}
                                         className={`p-2 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${genShift === sh
-                                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                                          ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                                           : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
                                           }`}
                                       >
@@ -17479,7 +17479,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         aria-label="Default Classroom / Room"
                                         value={genRoom}
                                         onChange={e => setGenRoom(e.target.value)}
-                                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm cursor-pointer text-slate-800"
+                                        className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none shadow-sm cursor-pointer text-slate-800"
                                       >
                                         {!genRoom && <option value="">Select Room</option>}
                                         {designatedRoom && (
@@ -17506,7 +17506,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               placeholder="e.g. B.Sc. CS - SEM I (2026-2027)"
                               value={genClassGroup}
                               onChange={e => setGenClassGroup(e.target.value)}
-                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
+                              className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none shadow-sm"
                             />
                             <p className="text-[10.5px] text-slate-400 font-medium">This name is used to identify the student group. You can edit this field to match your department standards.</p>
                           </div>
@@ -17528,7 +17528,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     {genStep === 2 && (
                       <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-card space-y-6 animate-fadeIn">
                         <div className="flex items-center gap-2.5 border-b border-slate-100 pb-4">
-                          <SlidersHorizontal className="h-5 w-5 text-indigo-500" />
+                          <SlidersHorizontal className="h-5 w-5 text-amber-500" />
                           <div>
                             <h3 className="text-sm font-bold text-slate-900">Step 2: Setup Workloads & Instructors</h3>
                           </div>
@@ -17619,13 +17619,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           type="checkbox"
                                           checked={a.isSelected}
                                           onChange={e => updateAlloc("isSelected", e.target.checked)}
-                                          className="h-4.5 w-4.5 border-slate-200 text-indigo-600 rounded-lg cursor-pointer"
+                                          className="h-4.5 w-4.5 border-slate-200 text-amber-500 rounded-lg cursor-pointer"
                                         />
                                       </TableCell>
                                       <TableCell className="p-3">
                                         <div className="font-bold text-slate-800 truncate" title={a.subjectName}>{a.subjectName}</div>
                                         {a.isNew && (
-                                          <span className="text-[8px] bg-indigo-50 border border-indigo-100 text-indigo-700 px-1 py-0.2 rounded-md font-bold uppercase mt-0.5 inline-block">Quick Added</span>
+                                          <span className="text-[8px] bg-amber-50 border border-amber-200 text-amber-700 px-1 py-0.2 rounded-md font-bold uppercase mt-0.5 inline-block">Quick Added</span>
                                         )}
                                       </TableCell>
                                       <TableCell className="p-3">
@@ -17635,7 +17635,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           max={12}
                                           value={a.weeklyHours}
                                           onChange={e => updateAlloc("weeklyHours", parseInt(e.target.value) || 4)}
-                                          className="w-16 p-1.5 border border-slate-200 rounded-lg text-center font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          className="w-16 p-1.5 border border-slate-200 rounded-lg text-center font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
                                         />
                                       </TableCell>
                                       <TableCell className="p-3">
@@ -17643,14 +17643,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           type="text"
                                           value={a.room}
                                           onChange={e => updateAlloc("room", e.target.value)}
-                                          className="w-full p-1.5 border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          className="w-full p-1.5 border border-slate-200 rounded-lg font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
                                         />
                                       </TableCell>
                                       <TableCell className="p-3 space-y-1">
                                         <select aria-label="Mentor"
                                           value={a.mentorId}
                                           onChange={e => updateAlloc("mentorId", e.target.value)}
-                                          className="w-full p-1.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          className="w-full p-1.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500"
                                         >
                                           <option value="">Select Mentor</option>
                                           {mentorsToDisplay.length === 0 && <option value="" disabled>No Mentors Available</option>}
@@ -17695,7 +17695,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 setQuickSubRoom(genRoom.trim());
                                 setQuickSubMentorId(collegeMentors[0]?.id || "");
                               }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-100 bg-indigo-50/50 text-indigo-700 text-xs font-bold hover:bg-indigo-50 transition-colors cursor-pointer"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-200 bg-amber-50/50 text-amber-700 text-xs font-bold hover:bg-amber-50 transition-colors cursor-pointer"
                             >
                               <Plus className="h-4 w-4" />
                               Quick Add Subject
@@ -17772,7 +17772,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <button
                                     type="button"
                                     onClick={handleQuickAddSubject}
-                                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 rounded-xl border border-indigo-600 transition-colors cursor-pointer"
+                                    className="flex-1 btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white text-xs font-bold py-2 rounded-xl border border-amber-500 transition-colors cursor-pointer"
                                   >
                                     Add Subject
                                   </button>
@@ -17816,12 +17816,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-card space-y-6 animate-fadeIn">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-wrap gap-4">
                           <div className="flex items-center gap-2.5">
-                            <Calendar className="h-5 w-5 text-indigo-500" />
+                            <Calendar className="h-5 w-5 text-amber-500" />
                             <div>
                               <h3 className="text-sm font-bold text-slate-900">Step 3: Conflict Check & Preview</h3>
                             </div>
                           </div>
-                          <span className="px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black uppercase">
+                          <span className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-black uppercase">
                             Placed {genPreviewSlots.length} Slots
                           </span>
                         </div>
@@ -17910,8 +17910,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         return (
                                           <TableCell key={day} className="p-2 border-r border-slate-100 last:border-r-0 h-20">
                                             {slot ? (
-                                              <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-indigo-100 bg-indigo-50/30 text-xs shadow-xs">
-                                                <div className="text-[9px] font-extrabold text-indigo-700 uppercase tracking-wider truncate">
+                                              <div className="h-full flex flex-col justify-between p-2 rounded-xl border border-amber-200 bg-amber-50/30 text-xs shadow-xs">
+                                                <div className="text-[9px] font-extrabold text-amber-700 uppercase tracking-wider truncate">
                                                   {mentor ? mentor.name : "Unassigned"}
                                                 </div>
                                                 <div className="font-bold text-slate-800 truncate text-[10px]">{slot.course}</div>
@@ -18111,7 +18111,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     { label: "Total", value: totalCount, bg: "bg-white", text: "text-slate-800", border: "border-slate-200" },
                     { label: "Cleared", value: clearedCount, bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
                     { label: "Pending", value: pendingCount, bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
-                    { label: "Needs Improv.", value: needsImpCount, bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200" },
+                    { label: "Needs Improv.", value: needsImpCount, bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
                     { label: "Failed", value: failedCount, bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200" },
                     { label: "Internal", value: internalCount, bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200" },
                     { label: "Avg Marks", value: avgMarks, bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
@@ -18275,7 +18275,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="flex items-center gap-2 flex-wrap">
                       {/* Combined Import Button */}
                       <div className="relative group">
-                        <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold transition-all shadow-sm cursor-pointer active:scale-95">
+                        <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white text-xs font-extrabold transition-all shadow-sm cursor-pointer active:scale-95">
                           <Upload className="h-3.5 w-3.5" />
                           <span>Import Attendance</span>
                           <input
@@ -18364,7 +18364,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         className="text-xs font-bold text-slate-800 outline-none cursor-pointer bg-transparent"
                       />
                     </div>
-                    <span className="text-[11px] font-extrabold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-lg border border-indigo-200 whitespace-nowrap">
+                    <span className="text-[11px] font-extrabold text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200 whitespace-nowrap">
                       {workingDates.length} date columns
                     </span>
 
@@ -18376,7 +18376,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         placeholder="Search name, roll no..."
                         value={studentSearch}
                         onChange={e => setStudentSearch(e.target.value)}
-                        className="pl-8 pr-7 h-9 border border-slate-200/90 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken text-xs rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold w-48 shadow-2xs"
+                        className="pl-8 pr-7 h-9 border border-slate-200/90 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken text-xs rounded-2xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 font-bold w-48 shadow-2xs"
                       />
                       {studentSearch && (
                         <button
@@ -18429,7 +18429,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs max-h-[70vh]">
                     <Table containerClassName="overflow-visible" className="w-full border-collapse text-left text-xs font-semibold">
                       <TableHeader className="sticky top-0 z-20 shadow-2xs">
-                        <TableRow className="bg-gradient-to-r from-slate-100 via-indigo-50/40 to-slate-100 border-b border-slate-200 text-slate-700 font-black uppercase text-[9px] tracking-wider whitespace-nowrap">
+                        <TableRow className="bg-gradient-to-r from-slate-100 via-amber-50/30 to-slate-100 border-b border-slate-200 text-slate-700 font-black uppercase text-[9px] tracking-wider whitespace-nowrap">
                           <TableHead className="p-2.5 border-r border-slate-200 text-center sticky left-0 z-30 bg-slate-100 w-12">Sl. No.</TableHead>
                           <TableHead className="p-2.5 border-r border-slate-200 sticky left-12 z-30 bg-slate-100 min-w-[110px]">Roll No</TableHead>
                           <TableHead className="p-2.5 border-r border-slate-200 sticky left-[158px] z-30 bg-slate-100 min-w-[150px]">Name</TableHead>
@@ -18437,7 +18437,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[70px]">Total days</TableHead>
                           <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-emerald-700">Total Present</TableHead>
                           <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[85px] text-rose-700">Total Absent</TableHead>
-                          <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-indigo-700">%</TableHead>
+                          <TableHead className="p-2.5 border-r border-slate-200 text-center min-w-[65px] text-amber-700">%</TableHead>
                           {workingDates.map(dStr => {
                             const cfg = attMonitoringDailyConfigMap.get(dStr);
                             const holidayObj = attMonitoringHolidayMap.get(dStr);
@@ -18459,22 +18459,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <TableHead
                                 key={dStr}
                                 onClick={() => setSelectedHeaderDateModal(dStr)}
-                                className={`p-2 border-r border-slate-200 text-center min-w-[88px] transition-all cursor-pointer select-none group hover:bg-indigo-100/80 hover:shadow-xs active:scale-[0.98] ${isToday ? "bg-indigo-50/90 border-b-2 border-b-indigo-600 ring-1 ring-inset ring-indigo-200" : isHoliday ? "bg-rose-50/50" : isExam ? "bg-purple-50/70" : isEvent ? "bg-amber-50/50" : "hover:bg-slate-100"
+                                className={`p-2 border-r border-slate-200 text-center min-w-[88px] transition-all cursor-pointer select-none group hover:bg-amber-100/80 hover:shadow-xs active:scale-[0.98] ${isToday ? "bg-amber-50/90 border-b-2 border-b-amber-500 ring-1 ring-inset ring-amber-300" : isHoliday ? "bg-rose-50/50" : isExam ? "bg-purple-50/70" : isEvent ? "bg-amber-50/50" : "hover:bg-slate-100"
                                   }`}
                                 title={`${tooltipText}\nClick to view full day attendance summary & student list`}
                               >
                                 {isToday && (
-                                  <span className="inline-block px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[7.5px] font-black uppercase tracking-wider mb-0.5 shadow-2xs">
+                                  <span className="inline-block px-1.5 py-0.2 rounded-full btn-gradient text-white text-[7.5px] font-black uppercase tracking-wider mb-0.5 shadow-2xs">
                                     TODAY
                                   </span>
                                 )}
-                                <div className={`font-extrabold text-[9.5px] ${isToday ? "text-indigo-900 font-black" : isHoliday ? "text-rose-900" : isExam ? "text-purple-900" : isEvent ? "text-amber-900" : "text-slate-700"}`}>
+                                <div className={`font-extrabold text-[9.5px] ${isToday ? "text-zinc-900 font-black" : isHoliday ? "text-rose-900" : isExam ? "text-purple-900" : isEvent ? "text-amber-900" : "text-slate-700"}`}>
                                   {formatDateToDMY(dStr)}
                                 </div>
                                 <div className="flex items-center justify-center gap-1 mt-0.5 flex-wrap">
                                   <span className="text-[8px] text-slate-400 font-semibold">{calendarDay}</span>
                                   {dayOrder && (
-                                    <span className="text-[7.5px] font-black px-1.5 py-0.2 rounded bg-indigo-600 text-white uppercase tracking-tight shadow-2xs">
+                                    <span className="text-[7.5px] font-black px-1.5 py-0.2 rounded btn-gradient text-white uppercase tracking-tight shadow-2xs">
                                       {dayOrder}
                                     </span>
                                   )}
@@ -18566,7 +18566,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           const pct = (rawPct !== undefined && rawPct >= 0) ? rawPct : 0;
 
                           return (
-                            <TableRow key={st.id} className="hover:bg-indigo-50/20 transition-colors">
+                            <TableRow key={st.id} className="hover:bg-amber-50/20 transition-colors">
                               <TableCell className="p-2.5 text-center font-bold text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white">{rowSerial}</TableCell>
                               <TableCell className="p-2.5 font-mono font-bold text-slate-600 border-r border-slate-100 sticky left-12 z-10 bg-white">{st.roll_number || st.id}</TableCell>
                               <TableCell className="p-2.5 border-r border-slate-100 sticky left-[158px] z-10 bg-white min-w-[150px]">
@@ -18577,7 +18577,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 <div className="font-bold text-slate-800">{st.department || "General"}</div>
                                 <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                                   {st.classGroup && (
-                                    <span className="text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded">
+                                    <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
                                       {st.classGroup}
                                     </span>
                                   )}
@@ -18809,14 +18809,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               ({fullCalendarDay})
                             </span>
                             {isToday && (
-                              <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[8px] font-black uppercase tracking-wider shadow-2xs">
+                              <span className="px-2 py-0.5 rounded-full btn-gradient text-white text-[8px] font-black uppercase tracking-wider shadow-2xs">
                                 Today
                               </span>
                             )}
                           </div>
                           <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                             {dayOrder && (
-                              <span className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-black uppercase">
+                              <span className="px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-black uppercase">
                                 {dayOrder}
                               </span>
                             )}
@@ -18857,7 +18857,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       {/* Remarks / Event description if present */}
                       {notes && (
                         <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs flex items-center gap-2">
-                          <Info className="h-4 w-4 text-indigo-500 shrink-0" />
+                          <Info className="h-4 w-4 text-amber-500 shrink-0" />
                           <p className="text-slate-700 font-semibold leading-tight">
                             <span className="text-[10px] font-black uppercase text-slate-400 mr-1.5">Remarks:</span>
                             {notes}
@@ -18898,7 +18898,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 placeholder="Search student or roll no..."
                                 value={dateModalSearch}
                                 onChange={(e) => setDateModalSearch(e.target.value)}
-                                className="w-full pl-8 pr-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-indigo-500"
+                                className="w-full pl-8 pr-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 bg-white focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                               />
                             </div>
 
@@ -18909,7 +18909,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   setDateModalDeptFilter(e.target.value);
                                   setDateModalCohortFilter("all");
                                 }}
-                                className="py-1.5 px-3 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-500"
+                                className="py-1.5 px-3 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                               >
                                 <option value="all">All Departments ({modalAvailableDepts.length})</option>
                                 {modalAvailableDepts.map(d => (
@@ -18922,7 +18922,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <select aria-label="Cohort filter"
                                 value={dateModalCohortFilter}
                                 onChange={(e) => setDateModalCohortFilter(e.target.value)}
-                                className="py-1.5 px-3 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-indigo-500 max-w-[200px] truncate"
+                                className="py-1.5 px-3 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 max-w-[200px] truncate"
                               >
                                 <option value="all">All Cohorts ({modalAvailableCohorts.length})</option>
                                 {modalAvailableCohorts.map(c => (
@@ -19381,7 +19381,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       </div>
                       <div className="space-y-1">
                         <label className="text-slate-500 text-[10px] uppercase font-bold">Description</label>
-                        <textarea aria-label="Description" rows={3} placeholder="Details of the issue..." value={issueDesc} onChange={e => setIssueDesc(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm" required />
+                        <textarea aria-label="Description" rows={3} placeholder="Details of the issue..." value={issueDesc} onChange={e => setIssueDesc(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 outline-none shadow-sm" required />
                       </div>
                       <div className="flex gap-2 pt-2">
                         <Button type="submit" variant="primary" size="md" className="w-full" icon={<Plus className="h-4 w-4" />}>
@@ -19725,7 +19725,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           setApprovalsStatusFilter(e.target.value as any);
                           setApprovalsPage(1);
                         }}
-                        className="h-8 px-2.5 text-xs font-semibold rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                        className="h-8 px-2.5 text-xs font-semibold rounded-xl bg-slate-50 border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
                         aria-label="Filter by request status"
                       >
                         <option value="pending">Status: Pending Review ({allPending.length})</option>
@@ -19745,7 +19745,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             setApprovalsSearch(e.target.value);
                             setApprovalsPage(1);
                           }}
-                          className="h-8 w-full pl-8 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 placeholder:text-slate-400"
+                          className="h-8 w-full pl-8 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800 placeholder:text-slate-400"
                         />
                       </div>
 
@@ -19824,12 +19824,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         setApprovalsPage(1);
                       }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${approvalsCategoryFilter === "handovers"
-                          ? "bg-indigo-600 text-white shadow-xs"
-                          : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+                          ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
+                          : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
                         }`}
                     >
                       <span>Substitutions</span>
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "handovers" ? "bg-white text-indigo-600" : "bg-indigo-200 text-indigo-800"}`}>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${approvalsCategoryFilter === "handovers" ? "bg-white text-amber-500" : "bg-amber-200 text-amber-800"}`}>
                         {approvalsStatusFilter === "pending" ? handoverPendingCount : dedupedRequests.filter(isHandoverReq).length}
                       </span>
                     </button>
@@ -19900,7 +19900,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               {/* Faculty Requestor */}
                               <TableCell className="p-3.5 border-r border-slate-100">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-7 h-7 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs flex items-center justify-center shrink-0">
+                                  <div className="w-7 h-7 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-bold text-xs flex items-center justify-center shrink-0">
                                     {(req.requestorName || "F").charAt(0).toUpperCase()}
                                   </div>
                                   <div className="min-w-0">
@@ -19929,7 +19929,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     </div>
                                   ) : (
                                     <div className="space-y-0.5">
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                                         <Users className="w-3 h-3" /> Substitution
                                       </span>
                                       <p className="text-[11px] text-slate-600 font-semibold truncate" title={req.targetStaffName || "Cover Staff"}>
@@ -19965,7 +19965,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <XCircle className="w-3.5 h-3.5" /> Declined
                                   </span>
                                 ) : isNeedsCmAllocation(req.status) ? (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                                     <AlertTriangle className="w-3.5 h-3.5" /> Needs Mapping
                                   </span>
                                 ) : isAwaitingCm(req.status) ? (
@@ -20105,7 +20105,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => openCamAssignModal(req)}
-                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors flex items-center gap-1.5 ml-auto cursor-pointer"
+                                    className="px-3 py-1.5 btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors flex items-center gap-1.5 ml-auto cursor-pointer"
                                   >
                                     <Zap className="w-3 h-3" /> Map Free Faculty
                                   </button>
@@ -20125,7 +20125,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           }
                                         }
                                       }}
-                                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
+                                      className="px-2.5 py-1.5 btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white rounded-lg text-[10px] font-bold shadow-xs transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer"
                                     >
                                       {loadingActions[`approve_req_${req.id}`] ? (
                                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -20242,7 +20242,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     {/* Header */}
                     <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                       <div className="flex items-center gap-2.5">
-                        <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-black">
+                        <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-500 font-black">
                           ⚡
                         </div>
                         <div>
@@ -20297,7 +20297,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <label
                                 key={m.id}
                                 className={`flex items-center justify-between p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${camSelectedCoverMentorId === m.id
-                                  ? "border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-1 ring-indigo-500 font-extrabold"
+                                  ? "border-amber-500 bg-amber-50/70 text-zinc-900 ring-1 ring-amber-500 font-extrabold"
                                   : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
                                   }`}
                               >
@@ -20308,7 +20308,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     value={m.id}
                                     checked={camSelectedCoverMentorId === m.id}
                                     onChange={() => setCamSelectedCoverMentorId(m.id)}
-                                    className="text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                    className="text-amber-500 focus:ring-amber-500 cursor-pointer"
                                   />
                                   <span>
                                     {m.sameSubject && <span className="text-amber-600 font-black mr-1">★</span>}
@@ -20338,7 +20338,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         type="button"
                         disabled={camAssignSubmitting || !camSelectedCoverMentorId || readOnly}
                         onClick={handleCamAssignConfirm}
-                        className="px-4 py-1.5 rounded-lg text-xs font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs cursor-pointer transition-all disabled:opacity-50"
+                        className="px-4 py-1.5 rounded-lg text-xs font-black text-white btn-gradient border border-amber-500/30 hover:border-amber-500/60 shadow-xs cursor-pointer transition-all disabled:opacity-50"
                       >
                         {camAssignSubmitting ? "Assigning..." : "Confirm & Assign Cover →"}
                       </button>
@@ -20370,7 +20370,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           onClick={() => setHandoverSubject("original")}
                           className={`w-full px-3 py-2 text-left rounded-xl text-[11px] font-extrabold border transition-all ${handoverSubject === "original"
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                            ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                             }`}
                         >
@@ -20380,7 +20380,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           onClick={() => setHandoverSubject("substitute_own")}
                           className={`w-full px-3 py-2 text-left rounded-xl text-[11px] font-extrabold border transition-all ${handoverSubject === "substitute_own"
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                            ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                             }`}
                         >
@@ -20391,7 +20391,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <select aria-label="Subject"
                             value={selectedSubjName}
                             onChange={(e) => setSelectedSubjName(e.target.value)}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-amber-500"
                           >
                             <option value="">-- Choose Subject --</option>
                             {((coverMentor?.subjects || "") as string).split(",").map(s => s.trim()).filter(Boolean).map(s => (
@@ -20403,7 +20403,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           onClick={() => setHandoverSubject("custom")}
                           className={`w-full px-3 py-2 text-left rounded-xl text-[11px] font-extrabold border transition-all ${handoverSubject === "custom"
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                            ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                             : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                             }`}
                         >
@@ -20416,7 +20416,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="e.g. Test Supervision, Self Study"
                             value={customSubjName}
                             onChange={(e) => setCustomSubjName(e.target.value)}
-                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-indigo-500"
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-1 focus:ring-amber-500"
                           />
                         )}
                       </div>
@@ -20499,7 +20499,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <TableCell className="p-3 font-bold text-slate-800 border-r border-slate-100">
                                 {h.course}
                                 {req && req.course !== h.course && (
-                                  <span className="ml-2 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[9px] uppercase border border-indigo-100">
+                                  <span className="ml-2 px-1.5 py-0.5 bg-amber-50 text-amber-500 rounded text-[9px] uppercase border border-amber-200">
                                     Custom Subject
                                   </span>
                                 )}
@@ -20580,7 +20580,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 const isPending = isAnyPendingCmRequest(req.status);
                                 const isApproved = req.status === "approved";
                                 return (
-                                  <TableRow key={req.id} className="hover:bg-indigo-50/20 transition-colors">
+                                  <TableRow key={req.id} className="hover:bg-amber-50/20 transition-colors">
                                     <TableCell className="p-3">
                                       <div className="font-bold text-slate-800">{req.dateFormatted}</div>
                                       <div className="text-[9px] text-slate-400 mt-0.5">{req.dateStr}</div>
@@ -20795,7 +20795,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 {/* Top Header Banner */}
                 <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-1">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1">
                       <BookOpen className="w-3.5 h-3.5" />
                       <span>Academic Curriculum &amp; Evaluation Oversight</span>
                     </div>
@@ -20826,11 +20826,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     type="button"
                     onClick={() => setCamAcadSubTab("weekly_tasks")}
                     className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-2 ${camAcadSubTab === "weekly_tasks"
-                      ? "bg-white text-indigo-600 shadow-xs"
+                      ? "bg-white text-amber-500 shadow-xs"
                       : "text-slate-500 hover:text-slate-800"
                       }`}
                   >
-                    <Layers className="h-4 w-4 text-indigo-600" />
+                    <Layers className="h-4 w-4 text-amber-500" />
                     <span>Student Task Tracker</span>
                   </button>
                   <button
@@ -20841,7 +20841,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       : "text-slate-500 hover:text-slate-800"
                       }`}
                   >
-                    <BookOpen className="h-4 w-4 text-indigo-600" />
+                    <BookOpen className="h-4 w-4 text-amber-500" />
                     <span>Academic Portion Coverage</span>
                   </button>
                 </div>
@@ -20861,7 +20861,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             setCamAcadWeeklySem("");
                             setCamAcadWeeklySubj("");
                           }}
-                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                         >
                           {acadCourses.map(d => <option key={d} value={d}>{d}</option>)}
                           {acadCourses.length === 0 && <option value="">No departments</option>}
@@ -20877,7 +20877,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             setCamAcadWeeklySem(e.target.value);
                             setCamAcadWeeklySubj("");
                           }}
-                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                         >
                           {finalSemesters.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
@@ -20889,7 +20889,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           aria-label="Academic Subject"
                           value={activeSubject}
                           onChange={(e) => setCamAcadWeeklySubj(e.target.value)}
-                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white font-sans"
+                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white font-sans"
                         >
                           {subjectOptions.map(s => <option key={s} value={s}>{s}</option>)}
                           {subjectOptions.length === 0 && <option value="">No academic subjects</option>}
@@ -20903,7 +20903,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           aria-label="From Date"
                           value={camAcadWeeklyFrom}
                           onChange={(e) => setCamAcadWeeklyFrom(e.target.value)}
-                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                         />
                       </div>
 
@@ -20915,17 +20915,17 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           value={camAcadWeeklyTo}
                           min={camAcadWeeklyFrom || undefined}
                           onChange={(e) => setCamAcadWeeklyTo(e.target.value)}
-                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white"
+                          className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white"
                         />
                       </div>
                     </div>
 
                     {/* Task Guidelines Card */}
                     {currentWeeklyTask ? (
-                      <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-xl p-5 shadow-xs space-y-3">
+                      <div className="bg-gradient-to-r from-amber-500/5 via-teal-500/5 to-transparent border border-amber-200 rounded-xl p-5 shadow-xs space-y-3">
                         <div className="flex items-center justify-between gap-4 flex-wrap">
                           <div className="flex items-center gap-2.5">
-                            <span className="h-7 w-7 rounded-lg bg-indigo-100 text-indigo-700 font-extrabold text-xs flex items-center justify-center">
+                            <span className="h-7 w-7 rounded-lg bg-amber-100 text-amber-700 font-extrabold text-xs flex items-center justify-center">
                               W{activeWeek}
                             </span>
                             <div>
@@ -20971,8 +20971,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             </span>
                           )}
                           {currentWeeklyTask.task_pdf_url && (
-                            <a href={currentWeeklyTask.task_pdf_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg hover:bg-indigo-100">
-                              <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                            <a href={currentWeeklyTask.task_pdf_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-amber-500 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg hover:bg-amber-100">
+                              <FileText className="h-3.5 w-3.5 text-amber-500" />
                               <span>Reference Doc</span>
                             </a>
                           )}
@@ -21002,7 +21002,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-amber-50/40 text-amber-900">Quiz (10)</TableHead>
                               <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-purple-50/40 text-purple-900">Assessment (10)</TableHead>
                               <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-emerald-50/40 text-emerald-900">Assignment (10)</TableHead>
-                              <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-indigo-50/40 text-indigo-900">Total (30)</TableHead>
+                              <TableHead className="p-3.5 border-r border-slate-100 w-[100px] text-center bg-amber-50/40 text-zinc-900">Total (30)</TableHead>
                               <TableHead className="p-3.5 min-w-[180px]">Feedback / Remarks</TableHead>
                             </TableRow>
                           </TableHeader>
@@ -21030,7 +21030,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <TableCell className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">{idx + 1}</TableCell>
                                     <TableCell className="p-3 border-r border-slate-100">
                                       <div className="font-bold text-slate-900">{student.name}</div>
-                                      <div className="text-[10px] text-indigo-600 font-mono font-bold mt-0.5">{student.email}</div>
+                                      <div className="text-[10px] text-amber-500 font-mono font-bold mt-0.5">{student.email}</div>
                                       <div className="text-[9px] text-slate-400 font-mono">ID: {student.id} {student.register_number ? `• Reg: ${student.register_number}` : ""}</div>
                                     </TableCell>
                                     <TableCell className="p-3 text-center border-r border-slate-100">
@@ -21042,7 +21042,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <TableCell className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-amber-50/10">{qm}</TableCell>
                                     <TableCell className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-purple-50/10">{asm}</TableCell>
                                     <TableCell className="p-3 text-center border-r border-slate-100 font-bold text-slate-800 bg-emerald-50/10">{agm}</TableCell>
-                                    <TableCell className="p-3 text-center border-r border-slate-100 font-black text-indigo-900 bg-indigo-50/20">{total !== "—" ? `${total} / 30` : "—"}</TableCell>
+                                    <TableCell className="p-3 text-center border-r border-slate-100 font-black text-zinc-900 bg-amber-50/20">{total !== "—" ? `${total} / 30` : "—"}</TableCell>
                                     <TableCell className="p-3 text-slate-600 text-xs">{entry?.feedback || "—"}</TableCell>
                                   </TableRow>
                                 );
@@ -21432,7 +21432,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   setCamAcadSearch(e.target.value);
                                   setCamAcadPage(1);
                                 }}
-                                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-indigo-500 outline-none"
+                                className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-amber-500 outline-none"
                               />
                             </div>
 
@@ -21565,7 +21565,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         <div className="text-[10px] text-slate-400 font-mono">{log.mentor_id}</div>
                                       </TableCell>
                                       <TableCell className="p-3 whitespace-nowrap">
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-200">
                                           {log.unit || "Unit 1"}
                                         </span>
                                       </TableCell>
@@ -21877,7 +21877,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                    <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shrink-0">
                       <GraduationCap className="h-5 w-5" />
                     </div>
                     <div>
@@ -21904,7 +21904,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <button
                       type="button"
                       onClick={exportTrackerCSV}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
                       title="Export tracker as raw CSV data"
                     >
                       <Download className="h-3.5 w-3.5" />
@@ -21938,7 +21938,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         setCamTrackerSubject("ALL");
                         setCamTrackerWeek(1);
                       }}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white cursor-pointer"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white cursor-pointer"
                     >
                       {trackerCourses.map(d => <option key={d} value={d}>{d}</option>)}
                       {trackerCourses.length === 0 && <option value="">No courses</option>}
@@ -21955,7 +21955,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         setCamTrackerSubject("ALL");
                         setCamTrackerWeek(1);
                       }}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white cursor-pointer"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white cursor-pointer"
                     >
                       {finalSemesters.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -21969,7 +21969,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       onChange={(e) => {
                         setCamTrackerSubject(e.target.value);
                       }}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white font-sans cursor-pointer"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white font-sans cursor-pointer"
                     >
                       <option value="ALL">All Skill Subjects (Combined)</option>
                       {trackerSubjectObjs.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
@@ -21983,7 +21983,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       aria-label="Week"
                       value={activeWeek}
                       onChange={(e) => setCamTrackerWeek(parseInt(e.target.value, 10) || 1)}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800 cursor-pointer"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white text-slate-800 cursor-pointer"
                     >
                       {Array.from({ length: 15 }, (_, i) => i + 1).map(wk => (
                         <option key={wk} value={wk}>Week {wk} {wk % 2 === 0 ? "(Assessment)" : ""}</option>
@@ -21998,7 +21998,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       aria-label="From Date"
                       value={camTrackerFromDate}
                       onChange={e => e.target.value && setCamTrackerFromDate(e.target.value)}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white text-slate-800"
                     />
                   </div>
                   {/* 6. To Date */}
@@ -22009,7 +22009,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       aria-label="To Date"
                       value={camTrackerToDate}
                       onChange={e => e.target.value && setCamTrackerToDate(e.target.value)}
-                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 bg-white text-slate-800"
+                      className="w-full text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-white text-slate-800"
                     />
                   </div>
                 </div>
@@ -22057,16 +22057,16 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       {/* Visual Infographic Metrics Bar */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {/* Card 1: Cohort Enrollment */}
-                        <div className="p-4.5 rounded-2xl bg-gradient-to-br from-indigo-50/80 via-white to-slate-50 border border-indigo-100/80 shadow-xs flex flex-col justify-between">
+                        <div className="p-4.5 rounded-2xl bg-gradient-to-br from-amber-50/60 via-white to-slate-50 border border-amber-200/80 shadow-xs flex flex-col justify-between">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Enrolled Students</span>
-                            <div className="h-7 w-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                            <div className="h-7 w-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
                               <Users className="h-4 w-4" />
                             </div>
                           </div>
                           <div className="mt-2">
                             <div className="text-2xl font-black text-slate-800">{totalCount}</div>
-                            <div className="text-[10px] text-indigo-600 font-bold mt-0.5">{activeDept} • {activeSemester}</div>
+                            <div className="text-[10px] text-amber-500 font-bold mt-0.5">{activeDept} • {activeSemester}</div>
                           </div>
                         </div>
 
@@ -22152,7 +22152,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {totalCount > 0 && (
                             <>
                               <div style={{ width: `${(mastery / totalCount) * 100}%` }} title={`Mastery: ${mastery}`} className="bg-emerald-500 rounded-l-full transition-all duration-500" />
-                              <div style={{ width: `${(proficient / totalCount) * 100}%` }} title={`Proficient: ${proficient}`} className="bg-indigo-500 transition-all duration-500" />
+                              <div style={{ width: `${(proficient / totalCount) * 100}%` }} title={`Proficient: ${proficient}`} className="bg-amber-500 transition-all duration-500" />
                               <div style={{ width: `${(developing / totalCount) * 100}%` }} title={`Developing: ${developing}`} className="bg-amber-400 transition-all duration-500" />
                               <div style={{ width: `${(needsSupport / totalCount) * 100}%` }} title={`Needs Support: ${needsSupport}`} className="bg-rose-400 transition-all duration-500" />
                               <div style={{ width: `${(pendingSubmission / totalCount) * 100}%` }} title={`Pending: ${pendingSubmission}`} className="bg-slate-200 rounded-r-full transition-all duration-500" />
@@ -22166,9 +22166,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             <div className="text-xs font-black text-emerald-800">{mastery}</div>
                             <div className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-700">Mastery (9-10)</div>
                           </div>
-                          <div className="p-2 rounded-xl bg-indigo-50/60 border border-indigo-100">
-                            <div className="text-xs font-black text-indigo-800">{proficient}</div>
-                            <div className="text-[9px] font-extrabold uppercase tracking-wider text-indigo-700">Proficient (7-8)</div>
+                          <div className="p-2 rounded-xl bg-amber-50/60 border border-amber-200">
+                            <div className="text-xs font-black text-amber-800">{proficient}</div>
+                            <div className="text-[9px] font-extrabold uppercase tracking-wider text-amber-700">Proficient (7-8)</div>
                           </div>
                           <div className="p-2 rounded-xl bg-amber-50/60 border border-amber-100">
                             <div className="text-xs font-black text-amber-800">{developing}</div>
@@ -22205,14 +22205,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   }).sort((a, b) => a.week_number - b.week_number);
 
                   return (
-                    <div className="bg-gradient-to-r from-indigo-500/5 via-teal-500/5 to-transparent border border-indigo-100 rounded-xl p-5 shadow-xs space-y-3">
+                    <div className="bg-gradient-to-r from-amber-500/5 via-teal-500/5 to-transparent border border-amber-200 rounded-xl p-5 shadow-xs space-y-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <BookOpen className="h-4 w-4 text-indigo-500" />
+                        <BookOpen className="h-4 w-4 text-amber-500" />
                         <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
                           {isAllSubjects ? "All Subjects" : activeSubject} — Tasks in Range ({camTrackerFromDate} → {camTrackerToDate})
                         </h3>
                         <span className="ml-auto flex gap-2 text-[9px] font-bold">
-                          <span className="px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700">{activeDept}</span>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700">{activeDept}</span>
                           <span className="px-2 py-0.5 rounded-full bg-purple-50 border border-purple-100 text-purple-700">{activeSemester}</span>
                         </span>
                       </div>
@@ -22221,15 +22221,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {tasksInRange.map(t => {
                             const mentor = mentors.find(m => m.id === t.mentor_id);
                             return (
-                              <div key={t.id} className="bg-white/80 border border-indigo-100 p-3 rounded-xl space-y-1">
+                              <div key={t.id} className="bg-white/80 border border-amber-200 p-3 rounded-xl space-y-1">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">Week {t.week_number}</span>
+                                  <span className="text-[10px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">Week {t.week_number}</span>
                                   <span className="text-[9px] text-slate-400 font-mono">{t.updated_at ? String(t.updated_at).split("T")[0] : "—"}</span>
                                 </div>
                                 <div className="text-xs font-extrabold text-slate-800">{t.task_name}</div>
                                 {t.task_pdf_url && (
                                   <a href={t.task_pdf_url} target="_blank" rel="noreferrer"
-                                    className="text-[10px] font-bold text-indigo-600 hover:underline flex items-center gap-1">
+                                    className="text-[10px] font-bold text-amber-500 hover:underline flex items-center gap-1">
                                     <BookOpen className="h-3 w-3" /> Reference Doc
                                   </a>
                                 )}
@@ -22239,7 +22239,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           })}
                         </div>
                       ) : (
-                        <div className="text-center py-4 bg-white/50 border border-dashed border-indigo-200 rounded-xl">
+                        <div className="text-center py-4 bg-white/50 border border-dashed border-amber-200 rounded-xl">
                           <p className="text-xs text-slate-500 italic">No tasks assigned for {activeSubject} in this date range.</p>
                         </div>
                       )}
@@ -22467,7 +22467,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         )}
                         <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-400 font-semibold">
                           <span>Week 1</span>
-                          <span className="text-[8px] text-indigo-400 font-black">● Week {activeWeek} selected</span>
+                          <span className="text-[8px] text-amber-400 font-black">● Week {activeWeek} selected</span>
                           <span>Week 15</span>
                         </div>
                       </div>
@@ -22545,7 +22545,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         href={submissionUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:underline max-w-[220px] truncate cursor-pointer"
+                                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-500 hover:underline max-w-[220px] truncate cursor-pointer"
                                         title={submissionUrl}
                                       >
                                         <BookOpen className="h-3.5 w-3.5 shrink-0" />
@@ -22586,7 +22586,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               {/* Console Header */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                  <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shrink-0">
                     <Users className="h-5 w-5" />
                   </div>
                   <div>
@@ -22646,7 +22646,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 return (
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-card flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                      <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0">
                         <GraduationCap className="h-5 w-5" />
                       </div>
                       <div>
@@ -22687,7 +22687,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     placeholder="Search by Name, Roll No, Email, Phone..."
                     value={studentDirSearch}
                     onChange={(e) => setStudentDirSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] focus:outline-none focus:border-indigo-500 bg-sunken/50"
+                    className="w-full pl-9 pr-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 bg-sunken/50"
                   />
                 </div>
 
@@ -22752,7 +22752,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         setStudentShiftFilter("all");
                         setStudentDirSearch("");
                       }}
-                      className="text-xs font-extrabold text-indigo-600 hover:text-indigo-800 px-2.5 py-1.5 rounded-xl hover:bg-indigo-50 transition-colors cursor-pointer"
+                      className="text-xs font-extrabold text-amber-500 hover:text-amber-800 px-2.5 py-1.5 rounded-xl hover:bg-amber-50 transition-colors cursor-pointer"
                     >
                       Reset Filters
                     </button>
@@ -22932,13 +22932,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
                         <Table className="w-full border-collapse text-left text-xs font-semibold min-w-[2100px]">
                           <TableHeader>
-                            <TableRow className="bg-gradient-to-r from-slate-50 to-indigo-50/40 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider whitespace-nowrap">
+                            <TableRow className="bg-gradient-to-r from-slate-50 to-amber-50/30 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[9.5px] tracking-wider whitespace-nowrap">
                               <TableHead className="p-3 w-10 text-center">
                                 <input
                                   type="checkbox"
                                   checked={isAllFilteredSelected}
                                   onChange={toggleSelectAllFiltered}
-                                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                                  className="rounded text-amber-500 focus:ring-amber-500 h-4 w-4 cursor-pointer"
                                   title="Select / Deselect all visible students"
                                 />
                               </TableHead>
@@ -22969,7 +22969,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             {paginatedStudents.map(st => {
                               const isSelected = selectedStudentIds.includes(st.id);
                               return (
-                                <TableRow key={st.id} className={`transition-colors whitespace-nowrap ${isSelected ? "bg-rose-50/30 hover:bg-rose-50/50" : "hover:bg-indigo-50/20"}`}>
+                                <TableRow key={st.id} className={`transition-colors whitespace-nowrap ${isSelected ? "bg-rose-50/30 hover:bg-rose-50/50" : "hover:bg-amber-50/20"}`}>
                                   <TableCell className="p-3 text-center">
                                     <input
                                       type="checkbox"
@@ -22981,10 +22981,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           setSelectedStudentIds(prev => [...prev, st.id]);
                                         }
                                       }}
-                                      className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                                      className="rounded text-amber-500 focus:ring-amber-500 h-4 w-4 cursor-pointer"
                                     />
                                   </TableCell>
-                                  <TableCell className="p-3 font-mono font-bold text-indigo-700">
+                                  <TableCell className="p-3 font-mono font-bold text-amber-700">
                                     {st.roll_number || st.id}
                                   </TableCell>
                                   <TableCell className="p-3 font-bold text-slate-900">
@@ -22995,12 +22995,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   </TableCell>
                                   <TableCell className="p-3">
                                     <div className="font-bold text-slate-800">{st.department || "General"}</div>
-                                    <div className="text-[10px] text-indigo-600 font-semibold">{st.classGroup}</div>
+                                    <div className="text-[10px] text-amber-500 font-semibold">{st.classGroup}</div>
                                   </TableCell>
                                   <TableCell className="p-3">
                                     {st.hire_score ? (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[11px]">
-                                        <Sparkles className="h-3 w-3 text-indigo-500" />
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-700 font-extrabold text-[11px]">
+                                        <Sparkles className="h-3 w-3 text-amber-500" />
                                         {st.hire_score}
                                       </span>
                                     ) : (
@@ -23032,13 +23032,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <TableCell className="p-3 font-mono text-slate-800">
                                     {maskPan(st.pan_number)}
                                   </TableCell>
-                                  <TableCell className="p-3 font-bold text-indigo-600">
+                                  <TableCell className="p-3 font-bold text-amber-500">
                                     {st.tenth_mark ? `${st.tenth_mark}%` : "—"}
                                   </TableCell>
-                                  <TableCell className="p-3 font-bold text-indigo-600">
+                                  <TableCell className="p-3 font-bold text-amber-500">
                                     {st.eleventh_mark ? `${st.eleventh_mark}%` : "—"}
                                   </TableCell>
-                                  <TableCell className="p-3 font-bold text-indigo-600">
+                                  <TableCell className="p-3 font-bold text-amber-500">
                                     {st.twelfth_mark ? `${st.twelfth_mark}%` : "—"}
                                   </TableCell>
                                   <TableCell className="p-3 text-slate-800">
@@ -23089,7 +23089,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                             onClick={() => setSelectedStudentForDetail(st)}
                                             className="gap-2 cursor-pointer text-xs"
                                           >
-                                            <Eye className="h-3.5 w-3.5 text-indigo-600" />
+                                            <Eye className="h-3.5 w-3.5 text-amber-500" />
                                             <span>View Profile</span>
                                           </DropdownMenuItem>
                                           {!readOnly && (
@@ -23159,7 +23159,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                    <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shrink-0">
                       <UserCheck className="h-5 w-5" />
                     </div>
                     <div>
@@ -23175,7 +23175,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <button
                         type="button"
                         onClick={handleEnableAllClasses}
-                        className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-95"
+                        className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-95"
                       >
                         Allow All Cohorts
                       </button>
@@ -23234,7 +23234,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <div
                             key={cls}
                             className={`p-4 rounded-xl border transition-all flex items-center justify-between gap-4 font-sans ${isAllowed
-                              ? "bg-indigo-50/40 border-indigo-200 shadow-xs"
+                              ? "bg-amber-50/40 border-amber-200 shadow-xs"
                               : "bg-white border-slate-200 shadow-2xs opacity-90"
                               }`}
                           >
@@ -23261,7 +23261,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 onChange={() => toggleClassProfileEdit(cls)}
                                 className="sr-only peer"
                               />
-                              <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                              <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:btn-gradient"></div>
                             </label>
                           </div>
                         );
@@ -23498,7 +23498,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       ) : (
                         filteredEvents.map(ev => {
                           const categoryColors: Record<string, string> = {
-                            "Coding Fest & Hackathon": "bg-indigo-50 text-indigo-700 border-indigo-200",
+                            "Coding Fest & Hackathon": "bg-amber-50 text-amber-700 border-amber-200",
                             "Technical Symposium & Project Expo": "bg-purple-50 text-purple-700 border-purple-200",
                             "Workshop & Hands-on BootCamp": "bg-sky-50 text-sky-700 border-sky-200",
                             "Guest Lecture & Industry Talk": "bg-teal-50 text-teal-700 border-teal-200",
@@ -23571,13 +23571,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
                                 <div className="space-y-2">
                                   {eventPhotosList.length === 0 && (
-                                    <div className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold">
+                                    <div className="flex items-center gap-1.5 text-xs text-amber-500 font-bold">
                                       <Calendar className="h-3.5 w-3.5" />
                                       <span>{ev.date}{ev.end_date ? ` to ${ev.end_date}` : ""}</span>
                                     </div>
                                   )}
 
-                                  <h4 className="text-sm font-black text-slate-900 leading-snug group-hover:text-indigo-600 transition-colors">
+                                  <h4 className="text-sm font-black text-slate-900 leading-snug group-hover:text-amber-500 transition-colors">
                                     {ev.name}
                                   </h4>
 
@@ -23594,8 +23594,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   )}
 
                                   {ev.chief_guest && (
-                                    <div className="text-[10.5px] text-indigo-800 bg-indigo-50/70 p-1.5 rounded-lg border border-indigo-100/60 font-semibold">
-                                      <span className="font-bold text-indigo-600">Guest:</span> {ev.chief_guest}
+                                    <div className="text-[10.5px] text-amber-800 bg-amber-50/70 p-1.5 rounded-lg border border-amber-200/60 font-semibold">
+                                      <span className="font-bold text-amber-500">Guest:</span> {ev.chief_guest}
                                     </div>
                                   )}
 
@@ -23633,7 +23633,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                                   {/* Quick Upload Event Moment / Photo */}
                                   <div className="flex items-center justify-between gap-1 text-[10.5px]">
-                                    <label className="text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-1 cursor-pointer">
+                                    <label className="text-amber-500 hover:text-amber-800 font-extrabold flex items-center gap-1 cursor-pointer">
                                       <span>📸</span>
                                       <span>Upload Moments</span>
                                       <input
@@ -23674,10 +23674,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                               setEventSubTab("achievements");
                                               setAchSearchQuery(ev.name);
                                             }}
-                                            className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg border border-indigo-200 cursor-pointer transition-colors"
+                                            className="inline-flex items-center gap-1 text-[10px] font-black text-amber-700 hover:text-zinc-900 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-lg border border-amber-200 cursor-pointer transition-colors"
                                             title="View recorded student accolades for this event"
                                           >
-                                            <Sparkles className="h-3 w-3 text-indigo-600" />
+                                            <Sparkles className="h-3 w-3 text-amber-500" />
                                             <span>{linkedAccolades.length} {linkedAccolades.length === 1 ? "Accolade" : "Accolades"}</span>
                                           </button>
                                         );
@@ -23695,7 +23695,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     <div className="flex items-center gap-1.5">
                                       {statusUpdatingId === ev.id ? (
                                         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10.5px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
-                                          <Loader2 className="h-3 w-3 animate-spin text-indigo-600 shrink-0" />
+                                          <Loader2 className="h-3 w-3 animate-spin text-amber-500 shrink-0" />
                                           <span>Updating...</span>
                                         </div>
                                       ) : (
@@ -23711,7 +23711,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                                   ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
                                                   : ev.status === "Cancelled"
                                                     ? "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100"
-                                                    : "bg-indigo-50 text-indigo-800 border-indigo-300 hover:bg-indigo-100"
+                                                    : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
                                             }`}
                                           title="Change event status"
                                         >
@@ -23746,7 +23746,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                             ? "bg-amber-100 text-amber-800"
                                             : ev.status === "Cancelled"
                                               ? "bg-rose-100 text-rose-800"
-                                              : "bg-indigo-100 text-indigo-800 border border-indigo-200"
+                                              : "bg-amber-100 text-amber-800 border border-amber-200"
                                         }`}
                                     >
                                       {ev.status || "Upcoming"}
@@ -23764,7 +23764,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         onClick={() => handleOpenEditEventModal(ev)}
                                         className="gap-2 cursor-pointer text-xs"
                                       >
-                                        <Edit2 className="h-3.5 w-3.5 text-indigo-600" />
+                                        <Edit2 className="h-3.5 w-3.5 text-amber-500" />
                                         <span>Edit Event & Photos</span>
                                       </DropdownMenuItem>
                                       <DropdownMenuSeparator />
@@ -23792,14 +23792,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-3">
                         Chronological Event Roadmap &amp; Milestones
                       </h4>
-                      <div className="relative pl-6 border-l-2 border-indigo-200 space-y-8 my-4">
+                      <div className="relative pl-6 border-l-2 border-amber-200 space-y-8 my-4">
                         {filteredEvents.map(ev => (
                           <div key={ev.id} className="relative group">
                             <div className="absolute -left-[31px] top-1.5 h-4 w-4 rounded-full bg-[#4F46E5] ring-4 ring-[#4F46E5]/15 border-2 border-white shadow-xs" />
                             <div className="bg-slate-50/70 border border-slate-100 p-4 rounded-2xl space-y-2 hover:bg-white transition-all shadow-card">
                               <div className="flex items-center justify-between flex-wrap gap-2">
-                                <span className="text-xs font-mono font-black text-indigo-600">{ev.date}{ev.end_date ? ` → ${ev.end_date}` : ""}</span>
-                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 uppercase">{ev.category || "Fest"}</span>
+                                <span className="text-xs font-mono font-black text-amber-500">{ev.date}{ev.end_date ? ` → ${ev.end_date}` : ""}</span>
+                                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-amber-100 text-amber-800 uppercase">{ev.category || "Fest"}</span>
                               </div>
                               <h4 className="text-sm font-extrabold text-slate-900">{ev.name}</h4>
                               {ev.venue && <p className="text-[11px] text-slate-500 font-semibold">{ev.venue}</p>}
@@ -23829,9 +23829,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         </TableHeader>
                         <TableBody className="divide-y divide-slate-100">
                           {filteredEvents.map(ev => (
-                            <TableRow key={ev.id} className="hover:bg-indigo-50/20">
+                            <TableRow key={ev.id} className="hover:bg-amber-50/20">
                               <TableCell className="p-3 font-bold text-slate-900">{ev.name}</TableCell>
-                              <TableCell className="p-3 font-mono font-bold text-indigo-700">{ev.date}{ev.end_date ? ` to ${ev.end_date}` : ""}</TableCell>
+                              <TableCell className="p-3 font-mono font-bold text-amber-700">{ev.date}{ev.end_date ? ` to ${ev.end_date}` : ""}</TableCell>
                               <TableCell className="p-3 text-slate-700">{ev.category || "Coding Fest"}</TableCell>
                               <TableCell className="p-3 text-slate-600">{ev.department || "All Departments"}</TableCell>
                               <TableCell className="p-3 text-slate-700 font-semibold">{ev.coordinator || "—"}</TableCell>
@@ -23839,7 +23839,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 {!readOnly ? (
                                   <div className="flex items-center gap-1.5">
                                     {statusUpdatingId === ev.id ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
                                     ) : (
                                       <select aria-label="Event status"
                                         disabled={statusUpdatingId === ev.id}
@@ -23856,7 +23856,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     )}
                                   </div>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700">{ev.status || "Upcoming"}</span>
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700">{ev.status || "Upcoming"}</span>
                                 )}
                               </TableCell>
                               <TableCell className="p-3 text-slate-600">{ev.venue || "—"}</TableCell>
@@ -23879,7 +23879,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                           onClick={() => handleOpenEditEventModal(ev)}
                                           className="gap-2 cursor-pointer text-xs"
                                         >
-                                          <Edit2 className="h-3.5 w-3.5 text-indigo-600" />
+                                          <Edit2 className="h-3.5 w-3.5 text-amber-500" />
                                           <span>Edit Event</span>
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
@@ -24008,7 +24008,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     {ach.badge || "Winner"}
                                   </span>
                                   {isTeam ? (
-                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                                       <Users className="h-3 w-3" />
                                       <span>{ach.team_name ? `Team: ${ach.team_name}` : "Team Entry"}</span>
                                     </span>
@@ -24034,7 +24034,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                               <div>
                                 {ach.topic && (
-                                  <div className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider mb-0.5">
+                                  <div className="text-[11px] font-bold text-amber-500 uppercase tracking-wider mb-0.5">
                                     Topic: {ach.topic}
                                   </div>
                                 )}
@@ -24081,7 +24081,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     href={ach.proof_link}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
+                                    className="font-bold text-amber-500 hover:text-amber-800 underline flex items-center gap-1"
                                   >
                                     <ExternalLink className="h-3 w-3" />
                                     <span>Proof</span>
@@ -24123,7 +24123,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => handleOpenEditAchievementModal(ach)}
-                                    className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer"
+                                    className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors cursor-pointer"
                                     title="Edit Achievement"
                                   >
                                     <Edit2 className="h-3.5 w-3.5" />
@@ -24646,7 +24646,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     {/* Custom Category Input if selected */}
                     {isCustomAchCategory && (
                       <div className="space-y-1 animate-fadeIn">
-                        <label className="text-[10px] font-bold text-indigo-600 uppercase">
+                        <label className="text-[10px] font-bold text-amber-500 uppercase">
                           Enter Custom Achievement Category
                         </label>
                         <input
@@ -24655,7 +24655,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           placeholder="e.g. Patent Filing, Inter-College Debate Championship"
                           value={achFormCustomCategory}
                           onChange={e => setAchFormCustomCategory(e.target.value)}
-                          className="w-full p-2.5 border border-indigo-200 rounded-xl bg-indigo-50/40 font-semibold text-slate-800 outline-none"
+                          className="w-full p-2.5 border border-amber-200 rounded-xl bg-amber-50/40 font-semibold text-slate-800 outline-none"
                         />
                       </div>
                     )}
@@ -24695,18 +24695,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="space-y-2 pt-2 border-t border-slate-100">
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1.5">
-                          <Users className="h-3.5 w-3.5 text-indigo-600" />
+                          <Users className="h-3.5 w-3.5 text-amber-500" />
                           <span>{achFormParticipationType === "team" ? "Select Team Members" : "Select Student Recipient"}</span>
                           <span className="text-rose-500">*</span>
                         </label>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
                           {achFormSelectedStudentIds.length} Selected
                         </span>
                       </div>
 
                       {/* Selected Student Chips */}
                       {achFormSelectedStudentIds.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 p-2 bg-indigo-50/50 border border-indigo-100 rounded-xl max-h-24 overflow-y-auto">
+                        <div className="flex flex-wrap gap-1.5 p-2 bg-amber-50/50 border border-amber-200 rounded-xl max-h-24 overflow-y-auto">
                           {achFormSelectedStudentIds.map(sId => {
                             const st = (students || []).find(s => s.id === sId);
                             const displayName = st ? st.name : sId;
@@ -24714,14 +24714,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             return (
                               <span
                                 key={sId}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-indigo-200 text-xs font-bold text-indigo-900 shadow-xs"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-amber-200 text-xs font-bold text-zinc-900 shadow-xs"
                               >
                                 <span>{displayName}</span>
-                                {reg && <span className="text-[10px] text-indigo-400 font-mono">({reg})</span>}
+                                {reg && <span className="text-[10px] text-amber-400 font-mono">({reg})</span>}
                                 <button
                                   type="button"
                                   onClick={() => setAchFormSelectedStudentIds(prev => prev.filter(id => id !== sId))}
-                                  className="text-indigo-400 hover:text-rose-600 font-bold ml-1 cursor-pointer"
+                                  className="text-amber-400 hover:text-rose-600 font-bold ml-1 cursor-pointer"
                                 >
                                   ×
                                 </button>
@@ -24772,7 +24772,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             return (
                               <label
                                 key={st.id}
-                                className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${isChecked ? "bg-indigo-50/80 font-bold" : "hover:bg-slate-50"
+                                className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${isChecked ? "bg-amber-50 font-bold" : "hover:bg-slate-50"
                                   }`}
                               >
                                 <div className="flex items-center gap-2">
@@ -24823,10 +24823,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <div className="space-y-2 pt-2 border-t border-slate-100">
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
-                          <Camera className="h-3.5 w-3.5 text-indigo-600" />
+                          <Camera className="h-3.5 w-3.5 text-amber-500" />
                           <span>Award Certificates &amp; Felicitation Photos</span>
                         </label>
-                        <label className="px-3 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs cursor-pointer flex items-center gap-1">
+                        <label className="px-3 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold text-xs cursor-pointer flex items-center gap-1">
                           <Plus className="h-3 w-3" />
                           <span>Add Photo</span>
                           <input
@@ -24895,7 +24895,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {viewingAchievement.badge || "Winner"}
                         </span>
                         {(viewingAchievement.participation_type === "team" || viewingAchievement.team_name) ? (
-                          <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                          <span className="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                             <Users className="h-3.5 w-3.5" />
                             <span>{viewingAchievement.team_name ? `Team: ${viewingAchievement.team_name}` : "Team Entry"}</span>
                           </span>
@@ -24915,7 +24915,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         {viewingAchievement.title}
                       </h3>
                       {viewingAchievement.topic && (
-                        <div className="text-xs font-bold text-indigo-600">
+                        <div className="text-xs font-bold text-amber-500">
                           Topic: {viewingAchievement.topic}
                         </div>
                       )}
@@ -24973,7 +24973,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   {/* Student Recipients */}
                   <div className="space-y-2 p-3 bg-slate-50/70 rounded-xl border border-slate-100">
                     <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                      <Users className="h-3.5 w-3.5 text-indigo-600" />
+                      <Users className="h-3.5 w-3.5 text-amber-500" />
                       <span>
                         {(viewingAchievement.participation_type === "team" || viewingAchievement.team_name) ? "Team Members" : "Recipient Student"}
                       </span>
@@ -24999,10 +24999,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                   {/* Proof Link */}
                   {viewingAchievement.proof_link && (
-                    <div className="flex items-center justify-between p-3 bg-indigo-50/60 rounded-xl border border-indigo-100">
+                    <div className="flex items-center justify-between p-3 bg-amber-50/60 rounded-xl border border-amber-200">
                       <div className="flex items-center gap-2">
-                        <ExternalLink className="h-4 w-4 text-indigo-600" />
-                        <span className="text-xs font-bold text-indigo-900">Certificate / Project Proof Link</span>
+                        <ExternalLink className="h-4 w-4 text-amber-500" />
+                        <span className="text-xs font-bold text-zinc-900">Certificate / Project Proof Link</span>
                       </div>
                       <a
                         href={viewingAchievement.proof_link}
@@ -25087,7 +25087,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 {/* Profile Summary Card */}
                 <div className="bg-pastel-cream p-6 rounded-2xl border-transparent shadow-card flex flex-col items-center justify-between text-center min-h-[300px] group hover:shadow-card-lg transition-all duration-300">
                   <div className="flex flex-col items-center space-y-4 w-full">
-                    <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-[#4F46E5] to-indigo-600 border-4 border-white text-white flex items-center justify-center text-3xl font-black shadow-md uppercase">
+                    <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-zinc-900 to-zinc-800 border-4 border-white text-white flex items-center justify-center text-3xl font-black shadow-md uppercase">
                       {((isKAMView ? currentKAM?.name : currentCAM?.name) || "User").substring(0, 2)}
                     </div>
                     <div>
@@ -25154,9 +25154,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     </div>
                   </div>
 
-                  <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex items-center gap-3">
-                    <Sparkles className="h-5 w-5 text-indigo-600 shrink-0" />
-                    <div className="text-xs text-indigo-800 font-bold leading-normal">
+                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center gap-3">
+                    <Sparkles className="h-5 w-5 text-amber-500 shrink-0" />
+                    <div className="text-xs text-amber-800 font-bold leading-normal">
                       Manage campus schedules, classrooms, class allocations, and scheduling conflicts.
                     </div>
                   </div>
@@ -25226,7 +25226,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
             <div className="space-y-4 text-xs font-semibold">
               <p className="font-bold text-slate-800 text-[12px] pb-1 border-b">
-                Staff Member: <span className="text-indigo-700 font-black">{staff?.name}</span>
+                Staff Member: <span className="text-amber-700 font-black">{staff?.name}</span>
               </p>
 
               <div className="space-y-3">
@@ -25276,7 +25276,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         >
           <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50">
             <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
-              <Users className="h-5 w-5 text-indigo-600" />
+              <Users className="h-5 w-5 text-amber-500" />
               {editingMentor ? "Edit Faculty Mentor" : "Add Faculty Mentor"}
             </h3>
             <button onClick={() => setShowMentorModal(false)} aria-label="Close mentor dialog" className="p-1 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer text-slate-500 hover:text-slate-800">
@@ -25303,7 +25303,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   disabled={editingMentor}
                   value={mentorForm.id}
                   onChange={(e) => setMentorForm({ ...mentorForm, id: e.target.value })}
-                  className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 disabled:bg-slate-100 disabled:text-slate-400"
+                  className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
 
@@ -25315,7 +25315,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   placeholder="e.g. MS (Leave blank to auto-generate)"
                   value={mentorForm.avatar}
                   onChange={(e) => setMentorForm({ ...mentorForm, avatar: e.target.value })}
-                  className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                  className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500"
                 />
               </div>
             </div>
@@ -25329,7 +25329,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 placeholder="e.g. Dr. Alice Smith"
                 value={mentorForm.name}
                 onChange={(e) => setMentorForm({ ...mentorForm, name: e.target.value })}
-                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500"
               />
             </div>
 
@@ -25342,7 +25342,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 placeholder="e.g. alice.smith@faceprep.in"
                 value={mentorForm.email}
                 onChange={(e) => setMentorForm({ ...mentorForm, email: e.target.value })}
-                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600"
+                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500"
               />
             </div>
 
@@ -25356,7 +25356,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   const val = e.target.value;
                   setMentorForm({ ...mentorForm, department: val });
                 }}
-                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800"
               >
                 {facultyDepts.map(d => (
                   <option key={d} value={d}>{d}</option>
@@ -25371,7 +25371,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 required
                 value={mentorForm.subject_group}
                 onChange={(e) => setMentorForm({ ...mentorForm, subject_group: e.target.value })}
-                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3.5 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800"
               >
                 {subjectGroups.map(sg => (
                   <option key={sg.id} value={sg.name}>{sg.name}</option>
@@ -25390,7 +25390,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   placeholder="Search subject catalog..."
                   value={mentorSubjectSearch}
                   onChange={(e) => setMentorSubjectSearch(e.target.value)}
-                  className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-600 font-bold"
+                  className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-lg pl-8 pr-3 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 font-bold"
                 />
               </div>
 
@@ -25450,7 +25450,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 }
                                 setMentorForm({ ...mentorForm, subjects: newList.join("\n") });
                               }}
-                              className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
+                              className="rounded text-amber-500 focus:ring-amber-500 h-3.5 w-3.5 cursor-pointer mt-0.5"
                             />
                             <div className="leading-tight">
                               <span className="font-bold text-slate-800">{s.name}</span>
@@ -25684,7 +25684,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     placeholder="Enter the justification (e.g. OD letter verified, biometric fallback, late check-in approved)..."
                     value={correctionReason}
                     onChange={(e) => setCorrectionReason(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs outline-none font-semibold shadow-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full p-2.5 border border-slate-200 rounded-xl bg-white text-xs outline-none font-semibold shadow-sm focus:ring-1 focus:ring-amber-500 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                   />
                 </div>
               </div>
@@ -25701,7 +25701,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <button
                 type="submit"
                 disabled={isCorrectionSubmitting || !correctionSlotId || (studentCorrectionCount >= 2 && !isAdminOverride)}
-                className={`flex-grow py-2.5 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer text-center border border-indigo-600 flex items-center justify-center gap-2 ${isCorrectionSubmitting || !correctionSlotId || (studentCorrectionCount >= 2 && !isAdminOverride)
+                className={`flex-grow py-2.5 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer text-center border border-amber-500 flex items-center justify-center gap-2 ${isCorrectionSubmitting || !correctionSlotId || (studentCorrectionCount >= 2 && !isAdminOverride)
                   ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed"
                   : "btn-gradient hover:opacity-95"
                   }`}
@@ -25820,7 +25820,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               type="button"
               onClick={handleConfirmImport}
               disabled={isImportSubmitting || importPreview.slots.length === 0}
-              className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-indigo-600 flex items-center justify-center gap-2 ${isImportSubmitting || importPreview.slots.length === 0
+              className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-amber-500 flex items-center justify-center gap-2 ${isImportSubmitting || importPreview.slots.length === 0
                 ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed opacity-80"
                 : "btn-gradient hover:opacity-95 active:scale-95"
                 }`}
@@ -25877,7 +25877,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           >
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <div className="h-9 w-9 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center">
                   <Download className="h-5 w-5" />
                 </div>
                 <div>
@@ -25903,7 +25903,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <CourseInfoButton course={selectedDept} collegeId={activeCollegeId} size="xs" />
                   </div>
                   {selectedCourseObj && (
-                    <span className="text-[9.5px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                    <span className="text-[9.5px] font-bold text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                       {selectedCourseObj.shift_based === 1 ? "Shift Based Course" : "Standard Course"}
                     </span>
                   )}
@@ -25919,7 +25919,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       setTemplateShift(newShifts[0] || "General");
                     }
                   }}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+                  className="w-full p-2.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken font-bold text-slate-800 outline-none cursor-pointer focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                 >
                   {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
@@ -25933,7 +25933,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     aria-label="Shift Type"
                     value={selectedShift}
                     onChange={(e) => setTemplateShift(e.target.value)}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken font-bold text-slate-800 outline-none cursor-pointer focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                   >
                     {shiftOptions.map((s: string) => (
                       <option key={s} value={s}>
@@ -25950,7 +25950,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       {shiftOptions[0] || "General"} {shiftOptions[0] === "Shift 1" ? "(Morning Shift)" : shiftOptions[0] === "Shift 2" ? "(Evening Shift)" : "(Full Day / General)"}
                     </span>
                   </div>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
                     ⚡ Auto-Configured
                   </span>
                 </div>
@@ -25962,14 +25962,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   aria-label="Semester"
                   value={templateSem || "Semester 1"}
                   onChange={(e) => setTemplateSem(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken font-bold text-slate-800 outline-none cursor-pointer focus:border-indigo-500"
+                  className="w-full p-2.5 rounded-xl border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] bg-sunken font-bold text-slate-800 outline-none cursor-pointer focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80"
                 >
                   {semOptions.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
 
-              <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-[11px] text-indigo-900 font-semibold space-y-1">
-                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Generated Target Class (Cohort)</span>
+              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-[11px] text-zinc-900 font-semibold space-y-1">
+                <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block">Generated Target Class (Cohort)</span>
                 <span className="font-extrabold text-slate-900 block text-xs tracking-tight">{composedClass}</span>
               </div>
             </div>
@@ -26033,10 +26033,10 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs font-semibold">
             {/* Controls bar */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
-              <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex flex-col gap-1 shadow-xs">
-                <span className="text-[10px] uppercase font-bold text-indigo-700 tracking-wider">Parsed Students</span>
-                <span className="text-xl font-extrabold text-indigo-800">{studentImportPreview.parsed.length}</span>
-                <span className="text-xs font-semibold text-indigo-600">Ready to save student records</span>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex flex-col gap-1 shadow-xs">
+                <span className="text-[10px] uppercase font-bold text-amber-700 tracking-wider">Parsed Students</span>
+                <span className="text-xl font-extrabold text-amber-800">{studentImportPreview.parsed.length}</span>
+                <span className="text-xs font-semibold text-amber-500">Ready to save student records</span>
               </div>
 
               <div className={`p-3 rounded-xl border flex flex-col gap-1 shadow-xs ${studentImportPreview.warnings.length > 0 ? "bg-amber-50 border-amber-100" : "bg-slate-50 border-slate-100"
@@ -26126,7 +26126,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           {semOptions.map((s: string) => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
-                      <p className="text-[9px] text-indigo-600 font-bold mt-0.5 truncate">→ {studentImportPreview.targetClassGroup}</p>
+                      <p className="text-[9px] text-amber-500 font-bold mt-0.5 truncate">→ {studentImportPreview.targetClassGroup}</p>
                     </div>
                   );
                 })()}
@@ -26172,8 +26172,8 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   </TableHeader>
                   <TableBody className="divide-y divide-slate-100 bg-white">
                     {studentImportPreview.parsed.map((st, idx) => (
-                      <TableRow key={idx} className="hover:bg-indigo-50/20">
-                        <TableCell className="p-2.5 font-mono font-bold text-indigo-700">{st.roll_number || "—"}</TableCell>
+                      <TableRow key={idx} className="hover:bg-amber-50/20">
+                        <TableCell className="p-2.5 font-mono font-bold text-amber-700">{st.roll_number || "—"}</TableCell>
                         <TableCell className="p-2.5 font-bold text-slate-900">{st.name || "—"}</TableCell>
                         <TableCell className="p-2.5 text-slate-700">{st.department || "—"}</TableCell>
                         <TableCell className="p-2.5">{st.tenth_mark ? `${st.tenth_mark}%` : "—"}</TableCell>
@@ -26207,7 +26207,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               type="button"
               onClick={handleConfirmStudentImportSubmit}
               disabled={isStudentImportSubmitting || studentImportPreview.parsed.length === 0}
-              className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-indigo-600 flex items-center justify-center gap-2 ${isStudentImportSubmitting || studentImportPreview.parsed.length === 0
+              className={`px-5 py-2 text-white rounded-xl shadow-sm transition-all font-bold cursor-pointer border border-amber-500 flex items-center justify-center gap-2 ${isStudentImportSubmitting || studentImportPreview.parsed.length === 0
                 ? "bg-slate-300 border-slate-300 text-slate-400 cursor-not-allowed opacity-80"
                 : "btn-gradient hover:opacity-95 active:scale-95"
                 }`}
@@ -26246,7 +26246,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 leading-snug">{selectedStudentForDetail.name}</h3>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 uppercase">
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 uppercase">
                     Roll No: {selectedStudentForDetail.roll_number || selectedStudentForDetail.id}
                   </span>
                   <span className="text-xs font-semibold text-slate-500">{selectedStudentForDetail.classGroup}</span>
@@ -26267,21 +26267,21 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           <div className="space-y-4 text-xs">
             {/* Assessment & Test Scores */}
             <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 p-4 rounded-xl space-y-2">
-              <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1.5">
-                <Award className="h-3.5 w-3.5 text-indigo-600" />
+              <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest flex items-center gap-1.5">
+                <Award className="h-3.5 w-3.5 text-amber-500" />
                 Assessment &amp; Skill Benchmark Scores
               </h4>
               <div className="grid grid-cols-2 gap-3 pt-1">
-                <div className="bg-white p-3 rounded-xl border border-indigo-100 shadow-2xs space-y-1">
+                <div className="bg-white p-3 rounded-xl border border-amber-200 shadow-2xs space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Hire Score</span>
                     {selectedStudentForDetail.hire_score && (
-                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                      <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
                         {Number(selectedStudentForDetail.hire_score) >= 700 ? "Elite" : Number(selectedStudentForDetail.hire_score) >= 600 ? "Placement Ready" : "Developing"}
                       </span>
                     )}
                   </div>
-                  <span className="text-base font-black text-indigo-700 block">{selectedStudentForDetail.hire_score ? `${selectedStudentForDetail.hire_score} / 1000` : "—"}</span>
+                  <span className="text-base font-black text-amber-700 block">{selectedStudentForDetail.hire_score ? `${selectedStudentForDetail.hire_score} / 1000` : "—"}</span>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-purple-100 shadow-2xs space-y-1">
                   <div className="flex items-center justify-between">
@@ -26327,15 +26327,15 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                 <div>
                   <span className="text-[9.5px] text-slate-400 font-bold uppercase block">10th Mark (%)</span>
-                  <span className="text-sm font-black text-indigo-600">{selectedStudentForDetail.tenth_mark ? `${selectedStudentForDetail.tenth_mark}%` : "—"}</span>
+                  <span className="text-sm font-black text-amber-500">{selectedStudentForDetail.tenth_mark ? `${selectedStudentForDetail.tenth_mark}%` : "—"}</span>
                 </div>
                 <div>
                   <span className="text-[9.5px] text-slate-400 font-bold uppercase block">11th Mark (%)</span>
-                  <span className="text-sm font-black text-indigo-600">{selectedStudentForDetail.eleventh_mark ? `${selectedStudentForDetail.eleventh_mark}%` : "—"}</span>
+                  <span className="text-sm font-black text-amber-500">{selectedStudentForDetail.eleventh_mark ? `${selectedStudentForDetail.eleventh_mark}%` : "—"}</span>
                 </div>
                 <div>
                   <span className="text-[9.5px] text-slate-400 font-bold uppercase block">12th Mark (%)</span>
-                  <span className="text-sm font-black text-indigo-600">{selectedStudentForDetail.twelfth_mark ? `${selectedStudentForDetail.twelfth_mark}%` : "—"}</span>
+                  <span className="text-sm font-black text-amber-500">{selectedStudentForDetail.twelfth_mark ? `${selectedStudentForDetail.twelfth_mark}%` : "—"}</span>
                 </div>
                 <div>
                   <span className="text-[9.5px] text-slate-400 font-bold uppercase block">Date of Birth</span>
@@ -26460,11 +26460,11 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           <div className="flex justify-between items-center border-b border-slate-100 pb-3 shrink-0">
             <div>
               <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                <Upload className="h-4 w-4 text-indigo-600" />
+                <Upload className="h-4 w-4 text-amber-500" />
                 <span>Excel Daily Attendance Import Preview</span>
               </h3>
               <p className="text-[11px] text-slate-500 font-semibold mt-1 flex items-center gap-2 flex-wrap">
-                <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">
+                <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 font-bold">
                   {attendanceImportPreview.parsed.length} Students
                 </span>
                 <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
@@ -26707,7 +26707,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         Limit Reached (2/2 Used)
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
+                      <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
                         {correctionCount}/2 CM Corrections Used
                       </span>
                     )}
@@ -26715,9 +26715,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <p className="text-[11px] text-slate-500 font-semibold mt-0.5 flex items-center gap-2 flex-wrap">
                     <span>{st.roll_number || st.id} • {st.classGroup}</span>
                     <span>•</span>
-                    <strong className="text-indigo-600">{defaultDayName}, {formatDateToDMY(dStr)}</strong>
+                    <strong className="text-amber-500">{defaultDayName}, {formatDateToDMY(dStr)}</strong>
                     {dayOrder && (
-                      <span className="px-1.5 py-0.5 rounded font-black text-[9px] uppercase bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      <span className="px-1.5 py-0.5 rounded font-black text-[9px] uppercase bg-amber-100 text-amber-800 border border-amber-200">
                         {dayOrder} ({dayName})
                       </span>
                     )}
@@ -26920,7 +26920,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                         ? "bg-amber-500 text-white shadow-xs"
                                         : "bg-purple-600 text-white shadow-xs"
                                   : isBeingEdited && activePeriodChange?.newStatus === opt
-                                    ? "bg-indigo-600 text-white shadow-xs"
+                                    ? "bg-zinc-900 text-amber-400 border border-amber-500 shadow-xs font-bold"
                                     : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
                                   }`}
                               >
@@ -26933,9 +26933,9 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
 
                       {/* Inline Mandatory Reason Input Card */}
                       {isBeingEdited && activePeriodChange && (
-                        <div className="p-3 bg-white rounded-xl border-2 border-indigo-200 shadow-card space-y-2 animate-fadeIn">
+                        <div className="p-3 bg-white rounded-xl border-2 border-amber-200 shadow-card space-y-2 animate-fadeIn">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider">
+                            <span className="text-[10px] font-extrabold text-amber-700 uppercase tracking-wider">
                               Changing to: <strong className="uppercase underline">{activePeriodChange.newStatus}</strong> ({correctionCount}/2 used)
                             </span>
                             <span className="text-[9.5px] text-rose-500 font-bold">* Reason Mandatory</span>
@@ -26947,7 +26947,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             placeholder="e.g. Verified by CM / OD Approved / Medical exemption"
                             value={activePeriodChange.reason}
                             onChange={e => setActivePeriodChange({ ...activePeriodChange, reason: e.target.value })}
-                            className="w-full p-2.5 border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-sunken"
+                            className="w-full p-2.5 border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 bg-sunken"
                           />
                           <div className="flex items-center justify-end gap-2 pt-1">
                             <button
@@ -27193,12 +27193,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
           onOpenChange={(next) => { if (!next) setShowSubjectModal(false); }}
           ariaLabel={editingSubject ? "Edit Subject Details" : "Add Subjects to Curriculum"}
           overlayClassName="bg-slate-950/60 backdrop-blur-sm"
-          panelClassName={`rounded-2xl overflow-hidden animate-slideUp transition-all p-0 space-y-0 max-h-[90vh] ${editingSubject ? "max-w-md" : "max-w-4xl"}`}
+          panelClassName={`rounded-2xl overflow-hidden animate-slideUp transition-all p-0 space-y-0 max-h-[90vh] flex flex-col ${editingSubject ? "max-w-md" : "max-w-4xl"}`}
         >
           {/* Modal Header */}
-          <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/80">
+          <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-500 border border-amber-200">
                 <GraduationCap className="h-5 w-5" />
               </div>
               <div>
@@ -27218,7 +27218,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     type="button"
                     onClick={() => setSubjectModalTab("bulk")}
                     className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${subjectModalTab === "bulk"
-                      ? "bg-white text-indigo-600 shadow-xs font-black"
+                      ? "bg-white text-amber-500 shadow-xs font-black"
                       : "text-slate-600 hover:text-slate-900"
                       }`}
                   >
@@ -27229,7 +27229,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     type="button"
                     onClick={() => setSubjectModalTab("single")}
                     className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${subjectModalTab === "single"
-                      ? "bg-white text-indigo-600 shadow-xs font-black"
+                      ? "bg-white text-amber-500 shadow-xs font-black"
                       : "text-slate-600 hover:text-slate-900"
                       }`}
                   >
@@ -27244,20 +27244,22 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
             </div>
           </div>
 
-          <form onSubmit={handleSubjectModalSubmit} className="p-6 space-y-5 text-xs font-semibold max-h-[82vh] flex flex-col overflow-hidden">
+          <form onSubmit={handleSubjectModalSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden text-xs font-semibold">
             {subjectModalError && (
-              <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 font-bold flex items-center gap-2 shrink-0">
+              <div className="mx-6 mt-4 p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 font-bold flex items-center gap-2 shrink-0">
                 <ShieldAlert className="h-4 w-4 shrink-0" />
                 {subjectModalError}
               </div>
             )}
 
-            {/* ═════════ STRUCTURED BULK MODE ═════════ */}
-            {!editingSubject && subjectModalTab === "bulk" && (() => {
-              const validSubjectsCount = dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length;
+            {/* Scrollable Content Body */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-5">
+              {/* ═════════ STRUCTURED BULK MODE ═════════ */}
+              {!editingSubject && subjectModalTab === "bulk" && (() => {
+                const validSubjectsCount = dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length;
 
-              return (
-                <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                return (
+                  <div className="space-y-4">
                   {/* Top Scope Card */}
                   <div className="p-4 bg-slate-50/90 border border-slate-100 rounded-xl space-y-3 shrink-0">
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -27269,7 +27271,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           disabled={lockDeptAndYear}
                           value={subjectForm.department}
                           onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800 disabled:opacity-60"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800 disabled:opacity-60"
                         >
                           <option value="">— Select Course —</option>
                           {collegeCourses.map(dept => (
@@ -27307,7 +27309,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                             else if (newYear === "Year 4") newSem = "Semester 7";
                             setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
                           }}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800 disabled:opacity-60"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800 disabled:opacity-60"
                         >
                           <option value="Year 1">Year 1</option>
                           <option value="Year 2">Year 2</option>
@@ -27323,7 +27325,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           required
                           value={subjectForm.semester}
                           onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800"
                         >
                           {subjectForm.year === "Year 1" && (
                             <>
@@ -27364,12 +27366,12 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   />
 
                   {/* Template & Import Toolbar */}
-                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2.5 shrink-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
                         onClick={handleDownloadSubjectTemplate}
-                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         title="Download sample Excel template (.xlsx)"
                       >
                         <Download className="h-3.5 w-3.5" />
@@ -27386,37 +27388,6 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <span>Import Excel / CSV</span>
                       </button>
                     </div>
-
-                    <div className="flex items-center gap-3 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">Default Domain:</span>
-                        <select
-                          aria-label="Default domain"
-                          value={bulkDefaultType}
-                          onChange={(e) => setBulkDefaultType(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-xs text-slate-800 focus:outline-none cursor-pointer"
-                        >
-                          <option value="SKILL">SKILL</option>
-                          <option value="ACADEMIC">ACADEMIC</option>
-                          <option value="LAB">LAB</option>
-                          <option value="GENERAL">GENERAL</option>
-                        </select>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">Default Group:</span>
-                        <select
-                          aria-label="Default group"
-                          value={bulkDefaultGroup}
-                          onChange={(e) => setBulkDefaultGroup(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-xs text-slate-800 focus:outline-none cursor-pointer max-w-[130px] truncate"
-                        >
-                          {subjectGroups.map(sg => (
-                            <option key={sg.id} value={sg.name}>{sg.name}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
                   </div>
 
                   {/* Structured Subject Rows Table */}
@@ -27426,7 +27397,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">
                           Subject Entry Rows
                         </h4>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
                           {validSubjectsCount} {validSubjectsCount === 1 ? "Subject" : "Subjects"}
                         </span>
                       </div>
@@ -27441,7 +27412,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <button
                           type="button"
                           onClick={handleAddDynamicSubjectRow}
-                          className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-extrabold border border-indigo-200 transition-all flex items-center gap-1 cursor-pointer"
+                          className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-xs font-extrabold border border-amber-200 transition-all flex items-center gap-1 cursor-pointer"
                         >
                           <Plus className="h-3.5 w-3.5" />
                           <span>Add Row</span>
@@ -27467,7 +27438,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <button
                             type="button"
                             onClick={handleAddDynamicSubjectRow}
-                            className="px-4 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-indigo-700 cursor-pointer"
+                            className="px-4 py-1.5 btn-gradient text-white rounded-xl text-xs font-bold shadow-xs hover:bg-zinc-800 cursor-pointer"
                           >
                             + Add First Subject
                           </button>
@@ -27477,7 +27448,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           <div
                             key={row.id}
                             className={`grid grid-cols-12 gap-2.5 p-2 rounded-xl border transition-all items-center ${row.name.trim()
-                              ? "bg-white border-slate-200 hover:border-indigo-300 shadow-2xs"
+                              ? "bg-white border-slate-200 hover:border-amber-400 shadow-2xs"
                               : "bg-amber-50/30 border-amber-200/80"
                               }`}
                           >
@@ -27497,7 +27468,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 placeholder="Subject Name (e.g. Data Structures)"
                                 value={row.name}
                                 onChange={(e) => handleUpdateDynamicSubject(row.id, "name", e.target.value)}
-                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
                               />
                               <datalist id={`cam-sub-opts-${row.id}`}>
                                 {availableCourseSubjectNames.map(name => (
@@ -27512,7 +27483,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 aria-label="Subject Group"
                                 value={row.mentor_group || bulkDefaultGroup || subjectForm.subject_group || "General"}
                                 onChange={(e) => handleUpdateDynamicSubject(row.id, "mentor_group", e.target.value)}
-                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-indigo-500 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer truncate"
+                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer truncate"
                               >
                                 {subjectGroups.map(sg => (
                                   <option key={sg.id} value={sg.name}>{sg.name}</option>
@@ -27529,7 +27500,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 aria-label="Subject domain"
                                 value={normalizeSubjectType(row.type)}
                                 onChange={(e) => handleUpdateDynamicSubject(row.id, "type", e.target.value)}
-                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-indigo-500 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
                               >
                                 <option value="SKILL">SKILL</option>
                                 <option value="ACADEMIC">ACADEMIC</option>
@@ -27547,7 +27518,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                 max={20}
                                 value={row.weekly_hours}
                                 onChange={(e) => handleUpdateDynamicSubject(row.id, "weekly_hours", parseInt(e.target.value) || 4)}
-                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-indigo-500 rounded-lg px-1.5 py-1.5 text-xs font-bold text-slate-900 text-center focus:outline-none"
+                                className="w-full bg-sunken/60 focus:bg-white border border-slate-200 inset-shadow-well focus:border-amber-500 focus:ring-1 focus:ring-amber-500/80 rounded-lg px-1.5 py-1.5 text-xs font-bold text-slate-900 text-center focus:outline-none"
                               />
                             </div>
 
@@ -27571,7 +27542,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     <button
                       type="button"
                       onClick={handleAddDynamicSubjectRow}
-                      className="w-full py-2 border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-xl text-slate-500 hover:text-indigo-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+                      className="w-full py-2 border-2 border-dashed border-slate-200 hover:border-amber-400 hover:bg-amber-50/30 rounded-xl text-slate-500 hover:text-amber-700 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-2"
                     >
                       <Plus className="h-4 w-4" />
                       <span>Add Another Subject Row</span>
@@ -27595,7 +27566,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       placeholder="e.g. Modern Natural Language Processing"
                       value={subjectForm.name}
                       onChange={(e) => setSubjectForm({ ...subjectForm, name: e.target.value })}
-                      className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800"
+                      className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 text-slate-800"
                     />
                   </div>
 
@@ -27608,7 +27579,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         disabled={lockDeptAndYear}
                         value={subjectForm.department}
                         onChange={(e) => setSubjectForm({ ...subjectForm, department: e.target.value })}
-                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <option value="">— Select Course —</option>
                         {collegeCourses.map(dept => (
@@ -27649,7 +27620,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           else if (newYear === "Year 4") newSem = "Semester 7";
                           setSubjectForm({ ...subjectForm, year: newYear, semester: newSem });
                         }}
-                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <option value="Year 1">Year 1</option>
                         <option value="Year 2">Year 2</option>
@@ -27665,7 +27636,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         required
                         value={subjectForm.semester}
                         onChange={(e) => setSubjectForm({ ...subjectForm, semester: e.target.value })}
-                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800"
                       >
                         {subjectForm.year === "Year 1" && (
                           <>
@@ -27703,7 +27674,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         required
                         value={normalizeSubjectType(subjectForm.type)}
                         onChange={(e) => setSubjectForm({ ...subjectForm, type: e.target.value })}
-                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                        className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800"
                       >
                         <option value="SKILL">SKILL (Practical Training)</option>
                         <option value="ACADEMIC">ACADEMIC (Core Theory)</option>
@@ -27735,7 +27706,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                       required
                       value={subjectForm.subject_group}
                       onChange={(e) => setSubjectForm({ ...subjectForm, subject_group: e.target.value })}
-                      className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer text-slate-800"
+                      className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl px-3 py-2.5 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 cursor-pointer text-slate-800"
                     >
                       {subjectGroups.map(sg => (
                         <option key={sg.id} value={sg.name}>{sg.name}</option>
@@ -27767,7 +27738,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                         <label className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">
                           Assign Staff <span className="text-slate-300 font-normal normal-case">(optional)</span>
                         </label>
-                        <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                        <span className="text-[9px] font-black text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                           {subjectForm.mentorIds.length} Selected
                         </span>
                       </div>
@@ -27779,7 +27750,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           placeholder="Search staff by name or dept..."
                           value={mentorSubjectSearch}
                           onChange={(e) => setMentorSubjectSearch(e.target.value)}
-                          className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-600 text-slate-800"
+                          className="w-full bg-sunken border border-slate-200 inset-shadow-well focus:bg-white dark:focus:bg-[#131317] rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-amber-500/80 focus:border-amber-500 text-slate-800"
                         />
                       </div>
 
@@ -27792,7 +27763,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                           filteredStaff.map(m => {
                             const isChecked = subjectForm.mentorIds.includes(m.id);
                             return (
-                              <label key={m.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${isChecked ? "bg-indigo-50/60 border-indigo-200 shadow-2xs" : "bg-white border-slate-100 hover:border-slate-200"
+                              <label key={m.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer ${isChecked ? "bg-amber-50/60 border-amber-200 shadow-2xs" : "bg-white border-slate-100 hover:border-slate-200"
                                 }`}>
                                 <input
                                   type="checkbox"
@@ -27803,7 +27774,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                                     else next = subjectForm.mentorIds.filter(id => id !== m.id);
                                     setSubjectForm({ ...subjectForm, mentorIds: next });
                                   }}
-                                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                                  className="rounded text-amber-500 focus:ring-amber-500 h-4 w-4 cursor-pointer"
                                 />
                                 <div className="leading-tight flex-1">
                                   <div className="font-bold text-slate-800 text-[11px]">{m.name}</div>
@@ -27819,17 +27790,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 })()}
               </div>
             )}
+            </div>
 
-            {/* Footer Buttons */}
-            <div className="flex justify-between items-center pt-4 border-t border-slate-100 shrink-0">
+            {/* Sticky Bottom Action Bar */}
+            <div className="flex justify-between items-center px-6 py-4 border-t border-slate-200 bg-white shrink-0 z-10 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
               {!editingSubject && subjectModalTab === "bulk" && (
                 <div className="text-xs text-slate-500 font-medium">
-                  Creating into <strong className="text-slate-900">{subjectForm.department || "Selected Course"}</strong> → <strong className="text-indigo-600">{subjectForm.semester}</strong>
+                  Creating into <strong className="text-slate-900">{subjectForm.department || "Selected Course"}</strong> → <strong className="text-amber-500">{subjectForm.semester}</strong>
                 </div>
               )}
               {(!(!editingSubject && subjectModalTab === "bulk")) && <div />}
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <Button
                   type="button"
                   variant="secondary"
@@ -27844,11 +27816,14 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   isLoading={loadingActions['submit_subject']}
                   loadingText={editingSubject ? "Saving..." : "Creating..."}
                   variant="primary"
+                  className="shadow-sm font-black px-5"
                 >
                   {editingSubject
                     ? "Save Changes"
                     : subjectModalTab === "bulk"
-                      ? `Create ${dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length} Subjects`
+                      ? (dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length > 0
+                          ? `Create ${dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length} Subject${dynamicSubjects.filter(s => s.name && s.name.trim() !== "").length === 1 ? "" : "s"}`
+                          : "Create Subjects")
                       : "Create Subject"}
                 </LoadingButton>
               </div>
@@ -27881,7 +27856,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         >
           <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-4">
             <div className="flex items-center gap-3">
-              <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-500/20">
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 text-amber-500 dark:text-amber-300 border border-amber-200 dark:border-amber-200/500/20">
                 <FileText className="h-6 w-6" />
               </div>
               <div>
@@ -27927,13 +27902,13 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
               </TableHeader>
               <TableBody className="divide-y divide-gray-100 dark:divide-slate-800 bg-white dark:bg-slate-900 font-medium text-gray-800 dark:text-slate-200">
                 {facultyImportPreview.parsed.map((item, idx) => (
-                  <TableRow key={idx} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-500/5">
+                  <TableRow key={idx} className="hover:bg-amber-50/20 dark:hover:bg-amber-500/5">
                     <TableCell className="p-3 text-gray-400 font-mono text-[10px]">{idx + 1}</TableCell>
                     <TableCell className="p-3 font-bold text-gray-900 dark:text-white">{item.name || <span className="text-rose-500 italic">Missing</span>}</TableCell>
                     <TableCell className="p-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">{item.email || <span className="text-rose-500 italic">Missing</span>}</TableCell>
                     <TableCell className="p-3"><span className="px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-[10px] font-bold">{item.department}</span></TableCell>
                     {isCampusShiftBased && (
-                      <TableCell className="p-3"><span className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold uppercase">{item.shift}</span></TableCell>
+                      <TableCell className="p-3"><span className="px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 text-[10px] font-bold uppercase">{item.shift}</span></TableCell>
                     )}
                     <TableCell className="p-3 text-gray-500 dark:text-slate-400 max-w-[180px] truncate" title={item.subjects}>{item.subjects || "—"}</TableCell>
                   </TableRow>
@@ -27986,7 +27961,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   Daily Day Order &amp; Schedule Configurator
                   {editingDailyId && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200 normal-case">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 normal-case">
                       Editing {dailyStartDateStr}
                     </span>
                   )}
@@ -28150,7 +28125,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   type="button"
                   onClick={handleAutoAdaptNextWeek}
                   disabled={isDailySaving || isDailyLoading}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                   title="Auto-configure next week's schedule based on current week's pattern"
                 >
                   <Calendar className="h-3.5 w-3.5" />
@@ -28222,7 +28197,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setDailyModalWeekOffset(0)}
-                    className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors cursor-pointer"
+                    className="px-2.5 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
                   >
                     This Week
                   </button>
@@ -28237,7 +28212,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     onClick={() => setDailyModalViewMode("week")}
                     className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                       dailyModalViewMode === "week"
-                        ? "bg-white text-indigo-700 shadow-xs"
+                        ? "bg-white text-amber-700 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
@@ -28248,7 +28223,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                     onClick={() => setDailyModalViewMode("all")}
                     className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                       dailyModalViewMode === "all"
-                        ? "bg-white text-indigo-700 shadow-xs"
+                        ? "bg-white text-amber-700 shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
@@ -28319,7 +28294,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleQuickConfigureDay(dStr)}
-                                className="px-3 py-1 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all cursor-pointer inline-flex items-center gap-1"
+                                className="px-3 py-1 rounded-lg text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all cursor-pointer inline-flex items-center gap-1"
                               >
                                 <Plus className="h-3 w-3" /> Set Day
                               </button>
@@ -28452,7 +28427,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
         >
           <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+              <div className="h-9 w-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-500 shrink-0">
                 <FileSpreadsheet className="h-5 w-5" />
               </div>
               <div>
@@ -28494,7 +28469,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 value={templateModalCohort}
                 aria-label="Target Class Group / Cohort"
                 onChange={(e) => setTemplateModalCohort(e.target.value)}
-                className="w-full text-xs font-semibold px-3 py-2.5 bg-sunken border border-slate-200 inset-shadow-well rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="w-full text-xs font-semibold px-3 py-2.5 bg-sunken border border-slate-200 inset-shadow-well rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
               >
                 <option value="all">All Classes / Cohorts in {activeCollegeName || "Campus"}</option>
                 {(() => {
@@ -28525,7 +28500,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   aria-label="Start Date"
                   value={templateModalStartDate}
                   onChange={(e) => setTemplateModalStartDate(e.target.value)}
-                  className="w-full text-xs font-medium px-3 py-2 bg-sunken border border-slate-200 inset-shadow-well rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="w-full text-xs font-medium px-3 py-2 bg-sunken border border-slate-200 inset-shadow-well rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                 />
               </div>
               <div>
@@ -28537,18 +28512,18 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                   aria-label="End Date"
                   value={templateModalEndDate}
                   onChange={(e) => setTemplateModalEndDate(e.target.value)}
-                  className="w-full text-xs font-medium px-3 py-2 bg-sunken border border-slate-200 inset-shadow-well rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="w-full text-xs font-medium px-3 py-2 bg-sunken border border-slate-200 inset-shadow-well rounded-xl text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                 />
               </div>
             </div>
 
             {/* Format Info Callout */}
-            <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl text-[11px] text-indigo-900 space-y-1">
+            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-[11px] text-zinc-900 space-y-1">
               <p className="font-extrabold flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                 Clean Import Format Enabled:
               </p>
-              <p className="text-indigo-700 text-[10.5px] leading-relaxed">
+              <p className="text-amber-700 text-[10.5px] leading-relaxed">
                 Headers include strictly <strong className="font-bold">Roll No, Name, Department, Class Group</strong>, followed by individual date columns. Summary columns (Total Days, %, etc.) are omitted for effortless bulk upload.
               </p>
             </div>
@@ -28573,7 +28548,7 @@ export const CAMDashboard: React.FC<CAMDashboardProps> = ({
                 );
                 setShowAttendanceTemplateModal(false);
               }}
-              className="px-4 py-2 text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              className="px-4 py-2 text-xs font-extrabold btn-gradient border border-amber-500/30 hover:border-amber-500/60 text-white rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <Download className="h-3.5 w-3.5" />
               <span>Download Template (.xlsx)</span>
